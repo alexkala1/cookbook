@@ -17,14 +17,25 @@ export type ConductorInput = { courses: { course: ConductorCourse, recipe: Condu
 const word = (stems: string) => new RegExp(`(?:^| )(?:${stems})`)
 const advance = word('marinat|soak|overnight|prove|proof|rise|chill|refrigerat|μαριναρ|μουλια|φουσκω|ψυγει')
 const cooking = word('bake|roast|broil|sear|fry|fried|saute|simmer|boil|braise|poach|steam|toast|caramel|reduce|heat|cook|preheat|blanch|brown|melt|ψησ|ψην|ψηστ|τηγαν|σοταρ|βρασ|βραζ|σιγοβρασ|μαγειρ|ζεσταν|προθερμ|λιων|καβουρδ|ροδιζ')
-const resting = word('rest|cool|stand|keep warm|hold|ξεκουραστ|κρυωσ|κρυωνε')
-const plating = word('serve|plate|garnish|drizzle|unmold|unmould|carve|dust|σερβιρ|γαρνιρ|πασπαλ')
+const resting = /(?:^| )(?:let rest|allow to rest|rest\b(?!\s+(?:of|of the|of your)\b)|cool|stand|keep warm|hold|ξεκουραστ|κρυωσ|κρυωνε)/
+const plating = /(?:^| )(?:serve|plate|garnish|drizzle|unmold|unmould|carve|dust\b(?!\s+.*with flour)|σερβιρ|γαρνιρ|πασπαλ)/
 const ovenUse = word('oven|bake|roast|broil|preheat|φουρν|ψησ|ψην|ψηστ|προθερμ')
 const burnerUse = word('sear|fry|fried|saute|simmer|boil|braise|poach|steam|blanch|melt|reduce|stovetop|stove|hob|skillet|pan|pot|saucepan|wok|burner|τηγαν|σοταρ|βρασ|βραζ|σιγοβρασ|κατσαρολ|λιων|καβουρδ')
 
 export function classifyStep(step: ConductorStep) {
   const text = fold(step.instruction)
-  const phase: Phase = advance.test(text) ? 'prep' : cooking.test(text) ? 'cook' : resting.test(text) ? 'rest' : plating.test(text) ? 'plate' : 'prep'
+  const isPlate = plating.test(text)
+  const offHeat = /(?:remove from\s+|off\s+(?:the\s+)?)heat/
+  const isCooking = cooking.test(text) && !offHeat.test(text)
+  const isAdvance = advance.test(text) || /dust\b.*with flour/.test(text)
+  const isRest = resting.test(text)
+
+  const phase: Phase = isAdvance ? 'prep'
+    : (isPlate && (!isCooking || offHeat.test(text))) ? 'plate'
+    : isCooking ? 'cook'
+    : isRest ? 'rest'
+    : isPlate ? 'plate'
+    : 'prep'
   // Greek ψήνω also means grilling; a grill or frying pan is not the oven.
   const oven = ovenUse.test(text) && !/(?:^| )(?:σχαρ|τηγαν|grill pan)/.test(text)
   const heated = step.heatLevel != null && step.heatLevel !== 'none'

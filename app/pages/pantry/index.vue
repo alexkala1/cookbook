@@ -23,7 +23,7 @@ function findRecipes() { void act(async () => { matches.value = await $fetch<Pan
 function expiryLabel(item: PantryItem) {
   if (item.expiresAt === null) return 'No expiry set'
   const days = Math.ceil((item.expiresAt - now.value) / 86400000)
-  return days <= 0 ? 'Expired — excluded from matches' : days <= 3 ? 'Use soon · ' + new Date(item.expiresAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : 'Expires ' + new Date(item.expiresAt).toLocaleDateString('en-GB', { timeZone: 'UTC' })
+  return days <= 0 ? 'Expired — excluded from matches' : days <= 3 ? 'Use soon · ' + new Date(item.expiresAt).toLocaleDateString('en-GB') : 'Expires ' + new Date(item.expiresAt).toLocaleDateString('en-GB')
 }
 </script>
 <template>

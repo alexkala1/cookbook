@@ -2,8 +2,12 @@
 import type { RecipeMemory } from '#shared/types/memory'
 const props = defineProps<{ recipeId: string }>()
 const { data: memories, error: loadError, refresh } = await useFetch<RecipeMemory[]>('/api/recipes/' + props.recipeId + '/memories')
-const cookDate = ref(new Date().toISOString().slice(0, 10)), rating = ref(''), notes = ref(''), familyMemories = ref(''), busy = ref(false), error = ref(''), saved = ref(false)
-function date(value: number) { return new Date(value).toLocaleDateString('en-GB', { timeZone: 'UTC' }) }
+function localToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const cookDate = ref(localToday()), rating = ref(''), notes = ref(''), familyMemories = ref(''), busy = ref(false), error = ref(''), saved = ref(false)
+function date(value: number) { return new Date(value).toLocaleDateString('en-GB') }
 async function save() {
   busy.value = true; error.value = ''; saved.value = false
   try {

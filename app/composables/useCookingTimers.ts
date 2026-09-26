@@ -14,7 +14,6 @@ export function useCookingTimers(recipeId: string) {
     try { sessionStorage.setItem(storageKey, JSON.stringify({ version: 1, timers: timers.value })) }
     catch { persistence.value = 'Session storage unavailable: timers cannot survive reload.' }
   }
-  watch(timers, persist, { deep: true, flush: 'sync' })
   async function enableSound() {
     if (disposed) return
     try {
@@ -38,22 +37,31 @@ export function useCookingTimers(recipeId: string) {
     }
   }
   function tick() {
+    let stateChanged = false
     for (const timer of timers.value) {
       if (timer.state !== 'running') continue
       timer.remaining = remainingSeconds(timer, Date.now())
-      if (!timer.remaining) { timer.state = 'finished'; alerts.value.push(`${timer.name} finished`); chime() }
+      if (!timer.remaining) {
+        timer.state = 'finished'
+        stateChanged = true
+        alerts.value.push(`${timer.name} finished`)
+        chime()
+      }
     }
+    if (stateChanged) persist()
   }
   function start(name: string, duration: number) {
     if (!Number.isFinite(duration) || duration <= 0 || duration > 604800 || timers.value.length >= 20) return
     void enableSound()
     timers.value.push({ id: ++nextId, name, duration, remaining: duration, deadline: Date.now() + duration * 1000, state: 'running' })
+    persist()
   }
   function toggle(timer: CookingTimer) {
     if (timer.state === 'running') { timer.remaining = remainingSeconds(timer, Date.now()); timer.state = 'paused' }
     else { void enableSound(); timer.remaining ||= timer.duration; timer.deadline = Date.now() + timer.remaining * 1000; timer.state = 'running' }
+    persist()
   }
-  function reset(timer: CookingTimer) { timer.remaining = timer.duration; timer.state = 'idle' }
+  function reset(timer: CookingTimer) { timer.remaining = timer.duration; timer.state = 'idle'; persist() }
   onMounted(() => {
     try { timers.value = restoreTimers(sessionStorage.getItem(storageKey)) }
     catch { persistence.value = 'Session storage unavailable: timers cannot survive reload.' }
