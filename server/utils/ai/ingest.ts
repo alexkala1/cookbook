@@ -74,6 +74,12 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   }
   progress('Preserving measurements and identifying gaps')
   const recipe = extracted || await client.generate(recipeCreateSchema, 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.', source.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal)
-  const draft = recipeCreateSchema.parse(enrichScience({ ...recipe, sourceType: request.kind, sourceUrl: sourceUrl || null }))
+  const sanitized = { ...recipe, originalSaltType: extracted?.originalSaltType ?? null }
+  if (!extracted) {
+    delete sanitized.imageUrl
+    delete sanitized.rating
+    delete sanitized.isFavorite
+  }
+  const draft = recipeCreateSchema.parse(enrichScience({ ...sanitized, sourceType: request.kind, sourceUrl: sourceUrl || null }))
   return { recipe: draft, mode: extracted ? 'extracted' as const : client.mode, provenance, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : client.mode === 'fallback' ? 'No live model used. This is a deterministic starting draft, not a recovered recipe.' : 'AI-generated draft: verify inferred quantities and cooking requirements.'] }
 }

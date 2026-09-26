@@ -31,8 +31,10 @@ export default defineEventHandler(async event => {
       if (abort.signal.aborted) return
       send('recipe_chunk', { title: result.recipe.title, ingredients: result.recipe.ingredients })
       send('complete', result)
-    } catch {
-      if (!abort.signal.aborted) send('error', { message: 'Could not create a draft. Check the source and AI settings, or try a memory prompt without a key.' })
+    } catch (error) {
+      const failure = error as { statusCode?: unknown, statusMessage?: unknown } | null
+      const actionable = typeof failure?.statusCode === 'number' && failure.statusCode >= 400 && failure.statusCode < 500 && typeof failure.statusMessage === 'string' && failure.statusMessage.trim()
+      if (!abort.signal.aborted) send('error', { message: actionable ? failure!.statusMessage : 'Could not create a draft. Check the source and AI settings, or try a memory prompt without a key.' })
     } finally { finish() }
   })()
   return sendStream(event, body)

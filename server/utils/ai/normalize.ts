@@ -1,5 +1,5 @@
 import { load } from 'cheerio'
-import { recipeCreateSchema, type RecipeInput } from '../validation'
+import { recipeCreateSchema, saltTypes, type RecipeInput } from '../validation'
 
 const clean = (value: unknown): string => typeof value === 'string' ? load(value).text().trim() : ''
 export function duration(value: unknown) {
@@ -50,6 +50,7 @@ export function extractJsonLd(html: string): RecipeInput | null {
   const category = [data.recipeCategory, data.name].flat().join(' ').toLowerCase()
   const input = {
     title: clean(data.name), description: clean(data.description), servings,
+    originalSaltType: saltTypes.find(type => type === data.originalSaltType) ?? null,
     recipeType: /cocktail|martini|margarita|negroni/.test(category) ? 'cocktail' : /drink|beverage/.test(category) ? 'drink' : /dessert/.test(category) ? 'dessert' : /baking|bread|cake/.test(category) ? 'baking' : 'food',
     prepTimeMinutes: duration(data.prepTime), cookTimeMinutes: duration(data.cookTime),
     totalTimeMinutes: duration(data.totalTime) || duration(data.prepTime) + duration(data.cookTime),

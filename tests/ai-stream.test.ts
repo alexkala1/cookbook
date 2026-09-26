@@ -29,8 +29,23 @@ it('terminates failed ingestion with an error event, never a completed draft', a
   const handle = toWebHandler(createApp().use(stream))
   const response = await handle(new Request('http://localhost/api/ai/recipe/stream', { method: 'POST', headers, body: JSON.stringify({ kind: 'url', url: 'http://127.0.0.1/private' }) }))
   const events: string[] = []
-  await expect(readRecipeStream(response, event => events.push(event))).rejects.toThrow('Could not create')
+  await expect(readRecipeStream(response, event => events.push(event))).rejects.toThrow('Private or reserved source address blocked')
   expect(events).toEqual(['status', 'thought'])
+})
+it('propagates a missing model as an actionable 400 error', async () => {
+  const handle = toWebHandler(createApp().use(stream))
+  const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'secret-test' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Make lemon chicken' }) }))
+  await expect(readRecipeStream(response, vi.fn())).rejects.toThrow('Choose an AI model in Settings')
+})
+it('keeps provider 502 failures generic in SSE without leaking upstream detail', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('private-provider-detail secret-test', { status: 502 })))
+  const handle = toWebHandler(createApp().use(stream))
+  const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'secret-test', 'x-byok-model': 'test' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Make lemon chicken' }) }))
+  const text = await response.text()
+  expect(text).toContain('Could not create a draft.')
+  expect(text).not.toContain('private-provider-detail')
+  expect(text).not.toContain('secret-test')
+  expect(text).not.toContain('event: complete')
 })
 it.each(['openai', 'anthropic', 'gemini', 'groq', 'ollama'])('uses request-scoped %s credentials and parses provider response', async provider => {
   const recipe = { title: 'Soup', description: 'Warm' }, json = JSON.stringify(recipe)

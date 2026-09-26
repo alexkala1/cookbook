@@ -21,7 +21,8 @@ export function enrichScience(recipe: RecipeInput): RecipeInput {
     else if (/stir/.test(text)) cues = { scienceWhy: 'Stirring redistributes heat and dissolved ingredients. With ice, melting absorbs heat while adding dilution.', sensoryVisual: 'An evenly mixed liquid.' }
     // Poultry target: foodsafety.gov/food-safety-charts/safe-minimum-internal-temperatures.
     const poultry = /chicken|turkey|poultry|κοτόπουλ/i.test(recipe.title + ' ' + recipe.ingredients?.map(row => row.name).join(' '))
-    if (poultry && /roast|bake|simmer|boil|stew/.test(text)) cues.internalTempTargetC = 74
-    return { ...cues, ...Object.fromEntries(Object.entries(step).filter(([, value]) => value != null && value !== '')) } as typeof step
+    const enriched = { ...cues, ...Object.fromEntries(Object.entries(step).filter(([, value]) => value != null && value !== '')) } as typeof step
+    if (poultry && /\b(?:roast|bake|baking|simmer|boil|stew|sear|brown|sauté|saute|fry|fried|grill|poach|steam|cook)/.test(text)) enriched.internalTempTargetC = Math.max(step.internalTempTargetC ?? 0, 74)
+    return enriched
   }) }
 }
