@@ -238,3 +238,80 @@ Good cooking doesn't end when the meal is plated:
     - *Stews and braises:* "Reheat gently on stovetop with 2 tbsp of water/broth to loosen gelatin."
     - *Pasta:* "Reheat in a skillet with a splash of water and a dab of butter to re-emulsify the sauce."
 
+---
+
+## 13. Feature 13: Heat Source & Cookware Thermodynamics Adapter
+
+A recipe stating "cook over medium-high heat for 6 minutes" produces completely different outcomes depending on the stove and pan:
+- **Cooktop Thermodynamics:**
+  - *Gas Flame:* Heat curls around the bottom and climbs up the sidewalls. Excellent for woks and Dutch ovens.
+  - *Induction:* Extreme, instantaneous energy delivered exclusively to the pan base. Zero heat on pan sidewalls. Heats 3x faster than gas; high risk of burning garlic in 10 seconds. Heirloom adjusts instructions: *"On induction: use power level 6/10, not 8/10; do not leave pan empty on burner."*
+  - *Electric Radiant / Ceramic:* High thermal inertia. Takes 3–5 minutes to cool down after turning knob from High to Low. Heirloom inserts: *"Move skillet to an unused cold burner to stop the sear immediately."*
+- **Oven Convection vs Conventional Auto-Conversion:**
+  - If a user has a fan-assisted (convection) oven, Heirloom automatically recalculates:
+    - **Temperature:** Subtract 20°C (e.g. 200°C static $\rightarrow$ 180°C fan).
+    - **Time:** Reduce duration by 10–15% to avoid drying out roasts.
+- **Cookware Material Physics:**
+  - *Stainless Steel:* Prompts the **Leidenfrost Water Droplet Test** (flick a drop of water; if it glides around like mercury, the pan is at 190°C+ and ready for oil, guaranteeing non-stick searing).
+  - *Non-Stick (PTFE):* Proactive safety warning: *"Never preheat empty or use high flame; limits sear temperature."*
+  - *Traditional Clay Gastra (Γάστρα):* Thermal shock warning: *"Place in cold or warm oven; never place on direct stovetop burner or into a 220°C oven when cold to prevent cracking."*
+
+---
+
+## 14. Feature 14: Contactless Air-Wave Gesture Navigation (Zero-Touch Kitchen Mode)
+
+In a busy kitchen, two things are guaranteed:
+1. **Loud ambient noise:** Range hood fan at max speed, sizzling oil, boiling water, and kitchen chatter drown out speech recognition.
+2. **Dirty hands:** Flour, raw chicken, butter, or olive oil coat your fingers. You cannot touch your clean iPad or phone screen.
+
+### The Solution: Vision Gesture Controls (MediaPipe Hands / WebAssembly)
+- Runs 100% locally and privately in the browser via front-facing camera (zero video data sent to any cloud).
+- **Kitchen Gestures:**
+  - 👋 **Wave Left-to-Right:** Advance to Next Step.
+  - 👋 **Wave Right-to-Left:** Return to Previous Step.
+  - ✋ **Open Palm Hold (2 seconds):** Dismiss / Silence ringing timer alarm.
+  - ☝️ **Index Finger Up:** Trigger audio read-out of current step.
+
+---
+
+## 15. Feature 15: Guest Dietary Collision & Allergen Shield
+
+Hosting dinner guests shouldn't require playing Russian roulette with allergies:
+- **Guest Profiles:** Save friends and family with their specific needs:
+  - *Allergies & Intolerances:* Celiac/Gluten, Lactose, Tree Nuts, Shellfish, Eggs.
+  - *Diets & Ethics:* Vegan, Vegetarian, Halal, Kosher, Low-FODMAP.
+  - *Genetic Quirks:* OR6A2 cilantro soap-gene detector, bitter-compound sensitivity.
+  - *Vulnerabilities:* Pregnancy (pasteurized dairy only, no rare meat, no raw eggs).
+- **The Dinner Collision Audit:**
+  - When you build a 3-course menu for 6 guests, Heirloom scans every single ingredient across the appetizer, main, and dessert.
+  - Highlights collisions in red/amber and suggests **Surgical Micro-Adaptations**:
+    - *"Collision detected: Nikos has Celiac Disease (Gluten). In the Main Course, substitute all-purpose flour in the lamb roux with 15g cornstarch or potato starch."*
+    - *"Collision detected: Maria is Lactose Intolerant. Plate 1 portion of zucchini fritters without Feta/Graviera; substitute with olive-oil garlic dip."*
+
+---
+
+## 16. Feature 16: Seasonality & Peak Flavor Compensation Engine
+
+Greek and Mediterranean cooking is profoundly seasonal. A tomato salad in August is heaven; in January it tastes like crunchy pink water.
+- **Hemisphere & Regional Harvest Calendar:**
+  - Detects current month and geographical region.
+  - Flags ingredients that are currently out-of-season and would result in bland flavors.
+- **Culinary Compensation Hacks (Food Chemistry Fixes):**
+  - *Winter Tomatoes:* *"Fresh tomatoes lack summer sunshine sugars and natural glutamates. Fix: Add 1 tsp double-concentrated tomato paste, 1/4 tsp sugar, and 1 tsp red wine vinegar to restore umami balance."*
+  - *Winter Strawberries / Stone Fruit:* *"Fruit is underripe and tart. Fix: Macerate in 2 tbsp orange juice and a splash of Greek Metaxa or honey for 30 minutes before assembling dessert."*
+  - *Seasonal Green Foraging Guide:* Suggests which wild greens (*χόρτα: βλήτα, ραδίκια, σταμναγκάθι, ζοχοί*) are currently in peak season at the local Laiki Agora.
+
+---
+
+## 17. Feature 17: "Is it Done?" Vision AI Pan Inspector
+
+Novice cooks are constantly plagued by self-doubt: *"Is my roux dark enough?" "Is my custard thickening or is it about to curdle?" "Are my onions caramelized or burnt?"*
+
+### Instant Pan Triage via Camera Snapshot:
+- User taps the camera icon in Kitchen Mode to photograph their pan, bowl, or baking sheet.
+- Vision AI analyzes color temperature, surface bubbles, sheen, and viscosity:
+  - **Pan Example (Roux):** *"Your roux is currently at the 'Peanut Butter / Blonde' stage. For a rich beef stew or gumbo, keep whisking over medium heat for 4 more minutes until it reaches 'Milk Chocolate' hue."*
+  - **Sauce Example (Custard / Nappe):** *"Your custard has achieved the Nappe stage: a clear drag line remains on the back of your spoon. Pull pan off the heat immediately to prevent egg protein curdling!"*
+  - **Baking Example (Bread):** *"Crust has reached golden amber, but ear expansion indicates under-steamed dough. Bake 5 more minutes at 200°C for proper hollow thumping sound."*
+
+

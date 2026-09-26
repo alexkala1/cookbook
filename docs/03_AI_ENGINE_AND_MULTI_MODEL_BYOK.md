@@ -204,4 +204,34 @@ export const RescueTriageSchema = z.object({
   rescueSteps: z.array(z.string()), // Exact steps to recover the dish
   preventNextTime: z.string()
 });
+
+// -------------------------------------------------------------
+// VISION PAN INSPECTION CONTRACT ("Is It Done?")
+// -------------------------------------------------------------
+export const PanInspectionSchema = z.object({
+  observedStage: z.string(), // e.g. "Blonde / Peanut Butter Roux", "Nappe custard coating"
+  isComplete: z.boolean(),
+  estimatedMinutesToFinish: z.number().int().nonnegative().optional(),
+  colorTemperatureAssessment: z.string(), // e.g. "Slightly too pale; needs more browning"
+  actionableGuidance: z.string(), // e.g. "Lower flame to medium-low, whisk for 3 more minutes"
+  imminentRisks: z.string().optional() // e.g. "High heat detected, risk of scorching in 60s"
+});
+
+// -------------------------------------------------------------
+// GUEST DIETARY COLLISION AUDIT CONTRACT
+// -------------------------------------------------------------
+export const GuestDietaryAuditSchema = z.object({
+  menuId: z.string(),
+  hasCollisions: z.boolean(),
+  criticalAllergenCollisions: z.array(z.object({
+    guestName: z.string(),
+    allergen: z.string(),
+    triggerRecipe: z.string(),
+    triggerIngredient: z.string(),
+    severity: z.enum(['life_threatening_allergy', 'intolerance', 'dietary_preference']),
+    suggestedAdaptation: z.string() // e.g. "Plate 1 portion without cheese, swap for olive-oil garlic emulsion"
+  })),
+  crossContaminationWarnings: z.array(z.string()),
+  safeSharedDishes: z.array(z.string())
+});
 ```

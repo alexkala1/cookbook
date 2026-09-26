@@ -26,4 +26,4 @@ Comprehensive architectural blueprints and specifications are documented in the 
 - **Database:** Drizzle ORM with SQLite (`better-sqlite3` / `@libsql/client`).
 - **Offline / Mobile:** Vite PWA, IndexedDB local cache.
 - **AI Integration:** Multi-provider BYOK (OpenAI, Anthropic, Google Gemini, Groq, OpenRouter, Ollama).
-- **Core Pillars:** Food Science "Why", Sensory Milestones, Salt Density Normalization, Rescue My Dish Triage, Cocktail & Beverage Craft, Multi-Course Dinner Conductor.
+- **Core Pillars:** Food Science "Why", Sensory Milestones, Salt Density Normalization, Rescue My Dish Triage, Cocktail & Mixology Craft, Hardware & Stove Thermodynamics (Gas/Induction/Convection), Contactless Air-Wave Gestures, Guest Allergen Shield, Regional Greek Market Routing, and Multi-Course Dinner Conductor.

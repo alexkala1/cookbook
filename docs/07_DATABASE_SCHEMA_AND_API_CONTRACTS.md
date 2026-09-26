@@ -138,6 +138,34 @@ export const groceryItems = sqliteTable('grocery_items', {
 });
 
 // -------------------------------------------------------------
+// GUESTS & DIETARY PROFILES TABLE
+// -------------------------------------------------------------
+export const guests = sqliteTable('guests', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  allergies: text('allergies'), // JSON array: ['gluten', 'lactose', 'peanuts']
+  dietaryRestrictions: text('dietary_restrictions'), // JSON: ['vegan', 'halal', 'pregnant']
+  dislikes: text('dislikes'), // JSON: ['cilantro', 'liver']
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)
+});
+
+// -------------------------------------------------------------
+// USER KITCHEN HARDWARE PROFILE
+// -------------------------------------------------------------
+export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
+  id: text('id').primaryKey(),
+  stoveType: text('stove_type', { enum: ['gas', 'induction', 'electric_radiant'] }).notNull().default('gas'),
+  ovenType: text('oven_type', { enum: ['convection_fan', 'static_conventional'] }).notNull().default('convection_fan'),
+  hasMicrowave: integer('has_microwave', { mode: 'boolean' }).default(true),
+  hasAirFryer: integer('has_air_fryer', { mode: 'boolean' }).default(false),
+  hasInstantPot: integer('has_instant_pot', { mode: 'boolean' }).default(false),
+  hasCastIron: integer('has_cast_iron', { mode: 'boolean' }).default(true),
+  hasClayGastra: integer('has_clay_gastra', { mode: 'boolean' }).default(false),
+  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher'] }).default('table_salt')
+});
+
+// -------------------------------------------------------------
 // COOKING SESSIONS & LOGS
 // -------------------------------------------------------------
 export const cookingSessions = sqliteTable('cooking_sessions', {
@@ -178,9 +206,15 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 - `POST /api/ai/rescue`:
   - Request: `{ issueDescription: string, recipeContext: string, currentStep: number }`
   - Response: Immediate low-latency triage recovery steps (e.g. broken emulsion, oversalted, burning bottom).
+- `POST /api/ai/pan-inspect`:
+  - Request: `{ imageBase64: string, expectedDish: string, targetStage: string }`
+  - Response: `{ currentStage: string, isDone: boolean, estimatedTimeRemainingMinutes: number, actionableAdvice: string }`
 - `POST /api/meal-plan/orchestrate`:
   - Request: `{ recipeIds: string[], targetServeTime: string, guestCount: number }`
   - Response: Returns unified backwards prep and cooking timeline with equipment conflict warnings.
+- `POST /api/meal-plan/dietary-audit`:
+  - Request: `{ recipeIds: string[], guestIds: string[] }`
+  - Response: Returns collision matrix, allergen flags, and surgical ingredient micro-substitutions.
 
 ### 3. Pantry & Grocery Endpoints
 - `GET /api/pantry`: Fetch all items in inventory.

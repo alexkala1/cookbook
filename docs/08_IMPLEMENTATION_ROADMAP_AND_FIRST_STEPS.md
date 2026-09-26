@@ -32,27 +32,31 @@ The project is structured into 6 sequential phases, ensuring every feature is em
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Phase 3: Kitchen Mode, "Rescue My Dish" & Hands-Free Interaction       │
+│ Phase 3: Kitchen Mode, Vision Gestures & "Rescue My Dish"              │
 │ • Screen WakeLock integration (@vueuse/core)                           │
-│ • "Mise en Place" advance prep & equipment checklist                   │
+│ • Contactless Air-Wave Gesture Navigation (MediaPipe Hands WASM)        │
 │ • "🚨 Rescue My Dish" live emergency troubleshooter                    │
-│ • Giant typography step-by-step navigation & multi-step timers         │
-│ • Voice commands ("Next", "Back", "Timer") via Web Speech API          │
+│ • "Is It Done?" Vision AI Pan Inspector (roux, nappe, crust triage)    │
+│ • Hardware & heat source physics adapter (Induction/Gas/Convection)    │
+│ • Multi-step timers linked to recipe steps with vocal alarms           │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Phase 4: Pantry, Receipt Scanning & Smart Grocery Consolidation        │
-│ • Virtual pantry with receipt OCR and fridge shelf scanning            │
+│ Phase 4: Pantry, Receipt Scanning & Regional Greek Smart Grocery       │
+│ • Virtual pantry with receipt OCR, fridge shelf scanning & OpenFoodFacts│
 │ • "Cook with what I have" recipe matcher                               │
 │ • Molecular & culinary substitution advisor (flavor, moisture, structure)│
-│ • Consolidated grocery list with pantry deduplication & aisle sorting  │
+│ • Regional Greek market routing (Laiki, Chasapis, Fournos, Supermarket)│
+│ • Butcher counter dialect phrases & pack-size rounding with surplus tips│
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Phase 5: Multi-Course Dinner Conductor & Heirloom Keepsake             │
-│ • Dinner party orchestrator: unified backwards cooking schedule        │
+│ Phase 5: Multi-Course Conductor, Guest Allergen Shield & Keepsake      │
+│ • Multi-course dinner orchestrator: unified backwards cooking schedule │
+│ • Guest Dietary Collision & Allergen Shield (cross-contamination triage)│
+│ • Seasonality & Peak Flavor Compensation Engine (Mediterranean calendar)│
 │ • Equipment bottleneck detector (oven temp & burner conflicts)         │
 │ • Heirloom family memories, ratings & photo logs                       │
 │ • Printable vintage heirloom PDF export & Hardcover print hook         │

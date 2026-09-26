@@ -102,8 +102,11 @@ Cooking in a real kitchen introduces unique physical challenges:
   - Single-step focused view with a progress bar and quick swipe / tap-anywhere navigation.
   - Built-in floating **Interactive Timers**: When a step mentions "simmer for 15 minutes", an interactive one-tap timer badge appears on the step. Multiple concurrent timers can run (e.g. "Pasta Boiling - 8m", "Garlic Roasting - 20m").
   - **Sensory Alert Cards:** Highlighted callouts for critical safety or doneness moments (e.g., "⚠️ Watch closely: Sugar goes from caramel to burnt in 30 seconds").
-  - **Voice Commands:** Local browser speech recognition listening for wake triggers:
-    - *"Next"* / *"Back"*
-    - *"Read step"*
-    - *"Timer 5 minutes"*
-    - *"What's the temp?"*
+  - **Voice & Contactless Vision Controls:**
+    - Speech Recognition (`useSpeechRecognition`) for hands-free vocal navigation (*"Next"*, *"Back"*, *"Timer 5 minutes"*).
+    - **Optical Gesture Recognition:** Browser-native MediaPipe Hands via WebAssembly using the front-facing camera. Enables wave-to-advance and palm-to-silence without touching the screen or shouting over a noisy exhaust hood fan.
+  - **Kitchen Profile Adaptor:**
+    - Stored in client settings / user profile: Stove Type (Gas, Induction, Electric Radiant) and Oven Type (Convection Fan, Static).
+    - Client automatically recalculates temperatures and injects equipment-specific guidance into step cards.
+  - **OpenFoodFacts Integration:**
+    - Live barcode scanning (`@zxing/library` or native Barcode Detection API) queryable against OpenFoodFacts for instant European and Greek product identification and pantry entry.

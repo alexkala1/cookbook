@@ -53,6 +53,26 @@ It doesn't just copy the instructions; it **fills the gaps**:
 - **The Reality:** Most cookbooks ignore beverages or treat them as an afterthought. Drinks require distinct chemistry: chilling thermodynamics, ice dilution (shaken vs stirred), Brix sugar/acid balance, and carbonation retention.
 - **The Heirloom Solution:** First-class support for **Drink & Beverage Crafting** (cocktails, mocktails, coffee pour-over ratios, artisanal syrups, and wine/beer course pairings).
 
+### Pain Point 9: The Appliance & Heat Source Mismatch
+- **The Reality:** A recipe written for a gas stove and cast iron pan burns in 10 seconds on an induction hob, or scorches in a convection fan oven because it was tested in a static conventional oven.
+- **The Heirloom Solution:** **Hardware & Thermodynamics Adapter**. Automatically converts temperatures (-20°C for convection) and injects heat warnings tailored to your exact cooktop (Induction, Gas, Ceramic) and pan material (Stainless, Non-Stick, Clay Gastra).
+
+### Pain Point 10: The Loud, Greasy Kitchen Dilemma
+- **The Reality:** Range hoods at full speed drown out voice commands; flour, butter, and raw chicken coat your hands, making touching your clean tablet screen impossible.
+- **The Heirloom Solution:** **Contactless Vision Air-Gestures** (MediaPipe Hands). Wave hand left-to-right to advance steps, hold open palm to silence timers—zero screen touch and zero shouting.
+
+### Pain Point 11: Dinner Party Dietary Minefields
+- **The Reality:** Cooking a 3-course dinner for 6 guests with diverse allergies, celiac disease, lactose intolerance, or the cilantro soap-gene leads to stressful cross-contamination fears.
+- **The Heirloom Solution:** **Guest Dietary Collision & Allergen Shield**. Scans all courses against guest profiles and suggests surgical micro-substitutions.
+
+### Pain Point 12: Seasonal Produce Blindness
+- **The Reality:** A Greek tomato salad or berry dessert in January is watery and sour because industrial recipes ignore seasonal sugar and glutamate deficits.
+- **The Heirloom Solution:** **Seasonality & Peak Flavor Compensation Engine**. Detects off-season produce and provides food-chemistry hacks (concentrated paste, vinegar, maceration) to mimic peak summer flavor.
+
+### Pain Point 13: "Is It Done?" Visual Anxiety
+- **The Reality:** Amateur cooks constantly question their roux, caramel color, custard nappe thickness, or meat searing.
+- **The Heirloom Solution:** **Vision AI Pan Inspector**. Snap a 1-second photo of your pan; get immediate expert visual triage and time-to-finish advice.
+
 ---
 
 ## 3. The Heirloom Aesthetics & Metaphor
