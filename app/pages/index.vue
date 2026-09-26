@@ -31,5 +31,6 @@ useSeoMeta({
     </div>
     <p class="mt-4 max-w-2xl leading-relaxed text-stone-600">Save a favourite dish or drink, adjust it for your table, and keep the stories that make it yours.</p>
     <NuxtLink to="/recipes/new" class="text-action mt-5 inline-block">Write a recipe →</NuxtLink>
+    <NuxtLink to="/recipes/import" class="button-secondary ml-5 mt-5 inline-block">Import Recipe</NuxtLink>
   </section>
 </template>

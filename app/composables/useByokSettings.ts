@@ -8,7 +8,7 @@ const emptySettings = () => ({
 })
 
 export function useByokSettings() {
-  // Never read browser secrets during SSR or send them through an API.
+  // Read keys only after mount; attach them only to explicit user-triggered AI requests.
   const settings = ref(emptySettings())
   const ready = ref(false)
   const error = ref('')
@@ -54,6 +54,9 @@ export function useByokSettings() {
       error.value = 'Could not clear saved keys. Check browser storage permissions.'
     }
   }
-  return { settings, ready, error, message, save, clear }
+  function requestHeaders() {
+    if (!ready.value) throw new Error('AI settings are still loading')
+    return { 'x-byok-provider': settings.value.activeProvider, 'x-byok-model': settings.value.activeModel, 'x-byok-key': settings.value.keys[settings.value.activeProvider] }
+  }
+  return { settings, ready, error, message, save, clear, requestHeaders }
 }
-

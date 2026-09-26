@@ -35,7 +35,8 @@ async function saveKitchen() {
     <p class="eyebrow">Make yourself at home</p><h1 class="mt-3">Your kitchen & keys</h1>
     <section class="mt-12 border-t border-espresso/20 pt-8">
       <h2>Your AI providers</h2>
-      <p class="mt-4 max-w-2xl">Keys are stored only in this browser’s localStorage, without encryption. Anyone with access to this browser profile can read them. No keys are sent to the server. AI calls are not enabled yet.</p>
+      <p class="mt-4 max-w-2xl">Keys are saved in this browser’s localStorage, without encryption. Anyone with access to this browser profile can read them. When you request AI help, the selected key travels in a request header to Heirloom and then to the selected provider; the server never saves or logs it. Source text is sent to that provider. Use HTTPS when accessing a remote server.</p>
+      <p class="mt-3 text-sm">Enter a model ID supported by your provider. Without a key, imports use recipe metadata or a labeled deterministic draft. Ollama uses the server’s local service at 127.0.0.1:11434 when selected with a model; no key is required.</p>
       <form class="mt-6 space-y-5" @submit.prevent="saveKeys">
         <fieldset :disabled="!ready" class="space-y-5">
           <label v-for="provider in byokProviders" :key="provider" class="block capitalize">{{ provider }} API key <span v-if="provider === 'ollama'" class="normal-case">(optional for local models)</span>

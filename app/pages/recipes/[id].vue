@@ -2,6 +2,7 @@
 import type { KitchenProfile, RecipeDetail } from '../../../shared/types/recipe'
 import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../utils/units'
 import type { SaltType } from '../../utils/units'
+import { evaluateCocktail } from '#shared/culinary/cocktails'
 
 const route = useRoute()
 const id = String(route.params.id)
@@ -17,6 +18,7 @@ const editing = ref(false)
 const deleting = ref(false)
 const busy = ref(false)
 const actionError = ref('')
+const thermodynamics = computed(() => recipe.value && ['drink', 'cocktail'].includes(recipe.value.recipeType) ? evaluateCocktail(recipe.value.ingredients, recipe.value.title + ' ' + recipe.value.steps.map(step => step.instruction).join(' ')) : null)
 const safeServings = computed(() => Number.isFinite(servings.value) && servings.value > 0 && servings.value <= 1000 ? servings.value : recipe.value?.servings ?? 4)
 const displayIngredients = computed(() => {
   if (!recipe.value) return []
@@ -82,6 +84,7 @@ function saved(value: RecipeDetail) {
         <h1 class="mt-4 max-w-4xl break-words">{{ recipe.title }}</h1>
         <p class="mt-6 max-w-2xl whitespace-pre-line break-words text-lg">{{ recipe.description }}</p>
         <p class="mt-6">{{ recipe.totalTimeMinutes }} min · {{ recipe.difficulty }} · {{ recipe.rating == null ? 'Not rated yet' : recipe.rating + ' / 5' }}</p>
+        <div v-if="thermodynamics" class="notice mt-6"><p>{{ thermodynamics.technique }} · Dilution {{ thermodynamics.dilutionPercent.join('–') }}% · {{ thermodynamics.glassware }} · Estimated cooling {{ thermodynamics.temperatureDropC.join('–') }} °C</p><p class="mt-2 text-sm">{{ thermodynamics.note }}</p></div>
         <div class="mt-6 flex flex-wrap gap-3">
           <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" @click="toggleFavorite">{{ recipe.isFavorite ? '♥ Favorited' : '♡ Favorite' }}</button>
           <button class="button-secondary" @click="editing = true">Edit recipe</button>
@@ -111,6 +114,7 @@ function saved(value: RecipeDetail) {
               <span class="font-semibold tabular-nums">{{ ingredient.amount }} {{ ingredient.unit }}</span> {{ ingredient.name }}
               <p v-if="ingredient.notes" class="mt-1 text-sm">{{ ingredient.notes }}</p>
               <p v-if="ingredient.conversionNote" class="mt-1 text-sm">{{ ingredient.conversionNote }}</p>
+              <SubstitutionDialog :ingredient="ingredient.name" :context="recipe.title + ': ' + recipe.steps.map(step => step.instruction).join(' ')" />
             </li>
           </ul>
           <p v-else class="mt-6">No ingredients recorded yet.</p>
@@ -128,7 +132,7 @@ function saved(value: RecipeDetail) {
                 <template v-for="(value, label) in { 'Look for': step.sensoryVisual, 'Listen for': step.sensoryAudio, Aroma: step.sensoryAroma, Texture: step.sensoryTexture }" :key="label"><div v-if="value"><dt class="font-semibold">{{ label }}</dt><dd class="break-words">{{ value }}</dd></div></template>
                 <div v-if="step.internalTempTargetC != null"><dt class="font-semibold">Internal temperature</dt><dd>{{ step.internalTempTargetC }} °C</dd></div>
               </dl>
-              <p v-if="step.scienceWhy" class="mt-4 break-words"><strong>Why it works:</strong> {{ step.scienceWhy }}</p>
+              <p v-if="step.scienceWhy" class="mt-4 break-words"><strong>Food Science Why:</strong> {{ step.scienceWhy }}</p>
               <p v-if="step.failurePrevention" class="mt-4 break-words"><strong>Watch out:</strong> {{ step.failurePrevention }}</p>
             </li>
           </ol>
