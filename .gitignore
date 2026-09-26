@@ -1,0 +1,11 @@
+node_modules/
+.nuxt/
+.output/
+.data/
+coverage/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example

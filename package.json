@@ -1,0 +1,34 @@
+{
+  "name": "heirloom",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "test": "vitest run",
+    "typecheck": "nuxt typecheck",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "nuxt": "^4.0.0",
+    "@nuxt/ui": "^3.0.0",
+    "tailwindcss": "^4.0.0",
+    "@vueuse/core": "^14.0.0",
+    "@vueuse/nuxt": "^14.0.0",
+    "@iconify-json/lucide": "^1.2.0",
+    "better-sqlite3": "^12.0.0",
+    "drizzle-orm": "^0.45.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0",
+    "vue-tsc": "^3.0.0",
+    "drizzle-kit": "^0.31.0",
+    "vitest": "^4.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^24.0.0"
+  }
+}

@@ -3,6 +3,31 @@
 
 ---
 
+## Local development (Phase 0)
+
+Use Node.js 24 and pnpm 11.22.0. Installed versions are pinned in `pnpm-lock.yaml`.
+
+```sh
+pnpm install
+pnpm run db:migrate
+pnpm dev
+```
+
+SQLite defaults to `./heirloom.db`, relative to the working directory. Override it with an exported `DATABASE_URL` filesystem path (the parent directory must exist), for example `DATABASE_URL=/srv/heirloom.db pnpm run db:migrate`. Use the same environment variable when starting the app. Production does not load `.env` automatically. Migrations are explicit; importing the database does not apply them.
+
+```sh
+pnpm test
+pnpm run typecheck
+pnpm run build
+pnpm run preview
+```
+
+After editing `server/db/schema.ts`, run `pnpm run db:generate`, review the generated SQL, and run `pnpm run db:migrate`. Tests apply the committed migrations to isolated in-memory SQLite databases.
+
+`pnpm-workspace.yaml` retains the requested `onlyBuiltDependencies` list and includes equivalent `allowBuilds` entries because pnpm 11 uses the latter for native build approvals.
+
+The homepage and layout wrappers are scaffolded. Recipe/pantry/shopping navigation is labelled “soon”; CRUD, cooking controls, AI, and PWA behavior belong to later work.
+
 ## 📖 Architecture & Design Documentation
 
 Comprehensive architectural blueprints and specifications are documented in the [`docs/`](file:///home/alex/repos/cookbook/docs/) directory:
