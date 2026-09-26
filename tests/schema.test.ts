@@ -28,22 +28,22 @@ describe('SQLite schema and initial migration', () => {
     connection.sqlite.close()
   })
 
-  it('creates exactly the ten application tables', () => {
+  it('creates exactly the eleven application tables', () => {
     const tables = connection.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle_%' ORDER BY name").all()
     expect(tables).toEqual([
       'cooking_sessions', 'grocery_items', 'grocery_lists', 'guests', 'ingredients',
-      'pantry_items', 'recipe_equipment', 'recipes', 'steps', 'user_kitchen_profile'
+      'pantry_items', 'recipe_equipment', 'recipe_memories', 'recipes', 'steps', 'user_kitchen_profile'
     ].map(name => ({ name })))
   })
 
-  it('uses ISO UTC millisecond defaults on every timestamped table', () => {
+  it('retains ISO UTC defaults for recipe, grocery and cooking session timestamps', () => {
     const { db, sqlite } = connection
     db.insert(schema.recipes).values({ id: 'r', title: 'Soup', description: '' }).run()
     db.insert(schema.pantryItems).values({ id: 'p', name: 'Beans', normalizedName: 'beans', quantity: 1, unit: 'kg' }).run()
     db.insert(schema.groceryLists).values({ id: 'g', title: 'Market' }).run()
     db.insert(schema.guests).values({ id: 'guest', name: 'Alex' }).run()
     db.insert(schema.cookingSessions).values({ id: 'session', recipeId: 'r' }).run()
-    for (const [table, column] of [['recipes', 'created_at'], ['recipes', 'updated_at'], ['grocery_lists', 'created_at'], ['guests', 'created_at'], ['cooking_sessions', 'started_at']]) {
+    for (const [table, column] of [['recipes', 'created_at'], ['recipes', 'updated_at'], ['grocery_lists', 'created_at'], ['cooking_sessions', 'started_at']]) {
       const row = sqlite.prepare(`SELECT ${column} AS value FROM ${table}`).get() as { value: string }
       expect(row.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
       expect(new Date(row.value).toISOString()).toBe(row.value)

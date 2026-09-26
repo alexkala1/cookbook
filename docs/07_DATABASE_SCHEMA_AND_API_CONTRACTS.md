@@ -207,9 +207,24 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 - `POST /api/ai/rescue`:
   - Request: `{ issueDescription: string, recipeContext?: string, currentStep?: number }` (description 3–3000 characters; step 1–500).
   - Response: `{ title: string, actions: string[], science: string, caution: string, mode: 'live' | 'fallback' }`. Immediate triage recovery steps; request-header BYOK or deterministic offline fallback. See `PHASE_3_IMPLEMENTATION.md`.
-- `POST /api/meal-plan/orchestrate`:
-  - Request: `{ recipeIds: string[], targetServeTime: string, guestCount: number }`
-  - Response: Returns unified backwards prep and cooking timeline with equipment conflict warnings.
+- `POST /api/meal-plan/orchestrate` (implemented; read-only, returns 200):
+  - Request — exactly one of `courses` or `recipeIds` (1–8):
+    ```typescript
+    {
+      courses?: { recipeId: string, course?: 'appetizer' | 'main' | 'side' | 'dessert' | 'beverage', serveAt?: 'HH:MM' }[],
+      recipeIds?: string[],        // course inferred from recipe type: dessert → dessert, drink/cocktail → beverage, else main
+      targetServeTime: 'HH:MM',    // 24-hour; guests sit down and the first course is served
+      guestCount?: number,         // 1–100; warns when a recipe yields fewer servings
+      burners?: number,            // 1–10, default 4
+      ovens?: 1 | 2,               // default 1
+      month?: number               // 1–12 for seasonality, default: server's current month
+    }
+    ```
+  - Response: `{ targetTime, serves, timeline, bottlenecks, warnings, seasonality, month, guestCount, burners, ovens }`.
+    - `serves`: per course `{ course, recipeId, recipeTitle, offset, label: 'T+25m', clock: '20:25', dayOffset }`. Default serving: first course at T, main/side T+25, dessert T+60; `serveAt` overrides (nearest occurrence, so it may cross midnight).
+    - `timeline`: steps sorted by start, each `{ id, course, recipeTitle, stepNumber, instruction, phase: 'prep' | 'cook' | 'rest' | 'plate', oven, ovenTempC, burners, start, end, duration, label, clock, dayOffset, synthetic }`. Steps within a recipe run sequentially and the last ends at its serving time; a preheat step (`synthetic: true`, 15 min) is added before the first oven step when missing; leading advance prep is moved to finish 30 minutes before the first course.
+    - `bottlenecks`: `{ type: 'oven_temperature' | 'burner_overload', start, end, label, clock, message, resolutions: string[], steps }`. Oven conflicts: concurrent settings more than 15 °C apart than there are ovens. Burner overload: concurrent burner steps above `burners`.
+    - `seasonality`: per course `{ course, recipeId, recipeTitle, items: { ingredient, id, name, greekName, category, status: 'peak' | 'in_season' | 'greenhouse' | 'off_season', seasonMonths, peakMonths, advice: string[] }[] }` from `shared/culinary/seasonality.ts` (Greek calendar; preserved forms never flagged).
 - `POST /api/meal-plan/dietary-audit`:
   - Request: `{ recipeIds: string[], guestIds: string[] }`
   - Response: Returns collision matrix, allergen flags, and surgical ingredient micro-substitutions.

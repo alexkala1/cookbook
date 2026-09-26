@@ -87,6 +87,7 @@ function saved(value: RecipeDetail) {
         <div v-if="thermodynamics" class="notice mt-6"><p>{{ thermodynamics.technique }} · Dilution {{ thermodynamics.dilutionPercent.join('–') }}% · {{ thermodynamics.glassware }} · Estimated cooling {{ thermodynamics.temperatureDropC.join('–') }} °C</p><p class="mt-2 text-sm">{{ thermodynamics.note }}</p></div>
         <div class="mt-6 flex flex-wrap gap-3">
           <NuxtLink :to="'/recipes/' + id + '/cook'" class="button-primary">Start cooking</NuxtLink>
+          <NuxtLink :to="'/recipes/' + id + '/print'" class="button-secondary">Print heirloom card</NuxtLink>
           <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" @click="toggleFavorite">{{ recipe.isFavorite ? '♥ Favorited' : '♡ Favorite' }}</button>
           <button class="button-secondary" @click="editing = true">Edit recipe</button>
           <button class="text-action px-3" @click="deleting = true">Delete recipe</button>
@@ -143,6 +144,7 @@ function saved(value: RecipeDetail) {
           </section>
         </div>
       </div>
+      <RecipeKeepsakes :recipe-id="id" />
     </template>
   </section>
 </template>

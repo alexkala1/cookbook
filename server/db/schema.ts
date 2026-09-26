@@ -63,7 +63,7 @@ export const recipeEquipment = sqliteTable('recipe_equipment', {
   substituteTool: text('substitute_tool')
 }, table => [index('recipe_equipment_recipe_id_idx').on(table.recipeId)])
 
-export { pantryItems } from '../database/schema'
+export { pantryItems, guests, recipeMemories } from '../database/schema'
 
 export const groceryLists = sqliteTable('grocery_lists', {
   id: text('id').primaryKey(),
@@ -87,16 +87,6 @@ export const groceryItems = sqliteTable('grocery_items', {
   courseBreakdown: text('course_breakdown'),
   isChecked: integer('is_checked', { mode: 'boolean' }).notNull().default(false),
   recipeOriginId: text('recipe_origin_id')
-})
-
-export const guests = sqliteTable('guests', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  allergies: text('allergies'),
-  dietaryRestrictions: text('dietary_restrictions'),
-  dislikes: text('dislikes'),
-  notes: text('notes'),
-  createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
 })
 
 export const userKitchenProfile = sqliteTable('user_kitchen_profile', {

@@ -5,6 +5,24 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
+it('preserves full guest profiles when adding memory logs and millisecond guest timestamps', () => {
+  const sqlite = new Database(':memory:')
+  try {
+    const migrationsFolder = fileURLToPath(new URL('../server/db/migrations', import.meta.url))
+    sqlite.exec('CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)')
+    for (const migration of readMigrationFiles({ migrationsFolder }).slice(0, 4)) {
+      for (const statement of migration.sql) sqlite.exec(statement)
+      sqlite.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(migration.hash, migration.folderMillis)
+    }
+    sqlite.prepare('INSERT INTO guests (id, name, allergies, dietary_restrictions, dislikes, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run('kept', 'Yiayia', '["nuts"]', '["vegetarian"]', '["okra"]', 'Family notes', '2026-09-26T13:01:51.123Z')
+    migrate(drizzle(sqlite), { migrationsFolder })
+    expect(sqlite.prepare('SELECT * FROM guests').get()).toEqual({ id: 'kept', name: 'Yiayia', allergies: '["nuts"]', dietary_restrictions: '["vegetarian"]', dislikes: '["okra"]', notes: 'Family notes', created_at: Date.parse('2026-09-26T13:01:51.123Z'), updated_at: Date.parse('2026-09-26T13:01:51.123Z') })
+    expect(sqlite.pragma('foreign_key_check')).toEqual([])
+    migrate(drizzle(sqlite), { migrationsFolder })
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM guests').get()).toEqual({ count: 1 })
+  } finally { sqlite.close() }
+})
+
 it('preserves legacy pantry locations, Greek names, expiry dates and missing creation times', () => {
   const sqlite = new Database(':memory:')
   try {
@@ -43,7 +61,7 @@ it('upgrades an existing Phase 0 database without cascading away recipe data', (
     }
     expect(sqlite.pragma('foreign_key_check')).toEqual([])
     expect(sqlite.pragma('foreign_keys', { simple: true })).toBe(1)
-    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%recipe_id_idx'").all()).toHaveLength(3)
+    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%recipe_id_idx'").all()).toHaveLength(4)
     sqlite.exec("INSERT INTO recipes (id, title, description) VALUES ('new', 'Soup', '')")
     expect(sqlite.prepare("SELECT rating FROM recipes WHERE id = 'new'").get()).toEqual({ rating: null })
   } finally { sqlite.close() }
@@ -82,8 +100,8 @@ it('upgrades Phase 1 timestamps and salt preferences while preserving both paren
     }
     expect(sqlite.prepare('SELECT created_at FROM grocery_lists').get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
     expect(sqlite.prepare('SELECT created_at, updated_at, normalized_name, storage_location FROM pantry_items').get()).toEqual({ created_at: Date.parse('2026-09-26T13:01:51.000Z'), updated_at: Date.parse('2026-09-26T13:01:51.000Z'), normalized_name: 'beans', storage_location: 'pantry' })
-    expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='guest'").get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
-    expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='unknown-time'").get()).toEqual({ created_at: null })
+    expect(sqlite.prepare("SELECT created_at, updated_at FROM guests WHERE id='guest'").get()).toEqual({ created_at: Date.parse('2026-09-26T13:01:51.000Z'), updated_at: Date.parse('2026-09-26T13:01:51.000Z') })
+    expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='unknown-time'").get()).toEqual({ created_at: expect.any(Number) })
     expect(sqlite.prepare('SELECT started_at, completed_at, session_notes FROM cooking_sessions').get()).toEqual({ started_at: '2026-09-26T13:01:51.000Z', completed_at: '2026-09-26T14:01:51.000Z', session_notes: 'Kept' })
     expect(sqlite.prepare('SELECT preferred_salt_type FROM user_kitchen_profile').get()).toEqual({ preferred_salt_type: 'greek_fine_sea_salt' })
     expect(sqlite.prepare('SELECT name, amount FROM grocery_items').get()).toEqual({ name: 'Beans', amount: 500 })

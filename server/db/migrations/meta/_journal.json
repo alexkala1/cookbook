@@ -29,6 +29,13 @@
       "when": 1790434728843,
       "tag": "0003_misty_pepper_potts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790435380370,
+      "tag": "0004_elite_lucky_pierre",
+      "breakpoints": true
     }
   ]
 }
