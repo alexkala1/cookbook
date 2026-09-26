@@ -206,9 +206,6 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 - `POST /api/ai/rescue`:
   - Request: `{ issueDescription: string, recipeContext: string, currentStep: number }`
   - Response: Immediate low-latency triage recovery steps (e.g. broken emulsion, oversalted, burning bottom).
-- `POST /api/ai/pan-inspect`:
-  - Request: `{ imageBase64: string, expectedDish: string, targetStage: string }`
-  - Response: `{ currentStage: string, isDone: boolean, estimatedTimeRemainingMinutes: number, actionableAdvice: string }`
 - `POST /api/meal-plan/orchestrate`:
   - Request: `{ recipeIds: string[], targetServeTime: string, guestCount: number }`
   - Response: Returns unified backwards prep and cooking timeline with equipment conflict warnings.

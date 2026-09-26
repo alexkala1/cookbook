@@ -36,7 +36,6 @@ The project is structured into 6 sequential phases, ensuring every feature is em
 │ • Screen WakeLock integration (@vueuse/core)                           │
 │ • Contactless Air-Wave Gesture Navigation (MediaPipe Hands WASM)        │
 │ • "🚨 Rescue My Dish" live emergency troubleshooter                    │
-│ • "Is It Done?" Vision AI Pan Inspector (roux, nappe, crust triage)    │
 │ • Hardware & heat source physics adapter (Induction/Gas/Convection)    │
 │ • Multi-step timers linked to recipe steps with vocal alarms           │
 └──────────────────────────────────┬─────────────────────────────────────┘

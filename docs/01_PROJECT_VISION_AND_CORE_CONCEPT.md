@@ -69,10 +69,6 @@ It doesn't just copy the instructions; it **fills the gaps**:
 - **The Reality:** A Greek tomato salad or berry dessert in January is watery and sour because industrial recipes ignore seasonal sugar and glutamate deficits.
 - **The Heirloom Solution:** **Seasonality & Peak Flavor Compensation Engine**. Detects off-season produce and provides food-chemistry hacks (concentrated paste, vinegar, maceration) to mimic peak summer flavor.
 
-### Pain Point 13: "Is It Done?" Visual Anxiety
-- **The Reality:** Amateur cooks constantly question their roux, caramel color, custard nappe thickness, or meat searing.
-- **The Heirloom Solution:** **Vision AI Pan Inspector**. Snap a 1-second photo of your pan; get immediate expert visual triage and time-to-finish advice.
-
 ---
 
 ## 3. The Heirloom Aesthetics & Metaphor

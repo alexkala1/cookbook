@@ -206,18 +206,6 @@ export const RescueTriageSchema = z.object({
 });
 
 // -------------------------------------------------------------
-// VISION PAN INSPECTION CONTRACT ("Is It Done?")
-// -------------------------------------------------------------
-export const PanInspectionSchema = z.object({
-  observedStage: z.string(), // e.g. "Blonde / Peanut Butter Roux", "Nappe custard coating"
-  isComplete: z.boolean(),
-  estimatedMinutesToFinish: z.number().int().nonnegative().optional(),
-  colorTemperatureAssessment: z.string(), // e.g. "Slightly too pale; needs more browning"
-  actionableGuidance: z.string(), // e.g. "Lower flame to medium-low, whisk for 3 more minutes"
-  imminentRisks: z.string().optional() // e.g. "High heat detected, risk of scorching in 60s"
-});
-
-// -------------------------------------------------------------
 // GUEST DIETARY COLLISION AUDIT CONTRACT
 // -------------------------------------------------------------
 export const GuestDietaryAuditSchema = z.object({
