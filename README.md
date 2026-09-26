@@ -26,6 +26,8 @@ Development, preview, and `pnpm run start` bind to `127.0.0.1` by default. Use `
 
 Mutation requests require a matching `Origin` or `Referer`, including command-line clients. Missing, malformed, or cross-origin source headers return 403. Forwarded host/protocol headers are not trusted; reverse-proxy deployment needs an explicit origin policy before use.
 
+All requests also require an allowed Host: `localhost`, `127.0.0.1`, or `[::1]`. For an intentional public deployment, export `HEIRLOOM_PUBLIC_HOST=cookbook.example.com` (one exact hostname, no scheme, port, path, or wildcard). This adds that hostname to the allowlist without bypassing the mutation origin checks. Unlisted hosts are rejected even on GET to prevent DNS rebinding from reading local data.
+
 ```sh
 curl --fail-with-body http://127.0.0.1:3000/api/recipes \
   -H 'Origin: http://127.0.0.1:3000' \

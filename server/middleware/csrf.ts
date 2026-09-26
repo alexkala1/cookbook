@@ -1,6 +1,18 @@
 import { createError, defineEventHandler, getRequestHeader, getRequestURL } from 'h3'
 
 export default defineEventHandler(event => {
+  // Check reads too: DNS rebinding can otherwise expose local data via GET.
+  // Match literal hostnames, never URL-normalized IP aliases or forwarded headers.
+  const host = getRequestHeader(event, 'host')
+  const authority = host?.match(/^(\[[a-f0-9:]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/i)
+  const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+  const publicHost = process.env.HEIRLOOM_PUBLIC_HOST?.trim().toLowerCase()
+  if (publicHost) allowedHosts.add(publicHost)
+  if (!authority || !allowedHosts.has(authority[1]!.toLowerCase()) ||
+    (authority[2] !== undefined && (Number(authority[2]) < 1 || Number(authority[2]) > 65535))) {
+    throw createError({ statusCode: 403, statusMessage: 'Host not allowed' })
+  }
+
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(event.method)) return
 
   // Compare with the direct connection, never attacker-supplied forwarded headers.

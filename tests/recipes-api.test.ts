@@ -30,7 +30,7 @@ router.get('/api/settings/kitchen', getKitchen).put('/api/settings/kitchen', put
 app.use(router)
 const handle = toWebHandler(app)
 async function request(path: string, method = 'GET', body?: unknown) {
-  return handle(new Request('http://localhost' + path, { method, headers: { Origin: 'http://localhost', 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }))
+  return handle(new Request('http://localhost' + path, { method, headers: { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }))
 }
 const sample = () => ({
   title: 'Lemon soup', description: 'Sunday soup', servings: 4, cuisine: 'Greek',
@@ -59,7 +59,7 @@ describe('recipe HTTP endpoints', () => {
 
   it('searches Greek titles and cuisines case-insensitively with canonical Unicode equivalence', async () => {
     await request('/api/recipes', 'POST', { ...sample(), title: 'Φασολάδα', cuisine: 'Ελληνική', description: 'Κυριακή' })
-    for (const search of ['φασολάδα', 'ΦΑΣΟΛΆΔΑ', 'φασολάδα'.normalize('NFD'), 'κυριακή']) {
+    for (const search of ['φασολάδα', 'ΦΑΣΟΛΆΔΑ', 'ΦΑΣΟΛΑΔΑ', 'φασολαδα', 'φασολάδα'.normalize('NFD'), 'κυριακή', 'κυριακη']) {
       const response = await request('/api/recipes?search=' + encodeURIComponent(search) + '&cuisine=' + encodeURIComponent('ελληνική'))
       expect(response.status).toBe(200)
       expect(await response.json()).toHaveLength(1)
@@ -81,10 +81,10 @@ describe('recipe HTTP endpoints', () => {
   })
 
   it('blocks cross-origin mutations before database writes and accepts same-origin Referer fallback', async () => {
-    const rejected = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Origin: 'https://attacker.example', 'Content-Type': 'application/json' }, body: JSON.stringify(sample()) }))
+    const rejected = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Host: 'localhost', Origin: 'https://attacker.example', 'Content-Type': 'application/json' }, body: JSON.stringify(sample()) }))
     expect(rejected.status).toBe(403)
     expect(db.select().from(schema.recipes).all()).toEqual([])
-    const allowed = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Referer: 'http://localhost/recipes/new', 'Content-Type': 'application/json' }, body: JSON.stringify(sample()) }))
+    const allowed = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Host: 'localhost', Referer: 'http://localhost/recipes/new', 'Content-Type': 'application/json' }, body: JSON.stringify(sample()) }))
     expect(allowed.status).toBe(201)
   })
 
@@ -148,7 +148,7 @@ describe('recipe HTTP endpoints', () => {
   it('rejects malformed requests and query values', async () => {
     for (const query of ['type=invalid', 'isFavorite=1', 'difficulty=invalid', 'search=a&search=b']) expect((await request('/api/recipes?' + query)).status).toBe(400)
     expect((await request('/api/recipes/missing', 'PUT', {})).status).toBe(400)
-    const response = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Origin: 'http://localhost', 'Content-Type': 'application/json' }, body: '{' }))
+    const response = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }, body: '{' }))
     expect(response.status).toBe(400)
   })
 
