@@ -1,0 +1,133 @@
+# Heirloom: Database Schema & API Contracts
+
+## 1. Drizzle ORM Schema (TypeScript Definition)
+
+The database uses SQLite via Drizzle ORM for zero-overhead local-first performance, with instant migration capabilities.
+
+```typescript
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+
+// -------------------------------------------------------------
+// RECIPES TABLE
+// -------------------------------------------------------------
+export const recipes = sqliteTable('recipes', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  sourceUrl: text('source_url'),
+  sourceType: text('source_type', { enum: ['url', 'video', 'prompt', 'handwritten_ocr', 'manual'] }).notNull().default('manual'),
+  servings: integer('servings').notNull().default(4),
+  prepTimeMinutes: integer('prep_time_minutes').notNull().default(15),
+  cookTimeMinutes: integer('cook_time_minutes').notNull().default(30),
+  totalTimeMinutes: integer('total_time_minutes').notNull().default(45),
+  difficulty: text('difficulty', { enum: ['easy', 'intermediate', 'advanced', 'master'] }).notNull().default('intermediate'),
+  cuisine: text('cuisine'),
+  imageUrl: text('image_url'),
+  heirloomNotes: text('heirloom_notes'), // Grandma's tips, family stories
+  isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
+  rating: real('rating').default(5.0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`)
+});
+
+// -------------------------------------------------------------
+// INGREDIENTS TABLE
+// -------------------------------------------------------------
+export const ingredients = sqliteTable('ingredients', {
+  id: text('id').primaryKey(),
+  recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  amount: real('amount').notNull(),
+  unit: text('unit').notNull(), // 'g', 'ml', 'tsp', 'tbsp', 'piece', etc.
+  gramsEquivalent: real('grams_equivalent'), // Exact weight in grams for precision
+  category: text('category').notNull().default('pantry'), // produce, meat, dairy, pantry, spices
+  notes: text('notes'), // e.g., 'diced small', 'room temperature'
+  sortOrder: integer('sort_order').notNull().default(0)
+});
+
+// -------------------------------------------------------------
+// STEPS TABLE (WITH FOOD SCIENCE & SENSORY MILESTONES)
+// -------------------------------------------------------------
+export const steps = sqliteTable('steps', {
+  id: text('id').primaryKey(),
+  recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  stepNumber: integer('step_number').notNull(),
+  instruction: text('instruction').notNull(),
+  durationMinutes: integer('duration_minutes'),
+  timerRequired: integer('timer_required', { mode: 'boolean' }).notNull().default(false),
+  heatLevel: text('heat_level', { enum: ['none', 'low', 'medium-low', 'medium', 'medium-high', 'high'] }),
+  
+  // The Culinary Science "Why"
+  scienceWhy: text('science_why'),
+  failurePrevention: text('failure_prevention'),
+  
+  // Sensory Milestones
+  sensoryVisual: text('sensory_visual'),
+  sensoryAudio: text('sensory_audio'),
+  sensoryAroma: text('sensory_aroma'),
+  sensoryTexture: text('sensory_texture'),
+  internalTempTargetC: real('internal_temp_target_c'),
+  
+  sortOrder: integer('sort_order').notNull().default(0)
+});
+
+// -------------------------------------------------------------
+// PANTRY ITEMS TABLE
+// -------------------------------------------------------------
+export const pantryItems = sqliteTable('pantry_items', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  quantity: real('quantity').notNull(),
+  unit: text('unit').notNull(),
+  category: text('category').notNull().default('pantry'),
+  expiresAt: text('expires_at'),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)
+});
+
+// -------------------------------------------------------------
+// COOKING SESSIONS & LOGS
+// -------------------------------------------------------------
+export const cookingSessions = sqliteTable('cooking_sessions', {
+  id: text('id').primaryKey(),
+  recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  startedAt: text('started_at').default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text('completed_at'),
+  userRating: integer('user_rating'), // 1-5
+  sessionNotes: text('session_notes'), // "Salted slightly too much, bake 5 mins less next time"
+  photoUrl: text('photo_url')
+});
+```
+
+---
+
+## 2. Nitro Server API Endpoints
+
+### 1. Recipes API
+- `GET /api/recipes`: List all saved recipes with search, tag filters, and sorting.
+- `GET /api/recipes/:id`: Full recipe details including ingredients, steps, science notes, and cooking history.
+- `POST /api/recipes`: Create a new recipe manually or from AI pipeline.
+- `PUT /api/recipes/:id`: Update recipe, ingredients, or grandma's notes.
+- `DELETE /api/recipes/:id`: Delete a recipe.
+
+### 2. Ingestion & AI Endpoints
+- `POST /api/ingest/url`:
+  - Request: `{ url: string, modelTier?: 'speed' | 'reason' }`
+  - Response: Returns parsed `RecipeSchema` with stripped bloat and calculated gram metrics.
+- `POST /api/ingest/video`:
+  - Request: `{ videoUrl: string, language?: string }`
+  - Response: Fetches transcript and reconstructs missing measurements.
+- `POST /api/ai/recipe/stream`:
+  - SSE endpoint (`Content-Type: text/event-stream`).
+  - Streams real-time thoughts and progressive JSON recipe generation directly to the client.
+- `POST /api/ai/substitute`:
+  - Request: `{ ingredientName: string, recipeContext: string }`
+  - Response: Returns 2–3 scientific substitution alternatives with moisture/texture adjustments.
+- `POST /api/meal-plan/orchestrate`:
+  - Request: `{ recipeIds: string[], targetServeTime: string, guestCount: number }`
+  - Response: Returns unified backwards prep and cooking timeline with equipment conflict warnings.
+
+### 3. Pantry & Inventory Endpoints
+- `GET /api/pantry`: Fetch all items in inventory.
+- `POST /api/pantry`: Add new item or batch-add from grocery receipts.
+- `POST /api/pantry/match`: Find recipes in the cookbook that maximize the use of currently expiring ingredients.
