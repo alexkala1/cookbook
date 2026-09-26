@@ -8,7 +8,7 @@ const minutes = number.int().max(100000)
 const webUrl = z.string().max(2000).url().refine(value => /^https?:\/\//i.test(value), 'Use an HTTP or HTTPS URL').nullable().optional()
 export const recipeTypes = ['food', 'drink', 'cocktail', 'baking', 'dessert'] as const
 export const difficulties = ['easy', 'intermediate', 'advanced', 'master'] as const
-export const saltTypes = ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_sea_salt'] as const
+export const saltTypes = ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_fine_sea_salt'] as const
 
 const ingredient = z.object({
   name: shortText, amount: number, unit: shortText.max(40),
@@ -30,6 +30,7 @@ const orderedSteps = z.array(step).max(500).refine(items => new Set(items.map(it
 export const recipeCreateSchema = z.object({
   title: shortText, description: z.string().trim().max(10000),
   recipeType: z.enum(recipeTypes).optional(),
+  originalSaltType: z.enum(saltTypes).nullable().optional(),
   sourceUrl: webUrl, sourceType: z.enum(['url', 'video', 'prompt', 'handwritten_ocr', 'manual']).optional(),
   servings: z.number().int().min(1).max(1000).optional(),
   prepTimeMinutes: minutes.optional(), cookTimeMinutes: minutes.optional(), totalTimeMinutes: minutes.optional(),

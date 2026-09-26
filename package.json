@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
-    "preview": "nuxt preview",
+    "preview": "NITRO_HOST=127.0.0.1 nuxt preview",
+    "start": "NITRO_HOST=127.0.0.1 node .output/server/index.mjs",
     "postinstall": "nuxt prepare",
     "test": "vitest run",
     "typecheck": "nuxt typecheck",

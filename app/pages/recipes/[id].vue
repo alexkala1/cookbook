@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KitchenProfile, RecipeDetail } from '../../../shared/types/recipe'
-import { convertSalt, convertUnit, scaleIngredients, saltDensities, saltLabels } from '../../utils/units'
+import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../utils/units'
 import type { SaltType } from '../../utils/units'
 
 const route = useRoute()
@@ -10,7 +10,8 @@ const { data: kitchen } = await useFetch<KitchenProfile>('/api/settings/kitchen'
 useSeoMeta({ title: () => recipe.value ? recipe.value.title + ' — Heirloom' : 'Recipe — Heirloom' })
 const servings = ref(recipe.value?.servings ?? 4)
 const imperial = ref(false)
-const fromSalt = ref<SaltType>('table_salt')
+const fromSalt = ref<SaltType | null>(recipe.value?.originalSaltType ?? null)
+watch(() => recipe.value?.originalSaltType, value => { fromSalt.value = value ?? null })
 const toSalt = ref<SaltType>(kitchen.value?.preferredSaltType ?? 'table_salt')
 const editing = ref(false)
 const deleting = ref(false)
@@ -23,7 +24,7 @@ const displayIngredients = computed(() => {
     let amount = row.amount
     let unit = row.unit.trim().toLowerCase()
     let note = ''
-    if (/\bsalt\b/i.test(row.name) && fromSalt.value !== toSalt.value) {
+    if (isPlainSalt(row.name) && fromSalt.value && fromSalt.value !== toSalt.value) {
       try { amount = convertSalt(amount, fromSalt.value, toSalt.value, unit) }
       catch { note = 'Salt substitution unavailable for this unit.' }
     }
@@ -59,6 +60,7 @@ async function removeRecipe() {
 function saved(value: RecipeDetail) {
   recipe.value = value
   servings.value = value.servings
+  fromSalt.value = value.originalSaltType
   editing.value = false
 }
 </script>
@@ -99,9 +101,10 @@ function saved(value: RecipeDetail) {
             <label class="block">Servings<input v-model.number="servings" type="number" min="1" max="1000" class="field mt-2"></label>
             <p v-if="safeServings !== servings" role="status" class="text-sm">Enter 1–1000 servings. Showing the original quantities.</p>
             <button class="filter-pill" :aria-pressed="imperial" @click="imperial = !imperial">{{ imperial ? 'US / imperial · switch to metric' : 'Metric · switch to US / imperial' }}</button>
-            <label class="block">Salt used in the recipe<select v-model="fromSalt" aria-label="Salt used in the recipe" class="field mt-2"><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
+            <label class="block">Salt used in the recipe<select v-model="fromSalt" aria-label="Salt used in the recipe" class="field mt-2"><option :value="null">Unknown — no substitution</option><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
             <label class="block">Salt you are using<select v-model="toSalt" aria-label="Salt you are using" class="field mt-2"><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
-            <p class="text-sm">Choose the original salt explicitly. Volume substitutions preserve salt mass; weighed salt stays unchanged. Cups and spoons use US measures. Pinches and unrecognised units stay as written.</p>
+            <p v-if="!fromSalt" role="status" class="text-sm">Original salt unknown. Density substitution is off until you choose it. Serving changes still scale all ingredient quantities.</p>
+            <p class="text-sm">Volume substitutions preserve salt mass; weighed salt stays unchanged. Seasoned salts are excluded. Cups and spoons use US measures. Save the original salt in Edit recipe to remember it.</p>
           </div>
           <ul v-if="displayIngredients.length" class="mt-6 divide-y divide-espresso/15">
             <li v-for="ingredient in displayIngredients" :key="ingredient.id" class="py-4 break-words">

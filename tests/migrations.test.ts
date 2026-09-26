@@ -33,3 +33,47 @@ it('upgrades an existing Phase 0 database without cascading away recipe data', (
   } finally { sqlite.close() }
 })
 
+it('upgrades Phase 1 timestamps and salt preferences while preserving both parent-child trees', () => {
+  const sqlite = new Database(':memory:')
+  try {
+    sqlite.pragma('foreign_keys = ON')
+    const migrationsFolder = fileURLToPath(new URL('../server/db/migrations', import.meta.url))
+    const migrations = readMigrationFiles({ migrationsFolder })
+    sqlite.exec('CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)')
+    for (const migration of migrations.slice(0, 2)) {
+      sqlite.transaction(() => {
+        for (const statement of migration.sql) sqlite.exec(statement)
+        sqlite.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(migration.hash, migration.folderMillis)
+      })()
+    }
+    sqlite.exec(`
+      INSERT INTO recipes (id, title, description, created_at, updated_at) VALUES ('kept', 'Φασολάδα', 'Family recipe', '2026-09-26 13:01:51', '2026-09-26T16:01:51.123+03:00');
+      INSERT INTO ingredients (id, recipe_id, name, amount, unit) VALUES ('i', 'kept', 'αλάτι', 2, 'tsp');
+      INSERT INTO steps (id, recipe_id, step_number, instruction) VALUES ('s', 'kept', 1, 'Simmer');
+      INSERT INTO recipe_equipment (id, recipe_id, name) VALUES ('e', 'kept', 'Pot');
+      INSERT INTO cooking_sessions (id, recipe_id, started_at, completed_at, session_notes) VALUES ('c', 'kept', '2026-09-26 13:01:51', '2026-09-26 14:01:51', 'Kept');
+      INSERT INTO grocery_lists (id, title, created_at) VALUES ('list', 'Market', '2026-09-26 13:01:51');
+      INSERT INTO grocery_items (id, list_id, name, amount) VALUES ('item', 'list', 'Beans', 500);
+      INSERT INTO pantry_items (id, name, quantity, unit, created_at) VALUES ('pantry', 'Beans', 1, 'kg', '2026-09-26 13:01:51');
+      INSERT INTO guests (id, name, created_at) VALUES ('guest', 'Alex', '2026-09-26 13:01:51');
+      INSERT INTO guests (id, name, created_at) VALUES ('unknown-time', 'Unknown', NULL);
+      INSERT INTO user_kitchen_profile (id, preferred_salt_type) VALUES ('default', 'greek_sea_salt');
+    `)
+    migrate(drizzle(sqlite), { migrationsFolder })
+    expect(sqlite.prepare('SELECT original_salt_type, created_at, updated_at FROM recipes').get()).toEqual({ original_salt_type: null, created_at: '2026-09-26T13:01:51.000Z', updated_at: '2026-09-26T13:01:51.123Z' })
+    for (const table of ['ingredients', 'steps', 'recipe_equipment', 'cooking_sessions', 'grocery_lists', 'grocery_items', 'pantry_items']) {
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM ' + table).get()).toEqual({ count: 1 })
+    }
+    for (const table of ['pantry_items', 'grocery_lists']) expect(sqlite.prepare('SELECT created_at FROM ' + table).get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
+    expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='guest'").get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
+    expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='unknown-time'").get()).toEqual({ created_at: null })
+    expect(sqlite.prepare('SELECT started_at, completed_at, session_notes FROM cooking_sessions').get()).toEqual({ started_at: '2026-09-26T13:01:51.000Z', completed_at: '2026-09-26T14:01:51.000Z', session_notes: 'Kept' })
+    expect(sqlite.prepare('SELECT preferred_salt_type FROM user_kitchen_profile').get()).toEqual({ preferred_salt_type: 'greek_fine_sea_salt' })
+    expect(sqlite.prepare('SELECT name, amount FROM grocery_items').get()).toEqual({ name: 'Beans', amount: 500 })
+    expect(sqlite.pragma('foreign_key_check')).toEqual([])
+    expect(sqlite.pragma('foreign_keys', { simple: true })).toBe(1)
+    expect(sqlite.prepare("SELECT name FROM sqlite_temp_master WHERE type='table'").all()).toEqual([])
+    migrate(drizzle(sqlite), { migrationsFolder })
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM grocery_items').get()).toEqual({ count: 1 })
+  } finally { sqlite.close() }
+})

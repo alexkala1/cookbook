@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { convertSalt, convertUnit, scaleIngredients, saltDensities } from '../app/utils/units'
+import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities } from '../app/utils/units'
 import type { SaltType } from '../app/utils/units'
 
 describe('salt density', () => {
+  it.each(['salt', 'Fine SALT', 'sea salt', 'αλάτι', 'αλατι', 'ΑΛΆΤΙ', 'ΑΛΑΤΙ', 'ψιλό αλάτι', 'αλάτι'.normalize('NFD')])('recognizes plain salt: %s', name => expect(isPlainSalt(name)).toBe(true))
+  it.each(['garlic salt', 'celery salt', 'seasoned salt', 'seasoned sea salt', 'GARLIC-SALT', 'αλάτι με σκόρδο', 'αλάτι σκόρδου', 'ΑΛΑΤΙ ΜΕ ΣΕΛΙΝΟ', 'αλάτι σέλινου', 'unsalted butter', 'salted butter', 'salty', 'αλατισμένο βούτυρο', 'pepper'])('excludes mixed or non-salt ingredients: %s', name => expect(isPlainSalt(name)).toBe(false))
   it('uses the four specified densities', () => {
-    expect(saltDensities).toEqual({ diamond_crystal_kosher: 2.8, morton_kosher: 4.8, table_salt: 5.9, greek_sea_salt: 5.5 })
+    expect(saltDensities).toEqual({ diamond_crystal_kosher: 2.8, morton_kosher: 4.8, table_salt: 5.9, greek_fine_sea_salt: 5.5 })
   })
   it('preserves salt mass for every substitution and reverses without rounding loss', () => {
     for (const from of Object.keys(saltDensities) as SaltType[]) for (const to of Object.keys(saltDensities) as SaltType[]) {
@@ -16,11 +18,11 @@ describe('salt density', () => {
   })
   it('works in tablespoons and handles zero', () => {
     expect(convertSalt(1, 'table_salt', 'diamond_crystal_kosher', 'tbsp')).toBeCloseTo(5.9 / 2.8)
-    expect(convertSalt(0, 'morton_kosher', 'greek_sea_salt', 'tsp')).toBe(0)
+    expect(convertSalt(0, 'morton_kosher', 'greek_fine_sea_salt', 'tsp')).toBe(0)
   })
   it('rejects unknown salts and unsuitable units', () => {
     expect(() => convertSalt(1, 'unknown' as SaltType, 'table_salt', 'tsp')).toThrow()
-    expect(() => convertSalt(1, 'table_salt', 'greek_sea_salt', 'piece')).toThrow()
+    expect(() => convertSalt(1, 'table_salt', 'greek_fine_sea_salt', 'piece')).toThrow()
   })
 })
 describe('unit conversion', () => {
@@ -45,4 +47,3 @@ describe('ingredient scaling', () => {
     expect(() => scaleIngredients([], 4, value)).toThrow()
   })
 })
-

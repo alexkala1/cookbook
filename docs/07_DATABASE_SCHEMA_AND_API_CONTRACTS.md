@@ -16,6 +16,7 @@ export const recipes = sqliteTable('recipes', {
   title: text('title').notNull(),
   description: text('description').notNull(),
   recipeType: text('recipe_type', { enum: ['food', 'drink', 'cocktail', 'baking', 'dessert'] }).notNull().default('food'),
+  originalSaltType: text('original_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_fine_sea_salt'] }),
   sourceUrl: text('source_url'),
   sourceType: text('source_type', { enum: ['url', 'video', 'prompt', 'handwritten_ocr', 'manual'] }).notNull().default('manual'),
   servings: integer('servings').notNull().default(4),
@@ -32,8 +33,8 @@ export const recipes = sqliteTable('recipes', {
   
   isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
   rating: real('rating'), // Unrated recipes remain null
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).$onUpdate(() => new Date().toISOString())
+  createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
+  updatedAt: text('updated_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`).$onUpdate(() => new Date().toISOString())
 });
 
 // -------------------------------------------------------------
@@ -87,7 +88,7 @@ export const pantryItems = sqliteTable('pantry_items', {
   unit: text('unit').notNull(),
   category: text('category').notNull().default('pantry'),
   expiresAt: text('expires_at'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)
+  createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
 });
 
 // -------------------------------------------------------------
@@ -107,7 +108,7 @@ export const recipeEquipment = sqliteTable('recipe_equipment', {
 export const groceryLists = sqliteTable('grocery_lists', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)
+  createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
 });
 
 export const groceryItems = sqliteTable('grocery_items', {
@@ -147,7 +148,7 @@ export const guests = sqliteTable('guests', {
   dietaryRestrictions: text('dietary_restrictions'), // JSON: ['vegan', 'halal', 'pregnant']
   dislikes: text('dislikes'), // JSON: ['cilantro', 'liver']
   notes: text('notes'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)
+  createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
 });
 
 // -------------------------------------------------------------
@@ -162,7 +163,7 @@ export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
   hasInstantPot: integer('has_instant_pot', { mode: 'boolean' }).default(false),
   hasCastIron: integer('has_cast_iron', { mode: 'boolean' }).default(true),
   hasClayGastra: integer('has_clay_gastra', { mode: 'boolean' }).default(false),
-  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_sea_salt'] }).default('table_salt')
+  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_fine_sea_salt'] }).default('table_salt')
 });
 
 // -------------------------------------------------------------
@@ -171,7 +172,7 @@ export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
 export const cookingSessions = sqliteTable('cooking_sessions', {
   id: text('id').primaryKey(),
   recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
-  startedAt: text('started_at').default(sql`CURRENT_TIMESTAMP`),
+  startedAt: text('started_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
   completedAt: text('completed_at'),
   userRating: integer('user_rating'), // 1-5
   sessionNotes: text('session_notes'), // "Salted slightly too much, bake 5 mins less next time"

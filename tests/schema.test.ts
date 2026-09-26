@@ -36,6 +36,20 @@ describe('SQLite schema and initial migration', () => {
     ].map(name => ({ name })))
   })
 
+  it('uses ISO UTC millisecond defaults on every timestamped table', () => {
+    const { db, sqlite } = connection
+    db.insert(schema.recipes).values({ id: 'r', title: 'Soup', description: '' }).run()
+    db.insert(schema.pantryItems).values({ id: 'p', name: 'Beans', quantity: 1, unit: 'kg' }).run()
+    db.insert(schema.groceryLists).values({ id: 'g', title: 'Market' }).run()
+    db.insert(schema.guests).values({ id: 'guest', name: 'Alex' }).run()
+    db.insert(schema.cookingSessions).values({ id: 'session', recipeId: 'r' }).run()
+    for (const [table, column] of [['recipes', 'created_at'], ['recipes', 'updated_at'], ['pantry_items', 'created_at'], ['grocery_lists', 'created_at'], ['guests', 'created_at'], ['cooking_sessions', 'started_at']]) {
+      const row = sqlite.prepare(`SELECT ${column} AS value FROM ${table}`).get() as { value: string }
+      expect(row.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+      expect(new Date(row.value).toISOString()).toBe(row.value)
+    }
+  })
+
   it('keeps migrated columns, types, nullability, and primary keys aligned with Drizzle', () => {
     for (const table of Object.values(schema)) {
       const columns = connection.sqlite.pragma(`table_info('${getTableName(table)}')`) as {
@@ -56,7 +70,7 @@ describe('SQLite schema and initial migration', () => {
       recipeType: 'food', sourceType: 'manual', servings: 4, prepTimeMinutes: 15,
       cookTimeMinutes: 30, totalTimeMinutes: 45, difficulty: 'intermediate',
       isFavorite: false, rating: null, heirloomNotes: 'Sunday lunch', sourceUrl: null,
-      createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2} /), updatedAt: expect.any(String)
+      createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/), updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     })
     db.update(schema.recipes).set({ isFavorite: true }).where(eq(schema.recipes.id, 'recipe')).run()
     expect(db.select().from(schema.recipes).get()?.isFavorite).toBe(true)

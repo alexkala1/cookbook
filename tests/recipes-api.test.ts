@@ -11,18 +11,18 @@ import update from '../server/api/recipes/[id].put'
 import remove from '../server/api/recipes/[id].delete'
 import getKitchen from '../server/api/settings/kitchen.get'
 import putKitchen from '../server/api/settings/kitchen.put'
+import csrf from '../server/middleware/csrf'
+import { getRecipe, saveRecipe } from '../server/utils/recipes'
 
 vi.mock('../server/db', async () => {
-  const { default: Database } = await import('better-sqlite3')
-  const { drizzle } = await import('drizzle-orm/better-sqlite3')
-  const schema = await import('../server/db/schema')
-  const sqlite = new Database(':memory:')
-  sqlite.pragma('foreign_keys = ON')
-  return { db: drizzle(sqlite, { schema }) }
+  // Exercise the production connection setup, including its custom SQL functions.
+  vi.stubEnv('DATABASE_URL', ':memory:')
+  return await vi.importActual('../server/db')
 })
 
 migrate(db, { migrationsFolder: fileURLToPath(new URL('../server/db/migrations', import.meta.url)) })
 const app = createApp()
+app.use(csrf)
 const router = createRouter()
 router.get('/api/recipes', list).post('/api/recipes', create)
 router.get('/api/recipes/:id', get).put('/api/recipes/:id', update).delete('/api/recipes/:id', remove)
@@ -30,7 +30,7 @@ router.get('/api/settings/kitchen', getKitchen).put('/api/settings/kitchen', put
 app.use(router)
 const handle = toWebHandler(app)
 async function request(path: string, method = 'GET', body?: unknown) {
-  return handle(new Request('http://localhost' + path, { method, ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) }))
+  return handle(new Request('http://localhost' + path, { method, headers: { Origin: 'http://localhost', 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }))
 }
 const sample = () => ({
   title: 'Lemon soup', description: 'Sunday soup', servings: 4, cuisine: 'Greek',
@@ -42,15 +42,60 @@ beforeEach(() => {
   db.delete(schema.recipes).run()
   db.delete(schema.userKitchenProfile).run()
 })
-afterAll(() => db.$client.close())
+afterAll(() => { db.$client.close(); vi.unstubAllEnvs() })
 
 describe('recipe HTTP endpoints', () => {
+  it('round-trips original salt and leaves unspecified originals unknown', async () => {
+    const recipe = await (await request('/api/recipes', 'POST', sample())).json()
+    expect(recipe.originalSaltType).toBeNull()
+    const path = '/api/recipes/' + recipe.id
+    expect(await (await request(path, 'PUT', { originalSaltType: 'greek_fine_sea_salt' })).json()).toMatchObject({ originalSaltType: 'greek_fine_sea_salt' })
+    expect(await (await request(path)).json()).toMatchObject({ originalSaltType: 'greek_fine_sea_salt' })
+    expect((await request(path, 'PUT', { originalSaltType: 'garlic_salt' })).status).toBe(400)
+    expect(await (await request(path, 'PUT', { originalSaltType: null })).json()).toMatchObject({ originalSaltType: null })
+    const known = await (await request('/api/recipes', 'POST', { ...sample(), originalSaltType: 'morton_kosher' })).json()
+    expect(known.originalSaltType).toBe('morton_kosher')
+  })
+
+  it('searches Greek titles and cuisines case-insensitively with canonical Unicode equivalence', async () => {
+    await request('/api/recipes', 'POST', { ...sample(), title: 'Φασολάδα', cuisine: 'Ελληνική', description: 'Κυριακή' })
+    for (const search of ['φασολάδα', 'ΦΑΣΟΛΆΔΑ', 'φασολάδα'.normalize('NFD'), 'κυριακή']) {
+      const response = await request('/api/recipes?search=' + encodeURIComponent(search) + '&cuisine=' + encodeURIComponent('ελληνική'))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toHaveLength(1)
+    }
+    expect(db.$client.prepare('SELECT greek_lower(NULL) AS value').get()).toEqual({ value: null })
+  })
+
+  it('uses transaction-scoped reads even when the global select method is unavailable', () => {
+    const spy = vi.spyOn(db, 'select').mockImplementation(() => { throw new Error('Global read escaped transaction') })
+    try {
+      const recipe = saveRecipe(sample())
+      expect(recipe.ingredients).toHaveLength(1)
+      expect(recipe.steps).toHaveLength(2)
+      const updated = saveRecipe({ title: 'Changed in transaction' }, recipe.id)
+      expect(updated.title).toBe('Changed in transaction')
+      expect(spy).not.toHaveBeenCalled()
+    } finally { spy.mockRestore() }
+    expect(getRecipe(db.select().from(schema.recipes).get()!.id).title).toBe('Changed in transaction')
+  })
+
+  it('blocks cross-origin mutations before database writes and accepts same-origin Referer fallback', async () => {
+    const rejected = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Origin: 'https://attacker.example', 'Content-Type': 'application/json' }, body: JSON.stringify(sample()) }))
+    expect(rejected.status).toBe(403)
+    expect(db.select().from(schema.recipes).all()).toEqual([])
+    const allowed = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Referer: 'http://localhost/recipes/new', 'Content-Type': 'application/json' }, body: JSON.stringify(sample()) }))
+    expect(allowed.status).toBe(201)
+  })
+
   it('preserves long instructions and refreshes timestamps for direct ORM updates', async () => {
     const instruction = 'Stir gently until combined. '.repeat(20)
     const recipe = await (await request('/api/recipes', 'POST', { ...sample(), steps: [{ stepNumber: 1, instruction }] })).json()
     expect(recipe.steps[0].instruction).toBe(instruction.trim())
+    db.update(schema.recipes).set({ updatedAt: '2000-01-01T00:00:00.000Z' }).run()
     db.update(schema.recipes).set({ title: 'Updated directly' }).run()
-    expect(db.select().from(schema.recipes).get()?.updatedAt).not.toBe(recipe.updatedAt)
+    expect(db.select().from(schema.recipes).get()?.updatedAt).not.toBe('2000-01-01T00:00:00.000Z')
+    expect(db.select().from(schema.recipes).get()?.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
   })
 
   it('creates, reads ordered children, partially updates, replaces arrays, and deletes', async () => {
@@ -65,7 +110,7 @@ describe('recipe HTTP endpoints', () => {
     expect(updated.ingredients).toEqual(recipe.ingredients)
     expect(updated.equipment).toEqual(recipe.equipment)
     expect(updated.totalTimeMinutes).toBe(50)
-    expect(updated.updatedAt).not.toBe(recipe.updatedAt)
+    expect(updated.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     expect(updated.isFavorite).toBe(true)
     const replaced = await (await request(path, 'PUT', { ingredients: [{ name: 'Lemon', amount: 2, unit: 'piece' }], steps: [], equipment: [] })).json()
     expect(replaced.ingredients).toHaveLength(1)
@@ -103,7 +148,7 @@ describe('recipe HTTP endpoints', () => {
   it('rejects malformed requests and query values', async () => {
     for (const query of ['type=invalid', 'isFavorite=1', 'difficulty=invalid', 'search=a&search=b']) expect((await request('/api/recipes?' + query)).status).toBe(400)
     expect((await request('/api/recipes/missing', 'PUT', {})).status).toBe(400)
-    const response = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' }))
+    const response = await handle(new Request('http://localhost/api/recipes', { method: 'POST', headers: { Origin: 'http://localhost', 'Content-Type': 'application/json' }, body: '{' }))
     expect(response.status).toBe(400)
   })
 
@@ -135,7 +180,7 @@ describe('recipe HTTP endpoints', () => {
 describe('singleton kitchen profile HTTP endpoints', () => {
   it('creates default on first read and updates the same row', async () => {
     expect(await (await request('/api/settings/kitchen')).json()).toMatchObject({ id: 'default', stoveType: 'gas', hasCastIron: true })
-    expect(await (await request('/api/settings/kitchen', 'PUT', { stoveType: 'induction', preferredSaltType: 'greek_sea_salt', hasMicrowave: false })).json()).toMatchObject({ id: 'default', stoveType: 'induction', preferredSaltType: 'greek_sea_salt', hasMicrowave: false, hasCastIron: true })
+    expect(await (await request('/api/settings/kitchen', 'PUT', { stoveType: 'induction', preferredSaltType: 'greek_fine_sea_salt', hasMicrowave: false })).json()).toMatchObject({ id: 'default', stoveType: 'induction', preferredSaltType: 'greek_fine_sea_salt', hasMicrowave: false, hasCastIron: true })
     await request('/api/settings/kitchen')
     expect(db.select().from(schema.userKitchenProfile).all()).toHaveLength(1)
   })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RecipeDetail } from '../../shared/types/recipe'
 import type { RecipeInput } from '../../server/utils/validation'
+import { saltDensities, saltLabels } from '../utils/units'
 
 const props = defineProps<{ recipe?: RecipeDetail }>()
 const emit = defineEmits<{ saved: [recipe: RecipeDetail], cancel: [] }>()
@@ -8,6 +9,7 @@ const r = props.recipe
 const form = reactive({
   title: r?.title ?? '', description: r?.description ?? '',
   recipeType: r?.recipeType ?? 'food', servings: r?.servings ?? 4,
+  originalSaltType: r?.originalSaltType ?? null,
   prepTimeMinutes: r?.prepTimeMinutes ?? 15, cookTimeMinutes: r?.cookTimeMinutes ?? 30,
   difficulty: r?.difficulty ?? 'intermediate', cuisine: r?.cuisine ?? '',
   imageUrl: r?.imageUrl ?? '', heirloomNotes: r?.heirloomNotes ?? '',
@@ -59,6 +61,7 @@ async function save() {
         <label>Prep time (minutes)<input v-model.number="form.prepTimeMinutes" type="number" min="0" max="100000" required class="field mt-2"></label>
         <label>Cook time (minutes)<input v-model.number="form.cookTimeMinutes" type="number" min="0" max="100000" required class="field mt-2"></label>
       </div>
+      <label class="block">Original salt type<select v-model="form.originalSaltType" aria-label="Original salt type" class="field mt-2"><option :value="null">Unknown</option><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
       <label class="block">Image URL (optional)<input v-model="form.imageUrl" type="url" placeholder="https://" maxlength="2000" class="field mt-2"></label>
     </fieldset>
     <fieldset :disabled="saving" class="space-y-5">

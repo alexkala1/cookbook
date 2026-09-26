@@ -22,11 +22,24 @@ pnpm run build
 pnpm run preview
 ```
 
+Development, preview, and `pnpm run start` bind to `127.0.0.1` by default. Use `pnpm run start` for the production build; launching Nitro directly requires `NITRO_HOST=127.0.0.1 node .output/server/index.mjs` to retain the loopback binding.
+
+Mutation requests require a matching `Origin` or `Referer`, including command-line clients. Missing, malformed, or cross-origin source headers return 403. Forwarded host/protocol headers are not trusted; reverse-proxy deployment needs an explicit origin policy before use.
+
+```sh
+curl --fail-with-body http://127.0.0.1:3000/api/recipes \
+  -H 'Origin: http://127.0.0.1:3000' \
+  -H 'Content-Type: application/json' \
+  --data '{"title":"Φασολάδα","description":"Family soup","originalSaltType":null}'
+```
+
 After editing `server/db/schema.ts`, run `pnpm run db:generate`, review the generated SQL, and run `pnpm run db:migrate`. Tests apply the committed migrations to isolated in-memory SQLite databases.
 
 `pnpm-workspace.yaml` retains the requested `onlyBuiltDependencies` list and includes equivalent `allowBuilds` entries because pnpm 11 uses the latter for native build approvals.
 
 Recipe and drink CRUD, serving/unit/salt conversions, browser-local BYOK settings, and the kitchen hardware profile are available. Pantry, shopping, live cooking controls, AI calls, and PWA behavior belong to later work. API behavior and verification are recorded in [Phase 1 verification](docs/PHASE_1_VERIFICATION.md).
+
+The [hardening report](docs/HARDENING_VERIFICATION.md) documents original salt tracking, ISO timestamps, Greek search, CSRF protection, and migration checks added after Phase 1.
 
 ## 📖 Architecture & Design Documentation
 

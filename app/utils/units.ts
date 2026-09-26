@@ -2,14 +2,22 @@ export const saltDensities = {
   diamond_crystal_kosher: 2.8,
   morton_kosher: 4.8,
   table_salt: 5.9,
-  greek_sea_salt: 5.5
+  greek_fine_sea_salt: 5.5
 } as const
 export type SaltType = keyof typeof saltDensities
 export const saltLabels: Record<SaltType, string> = {
   diamond_crystal_kosher: 'Diamond Crystal Kosher',
   morton_kosher: 'Morton Kosher',
   table_salt: 'Fine Table Salt',
-  greek_sea_salt: 'Greek Sea Salt'
+  greek_fine_sea_salt: 'Greek Fine Sea Salt'
+}
+
+export function isPlainSalt(name: string): boolean {
+  const normalized = name.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('el-GR')
+  const words: string[] = normalized.match(/[\p{L}]+/gu) ?? []
+  const hasSalt = words.includes('salt') || words.includes('αλατι')
+  const seasoned = words.some(word => ['garlic', 'celery', 'seasoned'].includes(word) || word.startsWith('σκορδ') || word.startsWith('σελιν'))
+  return hasSalt && !seasoned
 }
 
 // US customary volumes; grams and millilitres are the base units.
