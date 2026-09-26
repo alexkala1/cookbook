@@ -24,17 +24,20 @@ const courses = ref<{ recipeId: string, course: ConductorCourse, serveAt: string
   { recipeId: '', course: 'appetizer', serveAt: '' }, { recipeId: '', course: 'main', serveAt: '' }, { recipeId: '', course: 'dessert', serveAt: '' }
 ])
 const plan = ref<Plan | null>(null), busy = ref(false), error = ref(''), done = ref<string[]>([])
+watch([target, guestCount, burners, ovens, month, courses], () => {
+  plan.value = null; done.value = []; error.value = ''
+}, { deep: true })
 const chosen = computed(() => courses.value.filter(row => row.recipeId))
 const conflictSteps = computed(() => new Set(plan.value?.bottlenecks.flatMap(item => item.steps.map(step => step.id)) ?? []))
 const rows = computed(() => plan.value ? [
   ...plan.value.serves.map(serve => ({ kind: 'serve' as const, key: 'serve-' + serve.recipeId + serve.course, start: serve.offset, serve })),
   ...plan.value.timeline.map(event => ({ kind: 'step' as const, key: event.id, start: event.start, event }))
 ].sort((a, b) => a.start - b.start || (a.kind === 'serve' ? -1 : 1)) : [])
-const dayNote = (offset: number) => offset < 0 ? ' · day before' : offset > 0 ? ' · next day' : ''
+const dayNote = (offset: number) => offset < -1 ? ` · ${-offset} days before` : offset === -1 ? ' · day before' : offset > 1 ? ` · ${offset} days later` : offset === 1 ? ' · next day' : ''
 
 async function conduct() {
   if (!chosen.value.length) { error.value = 'Choose at least one recipe.'; return }
-  busy.value = true; error.value = ''
+  busy.value = true; error.value = ''; plan.value = null; done.value = []
   try {
     plan.value = await $fetch<Plan>('/api/meal-plan/orchestrate', { method: 'POST', body: {
       courses: chosen.value.map(row => ({ recipeId: row.recipeId, course: row.course, ...(row.serveAt ? { serveAt: row.serveAt } : {}) })),

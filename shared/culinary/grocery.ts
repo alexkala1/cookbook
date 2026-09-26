@@ -82,6 +82,24 @@ const unitAliases: Record<string, string[]> = {
 }
 const unitLookup = new Map(Object.entries(unitAliases).flatMap(([unit, aliases]) => aliases.map(alias => [alias, unit] as const)))
 type Measure = { dimension: string, amount: number, unit: string }
+// Catalog families route shopping; they do not make different formulations interchangeable.
+const basicAliases: Record<string, RegExp> = {
+  flour: /^(?:flour|αλευρι|αλευρα)$/,
+  milk: /^(?:milk|γαλα)$/,
+  yeast: /^(?:yeast|μαγια)$/,
+  butter: /^(?:butter|βουτυρο)$/,
+  cream: /^(?:cream|κρεμα γαλακτος)$/,
+  yogurt: /^(?:yogurt|yoghurt|γιαουρτι)$/,
+  sugar: /^(?:sugar|ζαχαρη)$/,
+  rice: /^(?:rice|ρυζι)$/
+}
+function ingredientIdentity(name: string, found?: Entry) {
+  const normalized = fold(name)
+  if (!found || found.group) return normalized
+  const aliases = basicAliases[found.id]
+  return aliases && !aliases.test(normalized) ? normalized : found.id
+}
+
 function measure(amount: number, rawUnit: string): Measure {
   const unit = unitLookup.get(fold(rawUnit).replace(/ /g, ''))
   for (const [dimension, base] of [['mass', 'g'], ['volume', 'ml'], ['count', 'piece']] as const) {
@@ -183,7 +201,7 @@ export function buildGroceryList(menu: GroceryCourse[]) {
         continue
       }
       const section = found?.section ?? 'supermarket'
-      const baseKey = found && !found.group ? found.id : fold(ingredient.name)
+      const baseKey = ingredientIdentity(ingredient.name, found)
       const order = found?.animal ? butcherOrder(found.animal, fold(ingredient.name + ' ' + notes), context + ' ' + fold(notes)) : undefined
       const mergeKey = [baseKey, order?.key].filter(Boolean).join('|'), key = mergeKey + '|' + amount.dimension
       const bucket = buckets.get(key) ?? { key, mergeKey, entry: found, name: ingredient.name.trim(), section, amount: 0, unit: amount.unit, usedIn: [], prepNotes: [], ...(order && { counterPhrase: `${order.product}${order.prep ? ', ' + order.prep : ''}` }) }
@@ -196,7 +214,8 @@ export function buildGroceryList(menu: GroceryCourse[]) {
   for (const { entry: found, mergeKey, ...item } of buckets.values()) {
     item.amount = round(item.amount)
     if (item.counterPhrase && item.amount > 0) item.counterPhrase = orderQuantity(item) + ' ' + item.counterPhrase
-    if (found?.pack && item.unit === found.pack.unit) Object.assign(item, packAdvice(item.amount, found.pack, found.surplus))
+    const freshYeast = found?.id === 'yeast' && /(?:^| )(?:fresh|νωπ\p{L}*|φρεσκ\p{L}*)(?: |$)/u.test(fold(item.name))
+    if (found?.pack && item.unit === found.pack.unit && !freshYeast) Object.assign(item, packAdvice(item.amount, found.pack, found.surplus))
     if ([...buckets.values()].some(other => other.mergeKey === mergeKey && other.key !== item.key)) item.note = 'Also listed in another measure; not combined without a density.'
     items.push(item)
   }

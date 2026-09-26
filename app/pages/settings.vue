@@ -54,7 +54,7 @@ async function saveKitchen() {
     </section>
     <section class="mt-12 border-t border-espresso/20 pt-8">
       <h2>Your kitchen hardware</h2>
-      <div v-if="error" role="alert" class="notice mt-4"><p>Could not load your kitchen profile.</p><button class="button-secondary mt-4" @click="refresh()">Try again</button></div>
+      <div v-if="error" role="alert" class="notice mt-4"><p>{{ error.statusCode === 409 ? 'Several legacy kitchen profiles were found. Consolidate them into one default profile in the database before editing. No settings were overwritten.' : 'Could not load your kitchen profile.' }}</p><button class="button-secondary mt-4" @click="refresh()">Try again</button></div>
       <form v-else-if="profile" class="mt-6 space-y-6" @submit.prevent="saveKitchen">
         <fieldset :disabled="saving" class="space-y-6">
           <div class="form-grid">

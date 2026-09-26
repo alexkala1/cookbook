@@ -57,7 +57,12 @@ export function useCookingTimers(recipeId: string) {
     persist()
   }
   function toggle(timer: CookingTimer) {
-    if (timer.state === 'running') { timer.remaining = remainingSeconds(timer, Date.now()); timer.state = 'paused' }
+    if (timer.state === 'running') {
+      // A throttled interval may not have reported this deadline yet.
+      tick()
+      if (timer.state !== 'running') return
+      timer.state = 'paused'
+    }
     else { void enableSound(); timer.remaining ||= timer.duration; timer.deadline = Date.now() + timer.remaining * 1000; timer.state = 'running' }
     persist()
   }

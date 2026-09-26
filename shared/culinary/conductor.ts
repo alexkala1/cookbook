@@ -20,7 +20,9 @@ const cooking = word('bake|roast|broil|sear|fry|fried|saute|simmer|boil|braise|p
 const resting = /(?:^| )(?:let rest|allow to rest|rest\b(?!\s+(?:of|of the|of your)\b)|cool|stand|keep warm|hold|ξεκουραστ|κρυωσ|κρυωνε)/
 const plating = /(?:^| )(?:serve|plate|garnish|drizzle|unmold|unmould|carve|dust\b(?!\s+.*with flour)|σερβιρ|γαρνιρ|πασπαλ)/
 const ovenUse = word('oven|bake|roast|broil|preheat|φουρν|ψησ|ψην|ψηστ|προθερμ')
-const burnerUse = word('sear|fry|fried|saute|simmer|boil|braise|poach|steam|blanch|melt|reduce|stovetop|stove|hob|skillet|pan|pot|saucepan|wok|burner|τηγαν|σοταρ|βρασ|βραζ|σιγοβρασ|κατσαρολ|λιων|καβουρδ')
+// A vessel alone is preparation, not evidence that a burner is occupied.
+const burnerUse = word('sear|fry|fried|saute|simmer|boil|braise|poach|steam|blanch|melt|reduce|heat|cook|stovetop|stove|hob|burner|τηγαν|σοταρ|βρασ|βραζ|σιγοβρασ|λιων|καβουρδ|ζεσταν|μαγειρ')
+const burnerAction = word('sear|fry|fried|saute|simmer|boil|poach|blanch|reduce|stovetop|stove|hob|burner|τηγαν|σοταρ|βρασ|βραζ|σιγοβρασ|καβουρδ')
 
 export function classifyStep(step: ConductorStep) {
   const text = fold(step.instruction)
@@ -39,7 +41,10 @@ export function classifyStep(step: ConductorStep) {
   // Greek ψήνω also means grilling; a grill or frying pan is not the oven.
   const oven = ovenUse.test(text) && !/(?:^| )(?:σχαρ|τηγαν|grill pan)/.test(text)
   const heated = step.heatLevel != null && step.heatLevel !== 'none'
-  const burners = (burnerUse.test(text) || (heated && !oven)) ? (word('two (?:pans|pots|skillets)|δυο (?:τηγαν|κατσαρολ)').test(text) ? 2 : 1) : 0
+  const activeBurner = burnerAction.test(text)
+  const usesBurner = !(offHeat.test(text) && !activeBurner) && !(isRest && !isCooking && !activeBurner) &&
+    (oven ? activeBurner : burnerUse.test(text) || heated)
+  const burners = usesBurner ? (word('two (?:pans|pots|skillets)|δυο (?:τηγαν|κατσαρολ)').test(text) ? 2 : 1) : 0
   const reading = oven ? ovenTemperature(step.instruction) : null
   const ovenTempC = reading ? Math.round(reading.unit === 'F' ? (reading.temperature - 32) * 5 / 9 : reading.temperature) : null
   return { phase, oven, ovenTempC, burners }
@@ -95,6 +100,11 @@ export function conduct(input: ConductorInput) {
       const tempC = steps.slice(firstOven).find(row => row.oven && row.ovenTempC != null)?.ovenTempC ?? null
       steps.splice(firstOven, 0, { step: { stepNumber: 0, instruction: tempC ? `Preheat the oven to ${tempC} °C` : 'Preheat the oven', durationMinutes: 15 }, phase: 'cook', oven: true, ovenTempC: tempC, burners: 0, synthetic: true })
     }
+    let ovenSetting: number | null = null
+    for (const row of steps) if (row.oven) {
+      if (row.ovenTempC != null) ovenSetting = row.ovenTempC
+      else row.ovenTempC = ovenSetting
+    }
     let end = offset
     const scheduled: TimelineEvent[] = []
     for (let index = steps.length - 1; index >= 0; index--) {
@@ -125,8 +135,9 @@ function windows(events: TimelineEvent[], conflicting: (active: TimelineEvent[])
     const start = points[i]!, end = points[i + 1]!
     const steps = conflicting(events.filter(event => event.start < end && event.end > start))
     if (!steps) continue
-    const last = found.at(-1), recipes = (list: TimelineEvent[]) => [...new Set(list.map(step => step.courseIndex))].sort().join()
-    if (last && last.end === start && recipes(last.steps) === recipes(steps)) { last.end = end; last.steps.push(...steps.filter(step => !last.steps.includes(step))) }
+    // Merge equivalent resource demand, never different settings/demand from sequential steps.
+    const last = found.at(-1), resources = (list: TimelineEvent[]) => [...new Set(list.map(step => `${step.courseIndex}:${step.ovenTempC}:${step.burners}`))].sort().join()
+    if (last && last.end === start && resources(last.steps) === resources(steps)) { last.end = end; last.steps.push(...steps.filter(step => !last.steps.includes(step))) }
     else found.push({ start, end, steps: [...steps] })
   }
   return found
@@ -134,6 +145,7 @@ function windows(events: TimelineEvent[], conflicting: (active: TimelineEvent[])
 const summary = (step: TimelineEvent) => ({ id: step.id, course: step.course, recipeTitle: step.recipeTitle, instruction: step.instruction, ovenTempC: step.ovenTempC, burners: step.burners })
 
 function ovenConflicts(events: TimelineEvent[], ovens: number): Omit<Bottleneck, 'label' | 'clock'>[] {
+  const fanCourses = new Set(events.filter(event => /\b(?:fan|convection)\b|αερα|αεροθερμ/.test(fold(event.instruction))).map(event => event.courseIndex))
   return windows(events.filter(event => event.oven && event.ovenTempC != null), active => {
     // Group settings within 15 °C; more groups than ovens means one oven is asked for two temperatures at once.
     const temps = [...new Set(active.map(step => step.ovenTempC!))].sort((a, b) => a - b)
@@ -148,7 +160,7 @@ function ovenConflicts(events: TimelineEvent[], ovens: number): Omit<Bottleneck,
     const resolutions = [
       movable ? `Bake ${movable.recipeTitle} earlier, before the other dish needs the oven, then hold it and rewarm at 150 °C for 5–8 minutes just before serving; or bake it after the main comes out.`
         : `Cook ${cool.recipeTitle} first and hold it covered, then raise the oven to ${hot.ovenTempC} °C for ${hot.recipeTitle}.`,
-      ...(gap <= 35 ? [`With a fan oven, run ${hot.recipeTitle} at ${hot.ovenTempC! - 20} °C (its fan equivalent) so both share the oven; ${cool.recipeTitle} then cooks faster, so shorten its time by about 20% and check early.`] : []),
+      ...(gap <= 35 && !steps.some(step => fanCourses.has(step.courseIndex)) ? [`Only if both recipes use conventional settings and suit fan conversion: run ${hot.recipeTitle} at ${hot.ovenTempC! - 20} °C (its fan equivalent). Check the other dish’s appropriate setting separately before sharing the oven; otherwise stagger the dishes. Never convert an already-fan setting again.`] : []),
       'When sharing or shifting oven slots, confirm doneness by internal temperature rather than time.'
     ]
     return { type: 'oven_temperature' as const, start, end, steps: steps.map(summary), message: `Oven conflict: ${settings.join(' vs ')} (${gap} °C apart) with ${ovens} oven${ovens > 1 ? 's' : ''}.`, resolutions }
@@ -157,7 +169,10 @@ function ovenConflicts(events: TimelineEvent[], ovens: number): Omit<Bottleneck,
 
 function burnerConflicts(events: TimelineEvent[], burners: number): Omit<Bottleneck, 'label' | 'clock'>[] {
   return windows(events.filter(event => event.burners > 0), active => active.reduce((sum, step) => sum + step.burners, 0) > burners ? active : null).map(({ start, end, steps }) => {
-    const required = steps.reduce((sum, step) => sum + step.burners, 0)
+    // Each course is sequential; merged windows retain its successive method steps.
+    const demand = new Map<number, number>()
+    for (const step of steps) demand.set(step.courseIndex, Math.max(demand.get(step.courseIndex) ?? 0, step.burners))
+    const required = [...demand.values()].reduce((sum, count) => sum + count, 0)
     // Simmered and braised components hold well, so they are the natural ones to start early.
     const holdable = steps.find(step => word('simmer|braise|boil|sauce|stock|σιγοβρασ|βρασ|σαλτσ').test(fold(step.instruction))) ?? steps[0]!
     return {

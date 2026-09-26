@@ -23,10 +23,10 @@ const terms: Record<string, string[]> = {
 }
 const meat = ['meat', 'beef', 'pork', 'bacon', 'ham', 'pancetta', 'prosciutto', 'lard', 'chicken', 'turkey', 'lamb', 'veal', 'sausage', 'gelatin', 'gelatine', 'κρεασ', 'μοσχαρι', 'χοιρινο', 'κοτοπουλο', 'αρνι', 'μπεικον', 'ζελατινη', 'λουκανικο']
 const pork = ['pork', 'bacon', 'ham', 'pancetta', 'prosciutto', 'lard', 'χοιρινο', 'μπεικον']
-terms.gluten!.push('spelt', 'farro', 'orzo', 'rusk', 'rusks', 'παξιμαδι', 'παξιμαδια')
+terms.gluten!.push('gluten', 'spelt', 'farro', 'orzo', 'rusk', 'rusks', 'παξιμαδι', 'παξιμαδια')
 terms.dairy!.push('ricotta', 'brie', 'camembert', 'mozzarella', 'butterfat', 'caseinate', 'milk powder', 'βουτυρου', 'γαλακτοσ')
 terms.nuts!.push('groundnut', 'groundnuts', 'αμυγδαλο', 'καρυδι', 'φιστικι', 'φυστικι', 'φουντουκι', 'κασιουσ')
-terms.shellfish!.push('shrimps', 'γαριδων', 'καραβιδα', 'καραβιδεσ')
+terms.shellfish!.push('shellfish', 'shrimps', 'γαριδων', 'καραβιδα', 'καραβιδεσ')
 terms.eggs!.push('yolk', 'yolks', 'αυγων', 'αβγων')
 terms.soy!.push('soymilk')
 const alcohol = ['alcohol', 'wine', 'beer', 'vodka', 'rum', 'gin', 'whisky', 'whiskey', 'brandy', 'liqueur', 'bourbon', 'vermouth', 'κρασι', 'μπυρα', 'ουζο', 'τσιπουρο']
@@ -36,7 +36,7 @@ export function ingredientAllergens(name: string): string[] {
   let dairyText = name
   // Exclude plant compounds without suppressing an additional real dairy ingredient.
   for (const phrase of ['coconut milk', 'almond milk', 'soy milk', 'soya milk', 'oat milk', 'rice milk', 'coconut cream', 'peanut butter', 'almond butter', 'cashew butter', 'cocoa butter']) dairyText = normalize(dairyText).replaceAll(normalize(phrase), '')
-  const glutenText = normalize(name).replace(/\b(?:rice|corn|chickpea|almond|coconut|buckwheat) flour\b/g, '')
+  const glutenText = normalize(name).replace(/\bgluten free\b/g, '').replace(/\b(?:rice|corn|chickpea|almond|coconut|buckwheat) flour\b/g, '')
   return Object.entries(terms).filter(([key, words]) => has(key === 'dairy' ? dairyText : key === 'gluten' ? glutenText : name, words)).map(([key]) => key)
 }
 function dietaryReason(text: string, restriction: string, allergens: string[]): string | null {
