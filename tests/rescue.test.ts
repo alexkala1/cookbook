@@ -33,3 +33,22 @@ it('supports BYOK and sanitizes failed provider calls', async () => {
   const failed = await request({ issueDescription: 'split sauce' }, headers)
   expect(failed.status).toBe(502); expect(await failed.text()).not.toContain('test-secret')
 })
+it.each([
+  'bulging can of tomatoes tastes sour', 'soup is fizzy and sour after 3 days', 'oil smells rancid and bitter', 'there is mould on the cheese',
+  'moldy bread', 'chicken smells off and slimy', 'yogurt is past its date and sour', 'rice left out overnight', 'fermented smell from the stew', 'expired cream curdled', 'worried about botulism in my garlic oil'
+])('routes spoilage signs to the do-not-taste guide: %s', problem => {
+  const advice = rescueTriage(problem)
+  expect(advice.title).toBe('Pause, isolate, and diagnose')
+  expect(advice.caution).toContain('Do not taste')
+})
+it.each(['soup is not salty enough', 'not spicy enough', 'sauce is not sweet enough', 'the stew is bland', 'needs more salt', 'tasteless beans', 'under-seasoned chicken'])('routes negated or bland problems to the under-seasoned guide: %s', problem => {
+  expect(rescueTriage(problem).title).toBe('Bland / under-seasoned')
+})
+it('keeps excess symptoms and sauce splits distinct from lookalikes', () => {
+  expect(rescueTriage('split peas are still hard').title).not.toBe('Split sauce / broken emulsion')
+  expect(rescueTriage('my sauce split').title).toBe('Split sauce / broken emulsion')
+  expect(rescueTriage('the dressing separated').title).toBe('Split sauce / broken emulsion')
+  expect(rescueTriage('way too salty').title).toBe('Too salty')
+  expect(rescueTriage('too spicy for the kids').title).toBe('Too spicy')
+  expect(rescueTriage('turn off the heat, sauce is too sweet').title).toBe('Too sweet')
+})

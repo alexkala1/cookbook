@@ -15,7 +15,7 @@
           <NuxtLink to="/recipes" active-class="underline" class="font-semibold underline-offset-8">Recipes</NuxtLink>
           <NuxtLink to="/recipes/import" active-class="underline" class="font-semibold underline-offset-8">Import Recipe</NuxtLink>
           <NuxtLink to="/settings" active-class="underline" class="font-semibold underline-offset-8">Settings</NuxtLink>
-          <span aria-disabled="true" class="text-stone-500">Pantry · soon</span>
+          <NuxtLink to="/pantry" active-class="underline" class="font-semibold underline-offset-8">Pantry</NuxtLink>
           <span aria-disabled="true" class="text-stone-500">Shopping · soon</span>
         </nav>
       </div>

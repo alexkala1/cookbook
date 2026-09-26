@@ -11,7 +11,7 @@ const [{ data: recipe, error, refresh }, { data: kitchen }] = await Promise.all(
 const index = ref(0), rescueOpen = ref(false), mounted = ref(false)
 const steps = computed(() => [...(recipe.value?.steps || [])].sort((a, b) => a.stepNumber - b.stepNumber))
 const step = computed(() => steps.value[index.value])
-const { timers, alerts, sound, start, toggle, reset, enableSound } = useCookingTimers()
+const { timers, alerts, sound, persistence, start, toggle, reset, enableSound } = useCookingTimers(id)
 function navigate(direction: 'next' | 'previous') {
   if (!rescueOpen.value) index.value = Math.max(0, Math.min(steps.value.length - 1, index.value + (direction === 'next' ? 1 : -1)))
 }
@@ -36,7 +36,7 @@ const strategy = ref<'temperature' | 'time'>('temperature')
 const ovenTimerIndex = ref(-1)
 watch(step, () => { ovenTimerIndex.value = -1 })
 watch(step, value => { fromOven.value = /fan|convection/i.test(value?.instruction || '') ? 'convection_fan' : 'static_conventional' }, { immediate: true })
-const temperature = computed(() => /oven|bake|roast|preheat/i.test(step.value?.instruction || '') ? ovenTemperature(step.value!.instruction) : null)
+const temperature = computed(() => /oven|bake|roast|preheat|φουρν|ψησ|ψην|προθερμ/i.test((step.value?.instruction || '').normalize('NFD').replace(/\p{M}/gu, '')) ? ovenTemperature(step.value!.instruction) : null)
 const rawDurations = computed(() => {
   const parsed = parseDurations(step.value?.instruction || '')
   return parsed.length ? parsed : step.value?.durationMinutes ? [step.value.durationMinutes * 60] : []
@@ -87,12 +87,12 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <h2 class="text-2xl">Oven adjustment</h2><p class="mt-3 text-base">Check the source oven type. An unspecified oven is treated as conventional. Use either temperature or time adjustment, not both; disable the oven’s automatic conversion if it already adjusts the setting.</p>
           <div class="mt-4 grid gap-4 text-lg sm:grid-cols-3"><label>Recipe oven<select v-model="fromOven" class="kitchen-input"><option value="static_conventional">Conventional</option><option value="convection_fan">Convection / fan</option></select></label><label>Your oven<select v-model="toOven" class="kitchen-input"><option value="static_conventional">Conventional</option><option value="convection_fan">Convection / fan</option></select></label><label>Adjust<select v-model="strategy" class="kitchen-input"><option value="temperature">Temperature</option><option value="time">Time only</option></select></label></div>
           <label v-if="rawDurations.length > 1 && strategy === 'time'" class="mt-4 block text-lg">Which interval is oven cooking time?<select v-model.number="ovenTimerIndex" class="kitchen-input"><option :value="-1">Choose an interval — timers unchanged</option><option v-for="(seconds, number) in rawDurations" :key="number" :value="number">Timer {{ number + 1 }} · {{ timerLabel(seconds) }}</option></select></label>
-          <p class="mt-5 font-bold text-amber-200">{{ converted?.temperature }} °{{ temperature.unit }}<span v-if="converted?.minutes"> · {{ Number(converted.minutes.toFixed(1)) }} min</span></p><p class="mt-3 text-base">A starting estimate. Check doneness early; this never changes food-safety temperature targets. Time-adjusted timer buttons use the conversion below.</p>
+          <p class="mt-5 font-bold text-amber-200">{{ converted?.temperature }} °{{ temperature.unit }}<span v-if="converted?.minutes"> · {{ Number(converted.minutes.toFixed(1)) }} min</span></p><p v-if="converted?.note" role="status" class="mt-3 text-lg">{{ converted.note }}</p><p class="mt-3 text-base">A starting estimate. Check doneness early; this never changes food-safety temperature targets. Time-adjusted timer buttons use the conversion below.</p>
         </section>
         <section v-if="step.heatLevel && step.heatLevel !== 'none'" class="kitchen-panel"><h2 class="text-2xl">Your burner · {{ kitchen?.stoveType || 'gas (default)' }}</h2><p class="mt-4 text-xl">{{ burnerAdvice(kitchen?.stoveType || 'gas', step.heatLevel) }}</p></section>
       </template>
       <section class="kitchen-panel" aria-label="Cooking timers">
-        <h2 class="text-2xl">Timers</h2><p class="mt-3 text-base">Timers keep running between steps. They stop when you leave Kitchen Mode; background browser restrictions may delay sound. {{ sound }}</p>
+        <h2 class="text-2xl">Timers</h2><p class="mt-3 text-base">{{ persistence }} Sound works while Kitchen Mode is open and may be delayed in the background. {{ sound }}</p>
         <div class="mt-4 flex flex-wrap gap-3"><button v-for="(seconds, number) in durations" :key="number" class="kitchen-button" :disabled="timers.length >= 20" @click="startStepTimer(seconds, number)">Start Timer · {{ timerLabel(seconds) }}</button><button class="kitchen-button text-base" @click="enableSound">Enable sound</button></div>
         <p v-if="!durations.length" class="mt-3 text-lg">No duration found in this step.</p>
         <div v-for="timer in timers" :key="timer.id" class="mt-5 rounded-lg border border-stone-600 p-4"><p class="text-xl">{{ timer.name }} · {{ timer.state }}</p><p class="my-3 text-4xl tabular-nums" role="timer" :aria-label="timer.name">{{ timerLabel(timer.remaining) }}</p><div class="flex flex-wrap gap-3"><button class="kitchen-button" @click="toggle(timer)">{{ timer.state === 'running' ? 'Pause' : 'Resume' }} {{ timer.name }}</button><button class="kitchen-button" @click="reset(timer)">Reset {{ timer.name }}</button><button class="kitchen-button" @click="timers = timers.filter(row => row.id !== timer.id)">Remove {{ timer.name }}</button></div></div>

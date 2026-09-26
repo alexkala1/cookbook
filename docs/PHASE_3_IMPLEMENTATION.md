@@ -7,8 +7,8 @@ The recipe reader now lives at `app/pages/recipes/[id]/index.vue`, retaining `/r
 - One ordered step at a time, 32–48 px instruction text, progress indicator, sensory milestones, thermometer target, and ingredient references. Ingredients are matched by words in the instruction; when no match exists, the full ingredient list is explicitly labeled as a reference rather than claiming an exact association.
 - ArrowLeft goes back; ArrowRight and Space advance. Text fields and rescue dialogs do not trigger navigation; focused buttons retain native Space activation.
 - VueUse screen wake lock is requested on mount, with supported/inactive/active status, manual release, and cleanup. Browser capability UI waits until mount to avoid SSR hydration mismatches. Wake lock depends on browser/device policy.
-- Numeric seconds/minutes/hours, compound durations, fractions, and upper bounds of time ranges produce timer buttons. Step duration metadata is the fallback. Up to 20 named concurrent timers support pause/resume/reset/remove. Deadlines account for delayed ticks; a three-note Web Audio oscillator chime and persistent banner signal completion.
-- Timers and audio contexts are local to the cooking page and stop on exit. Background browser restrictions may delay alerts; this limitation is shown beside the timers.
+- Numeric seconds/minutes/hours, compound durations, fractions, and lower bounds of time ranges produce timer buttons. Step duration metadata is the fallback. Up to 20 named concurrent timers support pause/resume/reset/remove. Deadlines account for delayed ticks; a three-note Web Audio oscillator chime and persistent banner signal completion.
+- Phase 4 persists timer deadlines per recipe in sessionStorage. Reloading or revisiting Kitchen Mode in the same tab restores timers; elapsed deadlines finish immediately on return. Audio only runs while the page is open and enabled by user interaction. Background browser restrictions may delay alerts; unavailable session storage is reported beside the timers.
 
 ## Local gesture detection
 

@@ -39,11 +39,11 @@ describe('SQLite schema and initial migration', () => {
   it('uses ISO UTC millisecond defaults on every timestamped table', () => {
     const { db, sqlite } = connection
     db.insert(schema.recipes).values({ id: 'r', title: 'Soup', description: '' }).run()
-    db.insert(schema.pantryItems).values({ id: 'p', name: 'Beans', quantity: 1, unit: 'kg' }).run()
+    db.insert(schema.pantryItems).values({ id: 'p', name: 'Beans', normalizedName: 'beans', quantity: 1, unit: 'kg' }).run()
     db.insert(schema.groceryLists).values({ id: 'g', title: 'Market' }).run()
     db.insert(schema.guests).values({ id: 'guest', name: 'Alex' }).run()
     db.insert(schema.cookingSessions).values({ id: 'session', recipeId: 'r' }).run()
-    for (const [table, column] of [['recipes', 'created_at'], ['recipes', 'updated_at'], ['pantry_items', 'created_at'], ['grocery_lists', 'created_at'], ['guests', 'created_at'], ['cooking_sessions', 'started_at']]) {
+    for (const [table, column] of [['recipes', 'created_at'], ['recipes', 'updated_at'], ['grocery_lists', 'created_at'], ['guests', 'created_at'], ['cooking_sessions', 'started_at']]) {
       const row = sqlite.prepare(`SELECT ${column} AS value FROM ${table}`).get() as { value: string }
       expect(row.value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
       expect(new Date(row.value).toISOString()).toBe(row.value)
@@ -107,10 +107,10 @@ describe('SQLite schema and initial migration', () => {
 
   it('round-trips pantry, guest dietary JSON, and kitchen defaults', () => {
     const { db } = connection
-    db.insert(schema.pantryItems).values({ id: 'pantry', name: 'Olive oil', quantity: 0.75, unit: 'l' }).run()
+    db.insert(schema.pantryItems).values({ id: 'pantry', name: 'Olive oil', normalizedName: 'olive oil', quantity: 0.75, unit: 'l' }).run()
     db.insert(schema.guests).values({ id: 'guest', name: 'Alex', allergies: '["peanuts"]', dietaryRestrictions: '["vegan"]' }).run()
     db.insert(schema.userKitchenProfile).values({ id: 'kitchen' }).run()
-    expect(db.select().from(schema.pantryItems).get()).toMatchObject({ quantity: 0.75, category: 'pantry', expiresAt: null })
+    expect(db.select().from(schema.pantryItems).get()).toMatchObject({ quantity: 0.75, storageLocation: 'pantry', expiresAt: null, createdAt: expect.any(Number), updatedAt: expect.any(Number) })
     expect(db.select().from(schema.guests).get()).toMatchObject({ allergies: '["peanuts"]', dietaryRestrictions: '["vegan"]', dislikes: null })
     expect(db.select().from(schema.userKitchenProfile).get()).toEqual({
       id: 'kitchen', stoveType: 'gas', ovenType: 'convection_fan', hasMicrowave: true,

@@ -63,15 +63,7 @@ export const recipeEquipment = sqliteTable('recipe_equipment', {
   substituteTool: text('substitute_tool')
 }, table => [index('recipe_equipment_recipe_id_idx').on(table.recipeId)])
 
-export const pantryItems = sqliteTable('pantry_items', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  quantity: real('quantity').notNull(),
-  unit: text('unit').notNull(),
-  category: text('category').notNull().default('pantry'),
-  expiresAt: text('expires_at'),
-  createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`)
-})
+export { pantryItems } from '../database/schema'
 
 export const groceryLists = sqliteTable('grocery_lists', {
   id: text('id').primaryKey(),

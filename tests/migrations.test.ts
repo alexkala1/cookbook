@@ -5,6 +5,22 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
+it('preserves legacy pantry locations, Greek names, expiry dates and missing creation times', () => {
+  const sqlite = new Database(':memory:')
+  try {
+    const migrationsFolder = fileURLToPath(new URL('../server/db/migrations', import.meta.url))
+    sqlite.exec('CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)')
+    for (const migration of readMigrationFiles({ migrationsFolder }).slice(0, 3)) {
+      for (const statement of migration.sql) sqlite.exec(statement)
+      sqlite.prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)').run(migration.hash, migration.folderMillis)
+    }
+    sqlite.exec("INSERT INTO pantry_items (id, name, quantity, unit, category, expires_at, created_at) VALUES ('milk', 'ΓΑΛΑ', 2, 'l', 'fridge', '2026-10-01T12:00:00.123Z', NULL), ('beans', 'Beans', 500, 'g', 'legumes', NULL, '2026-09-01T12:00:00.000Z')")
+    migrate(drizzle(sqlite), { migrationsFolder })
+    expect(sqlite.prepare("SELECT normalized_name, quantity, storage_location, expires_at, created_at FROM pantry_items WHERE id='milk'").get()).toEqual({ normalized_name: 'γαλα', quantity: 2, storage_location: 'fridge', expires_at: Date.parse('2026-10-01T12:00:00.123Z'), created_at: expect.any(Number) })
+    expect(sqlite.prepare("SELECT storage_location, expires_at FROM pantry_items WHERE id='beans'").get()).toEqual({ storage_location: 'pantry', expires_at: null })
+  } finally { sqlite.close() }
+})
+
 it('upgrades an existing Phase 0 database without cascading away recipe data', () => {
   const sqlite = new Database(':memory:')
   try {
@@ -64,7 +80,8 @@ it('upgrades Phase 1 timestamps and salt preferences while preserving both paren
     for (const table of ['ingredients', 'steps', 'recipe_equipment', 'cooking_sessions', 'grocery_lists', 'grocery_items', 'pantry_items']) {
       expect(sqlite.prepare('SELECT COUNT(*) AS count FROM ' + table).get()).toEqual({ count: 1 })
     }
-    for (const table of ['pantry_items', 'grocery_lists']) expect(sqlite.prepare('SELECT created_at FROM ' + table).get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
+    expect(sqlite.prepare('SELECT created_at FROM grocery_lists').get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
+    expect(sqlite.prepare('SELECT created_at, updated_at, normalized_name, storage_location FROM pantry_items').get()).toEqual({ created_at: Date.parse('2026-09-26T13:01:51.000Z'), updated_at: Date.parse('2026-09-26T13:01:51.000Z'), normalized_name: 'beans', storage_location: 'pantry' })
     expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='guest'").get()).toEqual({ created_at: '2026-09-26T13:01:51.000Z' })
     expect(sqlite.prepare("SELECT created_at FROM guests WHERE id='unknown-time'").get()).toEqual({ created_at: null })
     expect(sqlite.prepare('SELECT started_at, completed_at, session_notes FROM cooking_sessions').get()).toEqual({ started_at: '2026-09-26T13:01:51.000Z', completed_at: '2026-09-26T14:01:51.000Z', session_notes: 'Kept' })

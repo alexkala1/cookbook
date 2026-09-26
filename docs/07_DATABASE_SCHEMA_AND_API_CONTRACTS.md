@@ -218,47 +218,38 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 - `GET /api/pantry`: Fetch all items in inventory.
 - `POST /api/pantry`: Add new item or batch-add from grocery receipts.
 - `POST /api/pantry/match`: Find recipes in the cookbook that maximize the use of currently expiring ingredients.
-- `POST /api/grocery/generate`:
-  - Request:
+- `POST /api/grocery/generate` (implemented; persists a `grocery_lists` row and its `grocery_items`, returns 201):
+  - Request — exactly one menu shape; `servings` rescales every course unless a course sets its own:
     ```typescript
     {
-      menu: {
-        appetizerId?: string,
-        mainCourseId?: string,
-        dessertId?: string,
-        beverageId?: string
-      },
-      servings: number, // Scales ingredient quantities across all courses
-      region: 'greek_mediterranean' | 'standard_eu' | 'us_standard',
-      deductPantry: boolean // Automatically subtract existing virtual pantry quantities
+      courses?: { recipeId: string, course?: 'appetizer' | 'main' | 'side' | 'dessert' | 'beverage', servings?: number }[], // 1–12
+      recipeIds?: string[],                                                   // 1–12, each treated as 'main'
+      menu?: { appetizerId?: string, mainCourseId?: string, dessertId?: string, beverageId?: string },
+      servings?: number,
+      title?: string                                                          // defaults to recipe titles joined by " · "
     }
     ```
+    `region` and `deductPantry` are rejected with 400 until Greek-only routing is extended and pantry deduction ships. Missing recipes return 404; nothing is written.
   - Response:
     ```typescript
     {
-      listId: string,
-      destinations: [
-        {
-          storeType: 'chasapis_butcher' | 'manavis_produce' | 'fournos_bakery' | 'supermarket' | 'kava_cellar',
-          localizedName: string, // e.g. "Χασάπης / Κρεοπωλείο"
-          items: [
-            {
-              id: string,
-              name: string,
-              totalAmount: number,
-              unit: string,
-              counterPhrase?: string, // "1.4kg αρνίσια σπάλα κομμένη σε μερίδες για γάστρα"
-              packageSizeToBuy?: string, // "1x 6-pack (leaves 1 egg)"
-              surplusLeftoverTip?: string,
-              usedInCourses: {
-                appetizer?: string,
-                main?: string,
-                dessert?: string
-              }
-            }
-          ]
-        }
-      ]
+      listId: string, title: string,
+      destinations: {                        // ordered laiki → chasapis → fournos → supermarket; empty sections omitted
+        section: 'laiki' | 'chasapis' | 'fournos' | 'supermarket',
+        storeType: 'manavis_produce' | 'chasapis_butcher' | 'fournos_bakery' | 'supermarket', // persisted store_destination
+        name: string, localizedName: string, // e.g. "Χασάπης / Κρεοπωλείο"
+        items: {
+          id: string, key: string, name: string, amount: number, unit: 'g' | 'ml' | 'piece' | string,
+          counterPhrase?: string,            // butcher order: "1,4 κιλά αρνίσια σπάλα, κομμένη σε μερίδες για γάστρα"
+          packageSizeToBuy?: string,         // "1 × 250 ml carton"
+          surplusLeftoverTip?: string,       // "About 50 ml left over: enrich a pan sauce or whip for dessert; …"
+          note?: string,                     // e.g. egg parts "2 whole · 2 yolks", or an unconvertible second measure
+          prepNotes: string[],
+          usedIn: { course: string, recipeId: string, recipeTitle: string, name: string, amount: number, unit: string }[]
+        }[]
+      }[],
+      prepAlerts: { course: string, recipeId: string, recipeTitle: string, text: string }[] // soak, marinate, thaw, overnight…
     }
     ```
+  - Engine (`shared/culinary/grocery.ts`): catalog terms in English and accent-folded Greek stems; the longest match decides the section, and processed forms (canned, frozen, dried, stock, powder) never route to the laiki or butcher. Mass, volume, and count are summed across courses in g/ml/pieces; different dimensions of one ingredient stay separate lines. Separated eggs pool across courses (whole + max(yolks, whites)). Packs use the fewest sensible packs (each extra pack costs one smallest pack of waste). Butcher phrases agree in gender with the cut and take the dish (γάστρα, κοκκινιστό, στιφάδο, κλέφτικο, γιουβέτσι, σούπα) from the recipe; meat orders round up to 50 g. Fish routes to the supermarket.
 - `PUT /api/grocery/items/:id/toggle`: Check or uncheck grocery item.

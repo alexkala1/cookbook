@@ -21,7 +21,7 @@ async function ask() {
 onBeforeUnmount(() => controller?.abort())
 </script>
 <template>
-  <button class="rescue-trigger" @click="show">🚨 Rescue My Dish</button>
+  <ClientOnly><Teleport to="#kitchen-rescue-dock"><button class="rescue-trigger" @click="show">🚨 Rescue My Dish</button></Teleport></ClientOnly>
   <dialog ref="dialog" class="rescue-drawer" aria-label="Rescue My Dish" @close="close">
     <form method="dialog"><button class="kitchen-button float-right" autofocus>Close rescue</button></form>
     <h2 class="clear-both pt-5 text-3xl">Rescue My Dish</h2>
