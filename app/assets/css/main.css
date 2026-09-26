@@ -2,8 +2,39 @@
 @import '@nuxt/ui';
 
 @theme {
+  --color-cream: #FAF8F5;
+  --color-espresso: #2C221E;
+  --color-sage: #657963;
+  --color-terracotta: #C85A32;
   --font-sans: 'Segoe UI', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
+}
+
+@layer base {
+  body { @apply bg-cream text-espresso; }
+  h1 { @apply font-serif text-4xl leading-tight sm:text-6xl; overflow-wrap: anywhere; }
+  h2 { @apply font-serif text-3xl leading-tight; }
+  button, a, input, select, textarea { @apply focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sage; }
+  button { @apply cursor-pointer; }
+  button:disabled, fieldset:disabled { @apply cursor-not-allowed opacity-60; }
+  input[type='checkbox'] { @apply size-5 accent-sage; }
+}
+
+@layer components {
+  .page-section { @apply py-12 sm:py-16; }
+  .section-heading { @apply flex flex-wrap items-end justify-between gap-6; }
+  .eyebrow { @apply mb-3 text-xs font-semibold uppercase tracking-widest text-sage; }
+  .field { @apply block w-full min-w-0 rounded-md border border-espresso/30 bg-cream px-3 py-3 text-base text-espresso; }
+  .button-primary { @apply inline-flex min-h-11 items-center justify-center rounded-full bg-espresso px-6 py-3 text-sm font-semibold text-cream hover:bg-espresso/85; }
+  .button-secondary { @apply inline-flex min-h-11 items-center justify-center rounded-full border border-espresso/30 px-5 py-3 text-sm font-semibold hover:bg-sage/10; }
+  .filter-pill { @apply inline-flex min-h-11 items-center rounded-full border border-espresso/25 px-5 py-2 text-sm hover:bg-sage/10; }
+  .filter-pill[aria-pressed='true'] { @apply border-espresso bg-espresso text-cream; }
+  .text-action { @apply min-h-11 font-semibold underline underline-offset-4; }
+  .form-grid { @apply grid gap-5 sm:grid-cols-2; }
+  .form-legend { @apply mb-5 w-full border-b border-espresso/20 pb-3 font-serif text-3xl; }
+  .row-panel { @apply rounded-lg border border-espresso/20 p-5; }
+  .notice { @apply rounded-lg border border-terracotta/50 bg-terracotta/5 p-5; }
+  .empty-state { @apply border-y border-espresso/20 py-14; }
 }
 
 html {

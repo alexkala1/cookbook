@@ -3,7 +3,7 @@
 
 ---
 
-## Local development (Phase 0)
+## Local development (Phase 1)
 
 Use Node.js 24 and pnpm 11.22.0. Installed versions are pinned in `pnpm-lock.yaml`.
 
@@ -26,7 +26,7 @@ After editing `server/db/schema.ts`, run `pnpm run db:generate`, review the gene
 
 `pnpm-workspace.yaml` retains the requested `onlyBuiltDependencies` list and includes equivalent `allowBuilds` entries because pnpm 11 uses the latter for native build approvals.
 
-The homepage and layout wrappers are scaffolded. Recipe/pantry/shopping navigation is labelled “soon”; CRUD, cooking controls, AI, and PWA behavior belong to later work.
+Recipe and drink CRUD, serving/unit/salt conversions, browser-local BYOK settings, and the kitchen hardware profile are available. Pantry, shopping, live cooking controls, AI calls, and PWA behavior belong to later work. API behavior and verification are recorded in [Phase 1 verification](docs/PHASE_1_VERIFICATION.md).
 
 ## 📖 Architecture & Design Documentation
 

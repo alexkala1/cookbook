@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const recipes = sqliteTable('recipes', {
   id: text('id').primaryKey(),
@@ -19,9 +19,9 @@ export const recipes = sqliteTable('recipes', {
   // JSON strings are preserved as specified by the API contract.
   storageReheating: text('storage_reheating'),
   isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
-  rating: real('rating').default(5.0),
+  rating: real('rating'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`)
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).$onUpdate(() => new Date().toISOString())
 })
 
 export const ingredients = sqliteTable('ingredients', {
@@ -34,7 +34,7 @@ export const ingredients = sqliteTable('ingredients', {
   category: text('category').notNull().default('pantry'),
   notes: text('notes'),
   sortOrder: integer('sort_order').notNull().default(0)
-})
+}, table => [index('ingredients_recipe_id_idx').on(table.recipeId)])
 
 export const steps = sqliteTable('steps', {
   id: text('id').primaryKey(),
@@ -52,7 +52,7 @@ export const steps = sqliteTable('steps', {
   sensoryTexture: text('sensory_texture'),
   internalTempTargetC: real('internal_temp_target_c'),
   sortOrder: integer('sort_order').notNull().default(0)
-})
+}, table => [index('steps_recipe_id_idx').on(table.recipeId)])
 
 export const recipeEquipment = sqliteTable('recipe_equipment', {
   id: text('id').primaryKey(),
@@ -60,7 +60,7 @@ export const recipeEquipment = sqliteTable('recipe_equipment', {
   name: text('name').notNull(),
   isEssential: integer('is_essential', { mode: 'boolean' }).notNull().default(true),
   substituteTool: text('substitute_tool')
-})
+}, table => [index('recipe_equipment_recipe_id_idx').on(table.recipeId)])
 
 export const pantryItems = sqliteTable('pantry_items', {
   id: text('id').primaryKey(),
@@ -107,7 +107,7 @@ export const guests = sqliteTable('guests', {
 })
 
 export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
-  id: text('id').primaryKey(),
+  id: text('id').primaryKey().default('default'),
   stoveType: text('stove_type', { enum: ['gas', 'induction', 'electric_radiant'] }).notNull().default('gas'),
   ovenType: text('oven_type', { enum: ['convection_fan', 'static_conventional'] }).notNull().default('convection_fan'),
   hasMicrowave: integer('has_microwave', { mode: 'boolean' }).default(true),
@@ -115,7 +115,7 @@ export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
   hasInstantPot: integer('has_instant_pot', { mode: 'boolean' }).default(false),
   hasCastIron: integer('has_cast_iron', { mode: 'boolean' }).default(true),
   hasClayGastra: integer('has_clay_gastra', { mode: 'boolean' }).default(false),
-  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher'] }).default('table_salt')
+  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_sea_salt'] }).default('table_salt')
 })
 
 export const cookingSessions = sqliteTable('cooking_sessions', {

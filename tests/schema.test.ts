@@ -55,7 +55,7 @@ describe('SQLite schema and initial migration', () => {
     expect(db.select().from(schema.recipes).get()).toMatchObject({
       recipeType: 'food', sourceType: 'manual', servings: 4, prepTimeMinutes: 15,
       cookTimeMinutes: 30, totalTimeMinutes: 45, difficulty: 'intermediate',
-      isFavorite: false, rating: 5, heirloomNotes: 'Sunday lunch', sourceUrl: null,
+      isFavorite: false, rating: null, heirloomNotes: 'Sunday lunch', sourceUrl: null,
       createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2} /), updatedAt: expect.any(String)
     })
     db.update(schema.recipes).set({ isFavorite: true }).where(eq(schema.recipes.id, 'recipe')).run()

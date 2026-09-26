@@ -15,8 +15,8 @@ useSeoMeta({
       <p class="mt-8 max-w-xl text-lg leading-relaxed text-stone-600">
         Keep the handwritten favourites, the Sunday rituals, and the little details that never made it onto the recipe card. Make them part of your everyday kitchen.
       </p>
-      <UButton to="#cookbook" color="neutral" size="xl" trailing-icon="i-lucide-arrow-down" class="mt-8 rounded-full bg-emerald-900 px-6 text-white hover:bg-emerald-800">
-        A look inside
+      <UButton to="/recipes" color="neutral" size="xl" trailing-icon="i-lucide-arrow-right" class="mt-8 rounded-full bg-espresso px-6 text-cream hover:bg-espresso/85">
+        Open your cookbook
       </UButton>
     </div>
     <aside class="border-l-2 border-emerald-800 pl-6">
@@ -28,8 +28,8 @@ useSeoMeta({
   <section id="cookbook" aria-labelledby="cookbook-title" class="py-12 sm:py-16">
     <div class="flex flex-wrap items-center gap-4">
       <h2 id="cookbook-title" class="font-serif text-3xl">Your cookbook starts here</h2>
-      <UBadge color="neutral" variant="outline">Coming soon</UBadge>
     </div>
-    <p class="mt-4 max-w-2xl leading-relaxed text-stone-600">Recipe saving, pantry tracking, and guided cooking are on their way. This is the first page of Heirloom; your collection will have a home here.</p>
+    <p class="mt-4 max-w-2xl leading-relaxed text-stone-600">Save a favourite dish or drink, adjust it for your table, and keep the stories that make it yours.</p>
+    <NuxtLink to="/recipes/new" class="text-action mt-5 inline-block">Write a recipe →</NuxtLink>
   </section>
 </template>

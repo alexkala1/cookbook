@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-stone-50 text-stone-900">
+  <div class="min-h-screen bg-cream text-espresso">
     <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:z-10 focus:bg-white focus:p-4 focus:text-stone-900">
       Skip to content
     </a>
@@ -9,10 +9,11 @@
           Heirloom<span class="text-emerald-800">.</span>
         </NuxtLink>
         <nav aria-label="Main navigation" class="flex flex-wrap items-center gap-x-5 gap-y-3 text-sm">
-          <NuxtLink to="/" aria-current="page" class="font-semibold underline decoration-emerald-800 underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-800">
+          <NuxtLink to="/" exact-active-class="underline" class="font-semibold underline-offset-8 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sage">
             Home
           </NuxtLink>
-          <span aria-disabled="true" class="text-stone-500">Recipes · soon</span>
+          <NuxtLink to="/recipes" active-class="underline" class="font-semibold underline-offset-8">Recipes</NuxtLink>
+          <NuxtLink to="/settings" active-class="underline" class="font-semibold underline-offset-8">Settings</NuxtLink>
           <span aria-disabled="true" class="text-stone-500">Pantry · soon</span>
           <span aria-disabled="true" class="text-stone-500">Shopping · soon</span>
         </nav>

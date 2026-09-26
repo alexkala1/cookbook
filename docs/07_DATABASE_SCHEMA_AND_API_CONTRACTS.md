@@ -5,7 +5,7 @@
 The database uses SQLite via Drizzle ORM for zero-overhead local-first performance, with instant migration capabilities.
 
 ```typescript
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // -------------------------------------------------------------
@@ -31,9 +31,9 @@ export const recipes = sqliteTable('recipes', {
   storageReheating: text('storage_reheating'),
   
   isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
-  rating: real('rating').default(5.0),
+  rating: real('rating'), // Unrated recipes remain null
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`)
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).$onUpdate(() => new Date().toISOString())
 });
 
 // -------------------------------------------------------------
@@ -49,7 +49,7 @@ export const ingredients = sqliteTable('ingredients', {
   category: text('category').notNull().default('pantry'), // produce, meat, dairy, pantry, spices
   notes: text('notes'), // e.g., 'diced small', 'room temperature'
   sortOrder: integer('sort_order').notNull().default(0)
-});
+}, table => [index('ingredients_recipe_id_idx').on(table.recipeId)]);
 
 // -------------------------------------------------------------
 // STEPS TABLE (WITH FOOD SCIENCE & SENSORY MILESTONES)
@@ -75,7 +75,7 @@ export const steps = sqliteTable('steps', {
   internalTempTargetC: real('internal_temp_target_c'),
   
   sortOrder: integer('sort_order').notNull().default(0)
-});
+}, table => [index('steps_recipe_id_idx').on(table.recipeId)]);
 
 // -------------------------------------------------------------
 // PANTRY ITEMS TABLE
@@ -99,7 +99,7 @@ export const recipeEquipment = sqliteTable('recipe_equipment', {
   name: text('name').notNull(),
   isEssential: integer('is_essential', { mode: 'boolean' }).notNull().default(true),
   substituteTool: text('substitute_tool') // e.g. "blender if food processor is unavailable"
-});
+}, table => [index('recipe_equipment_recipe_id_idx').on(table.recipeId)]);
 
 // -------------------------------------------------------------
 // GROCERY LISTS & ITEMS
@@ -154,7 +154,7 @@ export const guests = sqliteTable('guests', {
 // USER KITCHEN HARDWARE PROFILE
 // -------------------------------------------------------------
 export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
-  id: text('id').primaryKey(),
+  id: text('id').primaryKey().default('default'),
   stoveType: text('stove_type', { enum: ['gas', 'induction', 'electric_radiant'] }).notNull().default('gas'),
   ovenType: text('oven_type', { enum: ['convection_fan', 'static_conventional'] }).notNull().default('convection_fan'),
   hasMicrowave: integer('has_microwave', { mode: 'boolean' }).default(true),
@@ -162,7 +162,7 @@ export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
   hasInstantPot: integer('has_instant_pot', { mode: 'boolean' }).default(false),
   hasCastIron: integer('has_cast_iron', { mode: 'boolean' }).default(true),
   hasClayGastra: integer('has_clay_gastra', { mode: 'boolean' }).default(false),
-  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher'] }).default('table_salt')
+  preferredSaltType: text('preferred_salt_type', { enum: ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_sea_salt'] }).default('table_salt')
 });
 
 // -------------------------------------------------------------
