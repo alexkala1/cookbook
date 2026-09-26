@@ -116,7 +116,23 @@ export const groceryItems = sqliteTable('grocery_items', {
   name: text('name').notNull(),
   amount: real('amount'),
   unit: text('unit'),
-  category: text('category').notNull().default('pantry'), // produce, dairy, meat, etc. (for aisle sorting)
+  category: text('category').notNull().default('pantry'), // produce, dairy, meat, etc.
+  
+  // Store Department / Regional Destination Routing
+  storeDestination: text('store_destination', { 
+    enum: ['manavis_produce', 'chasapis_butcher', 'fournos_bakery', 'supermarket', 'kava_cellar', 'general'] 
+  }).notNull().default('supermarket'),
+  
+  // Real-world counter assistance (e.g. phrase to tell the butcher in Greek/English)
+  counterPhrase: text('counter_phrase'),
+  
+  // Commercial pack-size rounding (e.g. "1x 6-pack (leaves 1 egg)")
+  packageSizeToBuy: text('package_size_to_buy'),
+  surplusLeftoverTip: text('surplus_leftover_tip'),
+  
+  // Multi-Course traceability (JSON: { appetizer: 2, main: 3, dessert: 1 })
+  courseBreakdown: text('course_breakdown'),
+  
   isChecked: integer('is_checked', { mode: 'boolean' }).notNull().default(false),
   recipeOriginId: text('recipe_origin_id')
 });
@@ -170,5 +186,47 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 - `GET /api/pantry`: Fetch all items in inventory.
 - `POST /api/pantry`: Add new item or batch-add from grocery receipts.
 - `POST /api/pantry/match`: Find recipes in the cookbook that maximize the use of currently expiring ingredients.
-- `POST /api/grocery/generate`: Consolidate ingredients from selected recipes, subtract available pantry items, and sort by grocery store aisle.
+- `POST /api/grocery/generate`:
+  - Request:
+    ```typescript
+    {
+      menu: {
+        appetizerId?: string,
+        mainCourseId?: string,
+        dessertId?: string,
+        beverageId?: string
+      },
+      servings: number, // Scales ingredient quantities across all courses
+      region: 'greek_mediterranean' | 'standard_eu' | 'us_standard',
+      deductPantry: boolean // Automatically subtract existing virtual pantry quantities
+    }
+    ```
+  - Response:
+    ```typescript
+    {
+      listId: string,
+      destinations: [
+        {
+          storeType: 'chasapis_butcher' | 'manavis_produce' | 'fournos_bakery' | 'supermarket' | 'kava_cellar',
+          localizedName: string, // e.g. "Χασάπης / Κρεοπωλείο"
+          items: [
+            {
+              id: string,
+              name: string,
+              totalAmount: number,
+              unit: string,
+              counterPhrase?: string, // "1.4kg αρνίσια σπάλα κομμένη σε μερίδες για γάστρα"
+              packageSizeToBuy?: string, // "1x 6-pack (leaves 1 egg)"
+              surplusLeftoverTip?: string,
+              usedInCourses: {
+                appetizer?: string,
+                main?: string,
+                dessert?: string
+              }
+            }
+          ]
+        }
+      ]
+    }
+    ```
 - `PUT /api/grocery/items/:id/toggle`: Check or uncheck grocery item.

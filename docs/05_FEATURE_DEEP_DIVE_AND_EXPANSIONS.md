@@ -158,22 +158,71 @@ Cooking isn't just solid food. Heirloom treats cocktails, mocktails, coffee, and
 
 ---
 
-## 11. Feature 11: Smart Grocery Shopping List with Aisle Consolidation & Pantry Deduplication
+## 11. Feature 11: Regional Smart Grocery & Multi-Course Shopping Engine
 
-- **Cross-Recipe Ingredient Merging:**
-  - Planning 3 recipes for the week? Heirloom combines ingredients into a single shopping list:
-    - Recipe A needs 200g onions; Recipe B needs 400g onions -> Shopping list: 600g (approx 3 medium) yellow onions.
-- **Pantry Deduplication:**
-  - If your virtual pantry already has 1kg of flour and 500ml olive oil, Heirloom automatically strikes them from the shopping list.
-- **Aisle-by-Aisle Organization:**
-  - Sorts list according to physical grocery store geography:
-    1. Produce & Herbs
-    2. Meat & Seafood
-    3. Dairy & Refrigerated
-    4. Bakery
-    5. Dry Pantry, Canned Goods & Pasta
-    6. Spices, Oils & Vinegars
-    7. Frozen Foods
+Planning a multi-course dinner (e.g., an **Appetizer, Main Course, and Dessert**) requires sophisticated shopping logistics. Heirloom turns individual recipe ingredients into a single, cohesive, market-aware shopping mission.
+
+### 1. Multi-Course Consolidation & Ingredient Union
+When you select an entire menu (e.g., *Appetizer: Kolokithokeftedes (Zucchini Fritters) + Main: Slow-Roasted Lamb with Lemon Potatoes + Dessert: Portokalopita (Orange Phyllo Cake)*):
+- **Cross-Recipe Mathematical Merging:**
+  - **Lemons:** 2 (appetizer dip) + 3 (main lamb marinade) + 1 (dessert orange-lemon syrup) -> **Total: 6 lemons (~700g)**.
+  - **Eggs:** 1 (fritter binder) + 0 (main) + 4 (cake custard) -> **Total: 5 eggs**.
+  - **Olive Oil:** 120ml (frying) + 80ml (roasting) + 50ml (cake) -> **Total: 250ml EVOO**.
+  - **Fresh Herbs:** 1 bunch dill, 1 bunch mint (shared across zucchini fritters and roast marinade).
+- **Per-Course Usage Badges:** Each item on the shopping list shows where it is going:
+  - *Lemons (6 pcs)* -> `[Appetizer: 2] [Main: 3] [Dessert: 1]`
+
+### 2. Regional Market Routing (Greek & Mediterranean Store Geographies)
+Unlike generic US apps that assume a single big-box supermarket with numbered aisles, Mediterranean and Greek food shopping is often multi-stop or department-specialized. Heirloom organizes the list by authentic shopping destinations:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📍 LAIKI AGORA / MANAVIS (Greengrocer & Produce)                       │
+│ • 1.5kg Potatoes (Yukon Gold or Agria - ideal for roasting)           │
+│ • 1kg Medium Zucchinis (firm, shiny skin)                              │
+│ • 6 Lemons (unwaxed, thin skin for heavy juicing)                      │
+│ • 4 Oranges (thick aromatic rind for Portokalopita zest)               │
+│ • Fresh Herbs: 1 bunch Dill (άνηθος), 1 bunch Spearmint (δυόσμος)      │
+│ • 1 head Garlic (σκορδο)                                              │
+├────────────────────────────────────────────────────────────────────────┤
+│ 🥩 CHASAPIS (Traditional Butcher Counter)                             │
+│ • 1.4kg Lamb Shoulder (Αρνίσια Σπάλα)                                  │
+│   🗣️ WHAT TO SAY: "1.4kg αρνίσια σπάλα με κόκκαλο, κομμένη σε μερίδες  │
+│      για γάστρα/ταψί."                                                 │
+├────────────────────────────────────────────────────────────────────────┤
+│ 🥖 FOURNOS (Local Bakery)                                              │
+│ • 1x 450g pack Traditional Phyllo (Φύλλο Κρούστας για γλυκά)          │
+│ • 1 Loaf Sourdough Bread (Χωριάτικο προζυμένιο)                       │
+├────────────────────────────────────────────────────────────────────────┤
+│ 🛒 SUPERMARKET (Sklavenitis / AB / Masoutis)                           │
+│ • 300g Feta PDO (barrel-aged / βαρελίσια)                             │
+│ • 150g Graviera or Kefalotyri (for grating into fritters)             │
+│ • 1x 10-pack Fresh Eggs (Large / 63-73g)                               │
+│ • 1kg All-Purpose Flour (Αλεύρι για όλες τις χρήσεις)                  │
+│ • Greek Dried Wild Oregano (Ρίγανη βουνού)                             │
+│ • 1x 200g Greek Strained Yogurt 10% (for the garlic yogurt dip)       │
+│ • Baking Powder (Μπέικιν Πάουντερ)                                     │
+├────────────────────────────────────────────────────────────────────────┤
+│ 🍷 KAVA / CELLAR (Beverage & Wine Pairings)                            │
+│ • Starter/Appetizer: Crisp Assyrtiko (Santorini) or fresh Tsipouro    │
+│ • Main Lamb: Agiorgitiko (Nemea) or Xinomavro (Naoussa)                │
+│ • Dessert: Sweet Samos Vin Doux or chilled Masticha liquor             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3. Commercial Pack-Size Rounding & Leftover Waste Prevention
+Recipes call for exact culinary grams, but stores sell packaged goods:
+- **Pack-Size Reality:**
+  - Recipe needs **5 eggs** -> Supermarkets sell in 6 or 10-packs. The list says: *"Need: 5 eggs | Buy: 1x 6-pack (1 egg remaining)"*.
+  - Recipe needs **350g phyllo** -> Sold in 450g boxes. The list says: *"Need: 350g | Buy: 1x 450g box (100g surplus)"*.
+- **Leftover Waste Prevention Card:**
+  - When surplus ingredients exist, Heirloom automatically generates a 1-tap leftover suggestion:
+    - *"You will have 100g of phyllo leftover from the Portokalopita: Brush with leftover butter, dust with cinnamon-sugar, and bake for 8 mins for crispy coffee crisps!"*
+
+### 4. Interactive In-Store Checklist
+- Strike-through as you pick up items.
+- Live pantry sync: items already in your kitchen are automatically marked "Already in Pantry" with a single tap to unhide.
+- Offline-ready: Works seamlessly in underground supermarket basements with zero mobile signal.
 
 ---
 
