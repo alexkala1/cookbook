@@ -86,3 +86,26 @@ Users can speak or type freely:
   - Liquid emulsion (60ml extra virgin olive oil, 50ml fresh lemon juice, 30g Dijon or Greek yellow mustard, 120ml chicken broth/water).
   - Oven temperature and time (200°C / 400°F convection for 55–65 minutes, turning potatoes once).
 - Attaches the story to `heirloomNotes` preserving the familial memory alongside the recipe.
+
+---
+
+## 6. Ingestion Channel 5: Cocktails, Mixology & Coffee Recipes
+
+Beverages follow distinct culinary rules:
+- **Ratio Normalization:** Translates "parts" or "splashes" into standard liquid measures (milliliters `ml` or fluid ounces `oz`).
+- **Thermodynamic Technique Extraction:**
+  - Detects whether drink is shaken (citrus/egg white/cream) or stirred (spirit-forward, clear).
+  - Flags appropriate glassware (Coupe, Nick & Nora, Collins, Rocks glass, Copper mug).
+  - Specifies ice architecture (large clear sphere/cube vs crushed ice vs neat).
+- **Specialty Coffee Brew Ingestion:**
+  - Extracts coffee dose in grams, water mass, brew temperature, grind size (e.g. "medium-coarse, like kosher salt"), and bloom timing.
+
+---
+
+## 7. Ingestion Channel 6: Grocery Receipt & Pantry Camera Scanning
+
+Populating a pantry manually item-by-item is tedious. Heirloom allows instant visual bulk ingestion:
+1. **Paper Grocery Receipt Photo:**
+   - Vision model scans line items, strips cashier store codes (e.g. "ORG BNY 4011" -> "Organic Bananas"), estimates quantity and standard storage category (produce/dairy/pantry), and populates virtual inventory in 3 seconds.
+2. **Fridge & Spice Shelf Snapshots:**
+   - The user snaps a quick picture of their spice rack or open pantry shelf. The vision model detects recognized containers and prompts: *"Found: cumin, smoked paprika, soy sauce, Dijon mustard, arborio rice. Add to pantry?"*

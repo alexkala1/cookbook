@@ -120,3 +120,72 @@ The system identifies bottlenecks (e.g. only 1 oven, 4 burners) and organizes th
   - Keep the original canonical recipe, but create family variations (e.g. "Grandma's Original" vs "Alex's Spicy Variation").
 - **Physical Keepsake Export:**
   - One-click print-to-PDF designed like classic vintage typography cards, ready to be printed and added to a physical kitchen binder.
+
+---
+
+## 8. Feature 8: "Rescue My Dish" Live Emergency Troubleshooter
+
+In the heat of cooking, mistakes happen fast. A dedicated floating **"🚨 Rescue"** button in Kitchen Mode provides instant, stress-free triage:
+- **Common Emergencies Solved by Culinary Science:**
+  - *Broken Sauce / Emulsion:* "My Hollandaise or Vinaigrette split!" -> *Fix:* Whisk 1 tsp of warm water (or an egg yolk) in a clean bowl, then slowly stream the broken sauce into it while whisking vigorously to re-establish the emulsion.
+  - *Oversalted Soup / Stew:* "I dumped too much salt!" -> *Fix:* Myth-bust potato tricks (potatoes don't absorb salt preferentially). Dilute with unsalted liquid or balance with acid (lemon juice/vinegar) and fat/dairy (cream/butter) to mask perception of saltiness.
+  - *Bottom of the Pot Scorching:* "I smell burning on the bottom of my chili/stew!" -> *Fix:* Do NOT scrape! Immediately pour the unburned top layer into a clean pot and discard the bottom 2 inches. Add 1/2 tsp of smoked paprika or cocoa powder to harmonize with any faint smoke aroma.
+  - *Soggy Stir-Fry / Steaming Meat:* "Water is pooling in my pan instead of searing!" -> *Fix:* Pan was overcrowded and heat dropped below 100°C. Remove meat immediately with tongs, let pan reheat until smoking, boil off excess liquid, then return meat in batches.
+
+---
+
+## 9. Feature 9: "Mise en Place" Pre-Flight & Equipment Checklist
+
+Before turning on a burner or preheating the oven, Heirloom walks the cook through a 60-second prep check:
+- **Equipment Inventory:** Flags non-standard tools (e.g., "This recipe requires an immersion blender or high-speed blender; 12-inch cast-iron skillet; digital meat probe"). Suggests workarounds if a tool is missing.
+- **Advance Prep Alerts:**
+  - *"Softened Butter"* -> Warns user 1 hour prior.
+  - *"Pat Meat Dry"* -> Reminds user to salt and air-dry steaks on a wire rack in the fridge for optimal crust formation.
+  - *"Chilled Ingredients"* -> Reminds user to keep butter cubes ice-cold for flaky pie crust or biscuits.
+
+---
+
+## 10. Feature 10: Drink, Mixology & Beverage Craft
+
+Cooking isn't just solid food. Heirloom treats cocktails, mocktails, coffee, and wine pairings as first-class citizens:
+- **Cocktail Physics & Dilution Engine:**
+  - Understands the scientific difference between **Shaking** (rapid chilling, high dilution ~20-25%, aeration, micro-bubbles for citrus drinks) and **Stirring** (gentle chilling, controlled dilution ~15-20%, crystal-clear silky texture for spirit-forward drinks like Manhattans and Martinis).
+  - Calculates Brix sugar levels to balance tartness vs sweetness.
+- **Specialty Coffee Ratio Calculator:**
+  - Pour-over (V60, Chemex, Aeropress): calculates exact coffee-to-water brew ratios (e.g. 1:16 = 20g coffee to 320g water at 93°C) with timed bloom and pulse pour alerts.
+- **Course Pairing Sommelier:**
+  - Suggests wine, craft beer, or zero-proof mocktail pairings tailored to the dominant flavor notes of any meal.
+
+---
+
+## 11. Feature 11: Smart Grocery Shopping List with Aisle Consolidation & Pantry Deduplication
+
+- **Cross-Recipe Ingredient Merging:**
+  - Planning 3 recipes for the week? Heirloom combines ingredients into a single shopping list:
+    - Recipe A needs 200g onions; Recipe B needs 400g onions -> Shopping list: 600g (approx 3 medium) yellow onions.
+- **Pantry Deduplication:**
+  - If your virtual pantry already has 1kg of flour and 500ml olive oil, Heirloom automatically strikes them from the shopping list.
+- **Aisle-by-Aisle Organization:**
+  - Sorts list according to physical grocery store geography:
+    1. Produce & Herbs
+    2. Meat & Seafood
+    3. Dairy & Refrigerated
+    4. Bakery
+    5. Dry Pantry, Canned Goods & Pasta
+    6. Spices, Oils & Vinegars
+    7. Frozen Foods
+
+---
+
+## 12. Feature 12: Safe Food Storage & Texture-Preserving Reheating
+
+Good cooking doesn't end when the meal is plated:
+- **Food Safety Guidelines:**
+  - Safe refrigeration shelf-life based on USDA / EFSA standards (e.g., cooked poultry: 3-4 days; seafood: 2 days).
+  - Freezer longevity and vacuum-seal recommendations.
+- **Texture-Preserving Reheating:**
+  - Prevents the dreaded "rubbery microwave syndrome":
+    - *Crispy items (pizza, fried chicken, pastries):* "Reheat at 190°C in an oven or air fryer for 5-7 minutes. Do not microwave."
+    - *Stews and braises:* "Reheat gently on stovetop with 2 tbsp of water/broth to loosen gelatin."
+    - *Pasta:* "Reheat in a skillet with a splash of water and a dab of butter to re-emulsify the sauce."
+

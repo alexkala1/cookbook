@@ -85,8 +85,17 @@ When a raw recipe is ingested, Heirloom runs it through a specialized prompt pip
      - Audio: "The violent frying sizzle subsides into a steady, gentle crackle."
      - Aroma: "A fragrant, nutty, toasted scent replaces the raw garlic odor."
      - Internal Temp: "Target internal temperature: 74°C (165°F) for chicken breast, or 54°C (130°F) for medium-rare beef."
-4. **Failure Prevention ("What to Watch Out For"):**
-   - Proactive warnings on common pitfalls (e.g. "Do not overcrowd the pan or the meat will steam in its own juices rather than sear").
+4. **Salt Density & Chemistry Normalization:**
+   - Salt type variation is the #1 silent killer of recipes. The AI applies density corrections:
+     - 1 tsp Table Salt = ~6.0g
+     - 1 tsp Morton Kosher Salt = ~4.8g
+     - 1 tsp Diamond Crystal Kosher Salt = ~2.8g (less than half the saltiness of table salt!)
+   - The AI explicitly tags salt measurements with the recommended variety and exact grams to prevent over/under-salting.
+5. **Mise en Place & Equipment Detection:**
+   - Detects all required tools (Dutch oven, immersion blender, meat probe, 9x13 pan, cocktail shaker).
+   - Generates an advance preparation checklist (e.g. "Soak dried mushrooms in warm water 30 mins prior", "Chill martini glass").
+6. **Drinks & Mixology Thermodynamics:**
+   - For beverage recipes, evaluates dilution ratio, chilling method (shaken vs stirred), and acid/sugar balance (Brix calculation).
 
 ---
 
@@ -97,13 +106,19 @@ All AI completions in Heirloom are strictly validated against a TypeScript/Zod c
 ```typescript
 import { z } from 'zod';
 
+export const EquipmentSchema = z.object({
+  name: z.string(),
+  isEssential: z.boolean().default(true),
+  substitute: z.string().optional() // e.g. "blender if food processor is unavailable"
+});
+
 export const IngredientSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   amount: z.number().positive(),
-  unit: z.enum(['g', 'ml', 'tsp', 'tbsp', 'piece', 'clove', 'pinch', 'to_taste']),
+  unit: z.enum(['g', 'ml', 'tsp', 'tbsp', 'oz', 'piece', 'clove', 'pinch', 'to_taste']),
   gramsEquivalent: z.number().positive().optional(),
-  category: z.enum(['produce', 'meat', 'dairy', 'pantry', 'spices', 'bakery', 'liquids']),
+  category: z.enum(['produce', 'meat', 'dairy', 'pantry', 'spices', 'bakery', 'liquids', 'spirits']),
   notes: z.string().optional(), // e.g. "chilled and cubed"
   substitutions: z.array(z.object({
     ingredient: z.string(),
@@ -134,6 +149,7 @@ export const StepSchema = z.object({
 export const RecipeSchema = z.object({
   title: z.string(),
   description: z.string(),
+  recipeType: z.enum(['food', 'drink', 'cocktail', 'baking', 'dessert']).default('food'),
   sourceUrl: z.string().url().optional(),
   sourceType: z.enum(['url', 'video', 'prompt', 'handwritten_ocr', 'manual']),
   servings: z.number().int().positive().default(4),
@@ -143,8 +159,30 @@ export const RecipeSchema = z.object({
   difficulty: z.enum(['easy', 'intermediate', 'advanced', 'master']),
   cuisine: z.string().optional(),
   dietaryTags: z.array(z.string()),
+  
+  // Advance preparation & tools
+  equipmentNeeded: z.array(EquipmentSchema),
+  advanceMiseEnPlace: z.array(z.string()), // Steps to do before starting (e.g. soften butter)
+  
   ingredients: z.array(IngredientSchema),
   steps: z.array(StepSchema),
+  
+  // Drink/Cocktail-specific metadata (optional)
+  drinkDetails: z.object({
+    glassware: z.string().optional(),
+    iceType: z.enum(['cubed', 'crushed', 'clear_large_cube', 'neat_none']).optional(),
+    mixingMethod: z.enum(['shaken', 'stirred', 'built_in_glass', 'blended']).optional(),
+    alcoholByVolumeEstimated: z.number().optional()
+  }).optional(),
+
+  // Storage, Leftovers & Proper Reheating
+  storageAndReheating: z.object({
+    fridgeLifespanDays: z.number().int().nonnegative(),
+    canFreeze: z.boolean(),
+    freezerLifespanMonths: z.number().int().nonnegative().optional(),
+    bestReheatingMethod: z.string() // e.g. "Oven or skillet at 180°C to preserve crispy crust; avoid microwave"
+  }).optional(),
+  
   macroNutrientsPerServing: z.object({
     calories: z.number().optional(),
     proteinGrams: z.number().optional(),
@@ -152,6 +190,18 @@ export const RecipeSchema = z.object({
     fatGrams: z.number().optional(),
     fiberGrams: z.number().optional()
   }).optional(),
+  
   heirloomNotes: z.string().optional() // Personal or family memories/tweaks
+});
+
+// -------------------------------------------------------------
+// EMERGENCY TRIAGE CONTRACT ("Rescue My Dish")
+// -------------------------------------------------------------
+export const RescueTriageSchema = z.object({
+  diagnosis: z.string(),
+  immediateAction: z.string(), // Step 1: Remove from heat immediately
+  scientificCause: z.string(), // Why the emulsion broke or why scorching occurred
+  rescueSteps: z.array(z.string()), // Exact steps to recover the dish
+  preventNextTime: z.string()
 });
 ```

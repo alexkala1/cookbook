@@ -41,6 +41,18 @@ It doesn't just copy the instructions; it **fills the gaps**:
 - **The Reality:** Hosting a dinner for 6 persons. The steak is done at 19:30, but the roasted potatoes need 25 more minutes, and the sauce broke because the cook tried to do three things at once.
 - **The Heirloom Solution:** The **Multi-Course Dinner Party Conductor**. The user selects 3 or 4 recipes and a target serving time. The system calculates a unified, backwards-scheduled prep timeline (oven sharing, burner allocation, passive resting periods).
 
+### Pain Point 6: Mid-Cook Panics ("Rescue My Dish")
+- **The Reality:** The sauce broke, the dish is too salty, or the stew is burning on the bottom. In the heat of cooking, the cook has 30 seconds to save the meal and cannot read a 10-page forum thread.
+- **The Heirloom Solution:** An instant **"Rescue My Dish"** troubleshooter inside Kitchen Mode providing immediate culinary science triage.
+
+### Pain Point 7: The "Mise en Place" Surprise
+- **The Reality:** You turn on the stove, start searing garlic, and then read: *"Now pour in 500ml of homemade broth thawed at room temperature, and blend with an immersion blender."* You don't have thawed broth or an immersion blender.
+- **The Heirloom Solution:** A mandatory **Mise en Place & Equipment Pre-flight Checklist** that verifies all tools and advance prep (soaking, softening butter, bringing meat to room temp) *before* heat is applied.
+
+### Pain Point 8: Cocktails, Drinks & Mixology Neglect
+- **The Reality:** Most cookbooks ignore beverages or treat them as an afterthought. Drinks require distinct chemistry: chilling thermodynamics, ice dilution (shaken vs stirred), Brix sugar/acid balance, and carbonation retention.
+- **The Heirloom Solution:** First-class support for **Drink & Beverage Crafting** (cocktails, mocktails, coffee pour-over ratios, artisanal syrups, and wine/beer course pairings).
+
 ---
 
 ## 3. The Heirloom Aesthetics & Metaphor

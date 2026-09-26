@@ -14,10 +14,10 @@ The project is structured into 6 sequential phases, ensuring every feature is em
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Phase 1: Core Recipe Management & BYOK Settings                        │
-│ • Recipe CRUD (List, Card, View, Edit) with Heirloom aesthetic         │
+│ Phase 1: Core Recipe & Drink Models with BYOK Settings                 │
+│ • Recipe & Cocktail CRUD with Heirloom editorial aesthetic             │
 │ • Multi-model BYOK settings panel (OpenAI, Anthropic, Gemini, Groq)    │
-│ • Unit conversion engine (Grams/Ounces/Cups) & scaling logic          │
+│ • Unit & Salt Density engine (Grams/Ounces/Cups, Kosher vs Table)     │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
@@ -25,25 +25,28 @@ The project is structured into 6 sequential phases, ensuring every feature is em
 │ Phase 2: AI Ingestion & "Fill-The-Gaps" Reasoning Engine              │
 │ • Web URL cleaner (JSON-LD + Readability + LLM normalization)          │
 │ • Video transcript ingestion (YouTube / TikTok -> portion reconstruction)│
-│ • The "Food Science Why" badge generator & sensory milestone injector  │
+│ • Drink & cocktail thermodynamic parser (shaken vs stirred)            │
+│ • Food Science "Why" generator & sensory milestone injector            │
 │ • Real-time SSE streaming for live recipe creation                     │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Phase 3: Kitchen Mode & Hands-Free Interaction                         │
+│ Phase 3: Kitchen Mode, "Rescue My Dish" & Hands-Free Interaction       │
 │ • Screen WakeLock integration (@vueuse/core)                           │
-│ • Giant typography step-by-step navigation                             │
-│ • Multi-timer component linked to recipe steps                         │
+│ • "Mise en Place" advance prep & equipment checklist                   │
+│ • "🚨 Rescue My Dish" live emergency troubleshooter                    │
+│ • Giant typography step-by-step navigation & multi-step timers         │
 │ • Voice commands ("Next", "Back", "Timer") via Web Speech API          │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ Phase 4: Pantry & Molecular Substitution Engine                        │
-│ • Pantry inventory tracking (fridge, dry storage, spices)              │
+│ Phase 4: Pantry, Receipt Scanning & Smart Grocery Consolidation        │
+│ • Virtual pantry with receipt OCR and fridge shelf scanning            │
 │ • "Cook with what I have" recipe matcher                               │
-│ • Intelligent substitution advisor (flavor, moisture, chemistry)      │
+│ • Molecular & culinary substitution advisor (flavor, moisture, structure)│
+│ • Consolidated grocery list with pantry deduplication & aisle sorting  │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
                                    ▼
@@ -52,7 +55,15 @@ The project is structured into 6 sequential phases, ensuring every feature is em
 │ • Dinner party orchestrator: unified backwards cooking schedule        │
 │ • Equipment bottleneck detector (oven temp & burner conflicts)         │
 │ • Heirloom family memories, ratings & photo logs                       │
-│ • Printable vintage heirloom PDF export                                │
+│ • Printable vintage heirloom PDF export & Hardcover print hook         │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Phase 6: Open-Core Ecosystem, Cloud Sync & App Store Deployment        │
+│ • Open-source community packaging (Docker / self-hosted instructions) │
+│ • Optional "Heirloom Cloud" encrypted multi-device sync hooks          │
+│ • Mobile app binaries packaging (Capacitor / native wrapper)           │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 

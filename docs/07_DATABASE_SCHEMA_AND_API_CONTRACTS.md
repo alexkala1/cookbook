@@ -15,6 +15,7 @@ export const recipes = sqliteTable('recipes', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   description: text('description').notNull(),
+  recipeType: text('recipe_type', { enum: ['food', 'drink', 'cocktail', 'baking', 'dessert'] }).notNull().default('food'),
   sourceUrl: text('source_url'),
   sourceType: text('source_type', { enum: ['url', 'video', 'prompt', 'handwritten_ocr', 'manual'] }).notNull().default('manual'),
   servings: integer('servings').notNull().default(4),
@@ -25,6 +26,10 @@ export const recipes = sqliteTable('recipes', {
   cuisine: text('cuisine'),
   imageUrl: text('image_url'),
   heirloomNotes: text('heirloom_notes'), // Grandma's tips, family stories
+  
+  // Storage & reheating instructions (JSON stringified)
+  storageReheating: text('storage_reheating'),
+  
   isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
   rating: real('rating').default(5.0),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
@@ -86,6 +91,37 @@ export const pantryItems = sqliteTable('pantry_items', {
 });
 
 // -------------------------------------------------------------
+// RECIPE EQUIPMENT TABLE
+// -------------------------------------------------------------
+export const recipeEquipment = sqliteTable('recipe_equipment', {
+  id: text('id').primaryKey(),
+  recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  isEssential: integer('is_essential', { mode: 'boolean' }).notNull().default(true),
+  substituteTool: text('substitute_tool') // e.g. "blender if food processor is unavailable"
+});
+
+// -------------------------------------------------------------
+// GROCERY LISTS & ITEMS
+// -------------------------------------------------------------
+export const groceryLists = sqliteTable('grocery_lists', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`)
+});
+
+export const groceryItems = sqliteTable('grocery_items', {
+  id: text('id').primaryKey(),
+  listId: text('list_id').notNull().references(() => groceryLists.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  amount: real('amount'),
+  unit: text('unit'),
+  category: text('category').notNull().default('pantry'), // produce, dairy, meat, etc. (for aisle sorting)
+  isChecked: integer('is_checked', { mode: 'boolean' }).notNull().default(false),
+  recipeOriginId: text('recipe_origin_id')
+});
+
+// -------------------------------------------------------------
 // COOKING SESSIONS & LOGS
 // -------------------------------------------------------------
 export const cookingSessions = sqliteTable('cooking_sessions', {
@@ -105,7 +141,7 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 
 ### 1. Recipes API
 - `GET /api/recipes`: List all saved recipes with search, tag filters, and sorting.
-- `GET /api/recipes/:id`: Full recipe details including ingredients, steps, science notes, and cooking history.
+- `GET /api/recipes/:id`: Full recipe details including ingredients, steps, science notes, equipment, and cooking history.
 - `POST /api/recipes`: Create a new recipe manually or from AI pipeline.
 - `PUT /api/recipes/:id`: Update recipe, ingredients, or grandma's notes.
 - `DELETE /api/recipes/:id`: Delete a recipe.
@@ -123,11 +159,16 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
 - `POST /api/ai/substitute`:
   - Request: `{ ingredientName: string, recipeContext: string }`
   - Response: Returns 2–3 scientific substitution alternatives with moisture/texture adjustments.
+- `POST /api/ai/rescue`:
+  - Request: `{ issueDescription: string, recipeContext: string, currentStep: number }`
+  - Response: Immediate low-latency triage recovery steps (e.g. broken emulsion, oversalted, burning bottom).
 - `POST /api/meal-plan/orchestrate`:
   - Request: `{ recipeIds: string[], targetServeTime: string, guestCount: number }`
   - Response: Returns unified backwards prep and cooking timeline with equipment conflict warnings.
 
-### 3. Pantry & Inventory Endpoints
+### 3. Pantry & Grocery Endpoints
 - `GET /api/pantry`: Fetch all items in inventory.
 - `POST /api/pantry`: Add new item or batch-add from grocery receipts.
 - `POST /api/pantry/match`: Find recipes in the cookbook that maximize the use of currently expiring ingredients.
+- `POST /api/grocery/generate`: Consolidate ingredients from selected recipes, subtract available pantry items, and sort by grocery store aisle.
+- `PUT /api/grocery/items/:id/toggle`: Check or uncheck grocery item.

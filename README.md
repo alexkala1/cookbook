@@ -15,6 +15,7 @@ Comprehensive architectural blueprints and specifications are documented in the 
 6. **[06. Team Roles & MCP Ecosystem](file:///home/alex/repos/cookbook/docs/06_TEAM_ROLES_AGENTS_AND_MCP_ECOSYSTEM.md)**: The autonomous trio (Gemini = Logic/Specs, Codex = Dev/QA, Claude = Review/Planner) and MCP servers (`context7`, `playwright`, `fetch`, `agent-core_memory`).
 7. **[07. Database Schema & API Contracts](file:///home/alex/repos/cookbook/docs/07_DATABASE_SCHEMA_AND_API_CONTRACTS.md)**: Complete Drizzle ORM schema definitions and Nitro server route endpoints.
 8. **[08. Implementation Roadmap & First Steps](file:///home/alex/repos/cookbook/docs/08_IMPLEMENTATION_ROADMAP_AND_FIRST_STEPS.md)**: Phased milestones and dev-crew execution plan.
+9. **[09. Monetization & Open-Core Strategy](file:///home/alex/repos/cookbook/docs/09_MONETIZATION_AND_OPEN_CORE_STRATEGY.md)**: Open-core FOSS community architecture, BYOK economics, managed "Heirloom Cloud" sync, App Store binaries, and physical hardcover print-on-demand keepsake.
 
 ---
 
@@ -25,3 +26,4 @@ Comprehensive architectural blueprints and specifications are documented in the 
 - **Database:** Drizzle ORM with SQLite (`better-sqlite3` / `@libsql/client`).
 - **Offline / Mobile:** Vite PWA, IndexedDB local cache.
 - **AI Integration:** Multi-provider BYOK (OpenAI, Anthropic, Google Gemini, Groq, OpenRouter, Ollama).
+- **Core Pillars:** Food Science "Why", Sensory Milestones, Salt Density Normalization, Rescue My Dish Triage, Cocktail & Beverage Craft, Multi-Course Dinner Conductor.
