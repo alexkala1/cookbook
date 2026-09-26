@@ -1,0 +1,26 @@
+services:
+  heirloom:
+    build: .
+    image: heirloom:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HEIRLOOM_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: /app/data/heirloom.db
+      HEIRLOOM_PUBLIC_HOST: ${HEIRLOOM_PUBLIC_HOST:-}
+    volumes:
+      - type: bind
+        source: ./data
+        target: /app/data
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

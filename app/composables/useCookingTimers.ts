@@ -67,6 +67,7 @@ export function useCookingTimers(recipeId: string) {
     persist()
   }
   function reset(timer: CookingTimer) { timer.remaining = timer.duration; timer.state = 'idle'; persist() }
+  function remove(timer: CookingTimer) { timers.value = timers.value.filter(row => row.id !== timer.id); persist() }
   onMounted(() => {
     try { timers.value = restoreTimers(sessionStorage.getItem(storageKey)) }
     catch { persistence.value = 'Session storage unavailable: timers cannot survive reload.' }
@@ -76,5 +77,5 @@ export function useCookingTimers(recipeId: string) {
     window.addEventListener('pagehide', persist)
   })
   onBeforeUnmount(() => { persist(); disposed = true; clearInterval(interval); document.removeEventListener('visibilitychange', tick); window.removeEventListener('pagehide', persist); void audio?.close().catch(() => {}) })
-  return { timers, alerts, sound, persistence, start, toggle, reset, enableSound }
+  return { timers, alerts, sound, persistence, start, toggle, reset, remove, enableSound }
 }

@@ -31,12 +31,15 @@ export function classifyStep(step: ConductorStep) {
   const isCooking = cooking.test(text) && !offHeat.test(text)
   const isAdvance = advance.test(text) || /dust\b.*with flour/.test(text)
   const isRest = resting.test(text)
+  // Adding an ingredient mid-recipe is hands-on cooking time, not advance prep.
+  const isAdding = /(?:^| )(?:add|stir in|fold in|pour in|mix in|προσθεσ|ριξτε)/.test(text)
 
   const phase: Phase = isAdvance ? 'prep'
     : (isPlate && (!isCooking || offHeat.test(text))) ? 'plate'
     : isCooking ? 'cook'
     : isRest ? 'rest'
     : isPlate ? 'plate'
+    : isAdding ? 'cook'
     : 'prep'
   // Greek ψήνω also means grilling; a grill or frying pan is not the oven.
   const oven = ovenUse.test(text) && !/(?:^| )(?:σχαρ|τηγαν|grill pan)/.test(text)

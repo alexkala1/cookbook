@@ -28,7 +28,7 @@ describe('step analysis', () => {
     ['Roast at 200°C for 45 minutes.', 'cook', true, 0], ['Sear the lamb in a skillet, then roast in the oven.', 'cook', true, 1], ['Simmer the sauce 20 minutes.', 'cook', false, 1],
     ['Fry the potatoes in two pans.', 'cook', false, 2], ['Ψήστε στους 180 βαθμούς για 40 λεπτά.', 'cook', true, 0], ['Τηγανίστε τα κολοκυθάκια.', 'cook', false, 1],
     ['Ψήστε τα μπιφτέκια στη σχάρα.', 'cook', false, 0], ['Rest the meat 10 minutes.', 'rest', false, 0], ['Carve and serve.', 'plate', false, 0], ['Σερβίρετε ζεστό.', 'plate', false, 0],
-    ['Remove from heat, garnish and serve.', 'plate', false, 0], ['Add the rest of the flour.', 'prep', false, 0], ['Dust the chicken with flour.', 'prep', false, 0]
+    ['Remove from heat, garnish and serve.', 'plate', false, 0], ['Add the rest of the flour.', 'cook', false, 0], ['Garnish, add a drizzle of oil and serve.', 'plate', false, 0], ['Chop the onions and add them to a bowl.', 'cook', false, 0], ['Dust the chicken with flour.', 'prep', false, 0]
   ] as const)('%s → %s, oven %s, burners %i', (instruction, phase, oven, burners) => {
     expect(classifyStep({ stepNumber: 1, instruction })).toMatchObject({ phase, oven, burners })
   })

@@ -51,3 +51,29 @@ it('preserves the remaining duration across an ordinary pause, resume and comple
   expect(timer).toMatchObject({ state: 'finished', remaining: 0 })
   expect(cooking.alerts.value).toEqual(['Rest finished'])
 })
+
+it('writes storage only on state changes, never on countdown ticks', () => {
+  const writes: string[] = []
+  vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: (_key: string, value: string) => { writes.push(value) } })
+  const cooking = useCookingTimers('recipe')
+  mount()
+  const afterMount = writes.length
+  cooking.start('Simmer', 60); cooking.start('Rest', 30)
+  expect(writes.length).toBe(afterMount + 2)
+  vi.advanceTimersByTime(10000) // 40 ticks while both run
+  expect(writes.length).toBe(afterMount + 2)
+  expect(cooking.timers.value[0]!.remaining).toBe(50)
+  cooking.toggle(cooking.timers.value[0]!); cooking.toggle(cooking.timers.value[0]!); cooking.reset(cooking.timers.value[1]!)
+  expect(writes.length).toBe(afterMount + 5)
+  vi.advanceTimersByTime(50000) // Simmer finishes: one write for the state change
+  expect(writes.length).toBe(afterMount + 6)
+  expect(JSON.parse(writes.at(-1)!).timers[0]).toMatchObject({ state: 'finished' })
+})
+
+it('persists timer removal immediately', () => {
+  const cooking = useCookingTimers('recipe')
+  mount(); cooking.start('Simmer', 60); cooking.start('Rest', 30)
+  cooking.remove(cooking.timers.value[0]!)
+  expect(cooking.timers.value.map(timer => timer.name)).toEqual(['Rest'])
+  expect(JSON.parse(stored.get('heirloom:timers:v1:recipe')!).timers.map((timer: { name: string }) => timer.name)).toEqual(['Rest'])
+})

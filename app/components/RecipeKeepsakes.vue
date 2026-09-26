@@ -11,7 +11,7 @@ function date(value: number) { return new Date(value).toLocaleDateString('en-GB'
 async function save() {
   busy.value = true; error.value = ''; saved.value = false
   try {
-    await $fetch('/api/recipes/' + props.recipeId + '/memories', { method: 'POST', body: { cookDate: Date.parse(cookDate.value + 'T12:00:00Z'), rating: rating.value ? Number(rating.value) : null, notes: notes.value, familyMemories: familyMemories.value } })
+    await $fetch('/api/recipes/' + props.recipeId + '/memories', { method: 'POST', body: { cookDate: new Date(cookDate.value + 'T12:00:00').getTime(), rating: rating.value ? Number(rating.value) : null, notes: notes.value, familyMemories: familyMemories.value } })
     notes.value = ''; familyMemories.value = ''; rating.value = ''; await refresh(); saved.value = true
   } catch { error.value = 'Could not save this keepsake. Your entry is still here; try again.' }
   finally { busy.value = false }
