@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { KitchenProfile, RecipeDetail } from '../../../shared/types/recipe'
-import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../utils/units'
-import type { SaltType } from '../../utils/units'
+import type { KitchenProfile, RecipeDetail } from '../../../../shared/types/recipe'
+import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../../utils/units'
+import type { SaltType } from '../../../utils/units'
 import { evaluateCocktail } from '#shared/culinary/cocktails'
 
 const route = useRoute()
@@ -86,6 +86,7 @@ function saved(value: RecipeDetail) {
         <p class="mt-6">{{ recipe.totalTimeMinutes }} min · {{ recipe.difficulty }} · {{ recipe.rating == null ? 'Not rated yet' : recipe.rating + ' / 5' }}</p>
         <div v-if="thermodynamics" class="notice mt-6"><p>{{ thermodynamics.technique }} · Dilution {{ thermodynamics.dilutionPercent.join('–') }}% · {{ thermodynamics.glassware }} · Estimated cooling {{ thermodynamics.temperatureDropC.join('–') }} °C</p><p class="mt-2 text-sm">{{ thermodynamics.note }}</p></div>
         <div class="mt-6 flex flex-wrap gap-3">
+          <NuxtLink :to="'/recipes/' + id + '/cook'" class="button-primary">Start cooking</NuxtLink>
           <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" @click="toggleFavorite">{{ recipe.isFavorite ? '♥ Favorited' : '♡ Favorite' }}</button>
           <button class="button-secondary" @click="editing = true">Edit recipe</button>
           <button class="text-action px-3" @click="deleting = true">Delete recipe</button>

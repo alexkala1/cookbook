@@ -205,8 +205,8 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
   - Request: `{ ingredientName: string, recipeContext: string }`
   - Response: Returns 2–3 scientific substitution alternatives with moisture/texture adjustments.
 - `POST /api/ai/rescue`:
-  - Request: `{ issueDescription: string, recipeContext: string, currentStep: number }`
-  - Response: Immediate low-latency triage recovery steps (e.g. broken emulsion, oversalted, burning bottom).
+  - Request: `{ issueDescription: string, recipeContext?: string, currentStep?: number }` (description 3–3000 characters; step 1–500).
+  - Response: `{ title: string, actions: string[], science: string, caution: string, mode: 'live' | 'fallback' }`. Immediate triage recovery steps; request-header BYOK or deterministic offline fallback. See `PHASE_3_IMPLEMENTATION.md`.
 - `POST /api/meal-plan/orchestrate`:
   - Request: `{ recipeIds: string[], targetServeTime: string, guestCount: number }`
   - Response: Returns unified backwards prep and cooking timeline with equipment conflict warnings.
