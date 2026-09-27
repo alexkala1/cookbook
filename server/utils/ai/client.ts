@@ -80,7 +80,19 @@ export function aiClient(event: H3Event) {
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
         })
 
-        if (!response.ok) throw new Error('Provider failed')
+        if (!response.ok) {
+          let msg = 'Provider request failed'
+          try {
+            const errData = await response.json()
+            msg = errData?.error?.message || errData?.message || msg
+          } catch {}
+          throw createError({
+            statusCode: response.status >= 400 && response.status < 500 ? response.status : 502,
+            statusMessage: response.status >= 400 && response.status < 500
+              ? `${provider.toUpperCase()} (${response.status}): ${msg}`
+              : 'Provider request failed'
+          })
+        }
         const reader = response.body!.getReader()
         let text = ''
         const decoder = new TextDecoder()
