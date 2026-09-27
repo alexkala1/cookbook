@@ -324,6 +324,8 @@ async function conduct() {
         </ol>
       </section>
 
+      <MarketShoppingList :courses="chosen" :servings="guestCount || undefined" />
+
       <section aria-label="Seasonality">
         <h2>What’s in season · {{ monthNames[plan.month - 1] }}</h2>
         <p class="mt-3 text-sm">Greek harvest calendar. Canned, dried, and preserved ingredients are never flagged.</p>

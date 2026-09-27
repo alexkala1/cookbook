@@ -136,6 +136,8 @@ For a starter-pack dinner, consider spanakopita, lamb with fava, then revani. Ma
 
 The Dinner page does not automatically run the guest audit. Check the same menu in **Guests** before buying ingredients.
 
+Once the schedule is displayed, find **Market shopping list** below the timeline and choose **Generate Market Shopping List**. It uses the selected courses and your optional guest count. Without a guest count, each recipe keeps its own serving quantity. Changing dinner inputs clears the schedule and shopping list; rebuild the schedule before generating a revised list.
+
 ## Shop the Greek markets
 
 Heirloom's grocery engine groups compatible quantities across a menu and routes recognized ingredients to Greek shopping destinations:
@@ -149,16 +151,15 @@ Heirloom's grocery engine groups compatible quantities across a menu and routes 
 
 The result can include package-size suggestions, surplus ideas and advance-prep alerts. Review the units and notes: unlike measures remain separate when a density is unknown. These are shopping categories, not live stock checks, map directions or opening hours. Routing currently targets Greek markets and **does not subtract pantry stock**.
 
-**Current access:** grouped grocery generation is an API feature; there is no grocery-generation button on the Dinner page yet. A self-hosting user can obtain recipe IDs from the address of each recipe and request a list with the following command. Replace `RECIPE_ID` and keep the Origin header identical to your server origin. Each request saves a new grocery list.
+### Take the list shopping
 
-```sh
-curl --fail-with-body http://localhost:3000/api/grocery/generate \
-  -H 'Origin: http://localhost:3000' \
-  -H 'Content-Type: application/json' \
-  --data '{"recipeIds":["RECIPE_ID"],"servings":6}'
-```
+1. Build your dinner schedule, then select **Generate Market Shopping List** below its timeline. If generation fails, your schedule stays available; choose **Try again**.
+2. Read **Prepare ahead** before shopping. These alerts preserve preparation and advance-timing notes from your recipes.
+3. Shop by the displayed destination headings. Show the **At the counter** Greek phrase to the butcher when provided. Dairy appears under Supermarket, rather than a separate dairy destination.
+4. Check an item's box when bought. The count updates and the item is crossed out; its package recommendations and surplus tips stay readable. Uncheck it to put it back on your list.
+5. Select **Copy shopping list** to copy a plain-text version grouped by destination, including prep alerts, Greek counter phrases, quantities, package suggestions, surplus tips and checked markers. A short confirmation appears. If clipboard permission is unavailable, select and copy the text offered below the button.
 
-Without API access, use the recipe ingredient lists and the destination table above to prepare your shopping list manually.
+Checkoffs are local to the currently displayed list. Regenerating, leaving or reloading the page, or changing dinner inputs clears them. Copy the list into your notes before heading out if you need a lasting checklist. Each successful generation saves a new list on the server, but this view does not retrieve earlier lists or save checkmarks back to them. Review your pantry separately before buying.
 
 ## Keep a useful pantry
 
