@@ -282,7 +282,7 @@ useSeoMeta({ title: 'Guests & dietary checks — Heirloom' })
         <p class="notice">{{ audit.notice }}</p>
         <h3 class="my-4 font-serif text-2xl">{{
             audit.conflicts.length
-              ? audit.conflicts.length + ' conflicts to review'
+              ? audit.conflicts.length + (audit.conflicts.length === 1 ? ' conflict to review' : ' conflicts to review')
               : 'No ingredient conflicts detected — manual checks still required'
           }}</h3>
         <ul v-if="audit.reviewWarnings.length" class="notice mb-4">

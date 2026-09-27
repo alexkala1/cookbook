@@ -5,7 +5,13 @@ import { db } from '../db'
 
 export default defineNitroPlugin(() => {
   try {
-    const migrationsFolder = fileURLToPath(new URL('../db/migrations', import.meta.url))
+    let migrationsFolder = fileURLToPath(new URL('../db/migrations', import.meta.url))
+    if (!existsSync(migrationsFolder)) {
+      migrationsFolder = fileURLToPath(new URL('./db/migrations', import.meta.url))
+    }
+    if (!existsSync(migrationsFolder)) {
+      migrationsFolder = `${process.cwd()}/server/db/migrations`
+    }
     if (existsSync(migrationsFolder)) {
       migrate(db, { migrationsFolder })
     }
