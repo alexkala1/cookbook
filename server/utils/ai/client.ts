@@ -44,8 +44,9 @@ export function aiClient(event: H3Event) {
         headers['anthropic-version'] = '2023-06-01'
         body = { model, max_tokens: 6000, system, messages: [{ role: 'user', content: source }] }
       } else if (provider === 'gemini') {
+        const resolvedModel = model === 'gemini-2.5-flash' ? 'gemini-3.8-flash' : model
         url =
-          'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent'
+          'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(resolvedModel) + ':generateContent'
         headers['x-goog-api-key'] = key
         body = {
           systemInstruction: { parts: [{ text: system }] },

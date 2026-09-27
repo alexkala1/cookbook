@@ -3,6 +3,14 @@ import type { KitchenProfile } from '../../shared/types/recipe'
 import { byokProviders } from '../composables/useByokSettings'
 import { saltDensities, saltLabels } from '../utils/units'
 
+const recommendedModels: Record<(typeof byokProviders)[number], string[]> = {
+  gemini: ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'],
+  openai: ['gpt-4o-mini', 'gpt-4o'],
+  anthropic: ['claude-3-5-haiku-20241022', 'claude-3-7-sonnet-20250219'],
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+  ollama: ['llama3.2', 'mistral', 'qwen2.5']
+}
+
 useSeoMeta({ title: 'Your kitchen & keys — Heirloom' })
 const { settings, ready, error: keyError, message: keyMessage, save: saveKeys, clear } = useByokSettings()
 const { data: profile, error, refresh } = await useFetch<KitchenProfile>('/api/settings/kitchen')
@@ -55,7 +63,26 @@ async function saveKitchen() {
           </label>
           <div class="form-grid">
             <label>Active provider<select v-model="settings.activeProvider" aria-label="Active provider" class="field mt-2"><option v-for="provider in byokProviders" :key="provider" :value="provider">{{ provider }}</option></select></label>
-            <label>Active model<input v-model="settings.activeModel" class="field mt-2" placeholder="Model ID from your provider" maxlength="200"></label>
+            <div>
+              <label>Active model
+                <input v-model="settings.activeModel" list="model-presets" class="field mt-2" placeholder="Model ID from your provider" maxlength="200">
+                <datalist id="model-presets">
+                  <option v-for="m in recommendedModels[settings.activeProvider]" :key="m" :value="m" />
+                </datalist>
+              </label>
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span class="text-ink/70">Recommended:</span>
+                <button
+                  v-for="m in recommendedModels[settings.activeProvider]"
+                  :key="m"
+                  type="button"
+                  class="font-mono text-action underline hover:opacity-80"
+                  @click="settings.activeModel = m"
+                >
+                  {{ m }}
+                </button>
+              </div>
+            </div>
           </div>
           <div class="flex flex-wrap gap-3"><button type="submit" class="button-primary" v-stable-action="keyState" :data-state="keyState" :aria-busy="keySaving">{{ keyLabel('Save keys & model', 'Saving…') }}</button><button type="button" class="button-secondary" @click="clear">Clear saved keys</button></div>
         </fieldset>
