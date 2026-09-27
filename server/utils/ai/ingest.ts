@@ -70,7 +70,11 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
         if (transcript.trim()) { source = transcript; provenance = 'Video captions' }
       } catch { if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' }) }
     }
-    if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Video has no accessible captions or description. Paste your notes in Memory instead.' })
+    if (!source.trim() && title.trim()) {
+      source = `Video: ${title}`
+      provenance = 'Video title (captions and description unavailable)'
+    }
+    if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Video has no accessible title, captions, or description. Paste your notes in Memory instead.' })
   }
   progress('Preserving measurements and identifying gaps')
   const recipe = extracted || await client.generate(recipeCreateSchema, 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.', source.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal)

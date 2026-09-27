@@ -75,16 +75,42 @@ export function extractHtml(html: string) {
 }
 
 export function fallbackRecipe(source: string, title?: string): RecipeInput {
-  const chicken = /chicken|κοτόπουλ/i.test(source)
-  const drink = /cocktail|martini|margarita|negroni/i.test(source)
-  const ingredients = chicken ? ['600 g chicken', '60 ml lemon juice', '30 ml olive oil', 'salt'] : drink ? ['60 ml gin', '30 ml vermouth'] : ['400 g vegetables', '30 ml olive oil', 'salt']
+  const text = (source + ' ' + (title || '')).toLowerCase()
+  const chicken = /chicken|κοτόπουλ/i.test(text)
+  const drink = /cocktail|martini|margarita|negroni/i.test(text)
+  const dessert = /donut|doughnut|cake|caramel|creme|dessert|baking|sweet|pastry|cookie/i.test(text)
+  const ingredients = chicken
+    ? ['600 g chicken', '60 ml lemon juice', '30 ml olive oil', 'salt']
+    : drink
+      ? ['60 ml gin', '30 ml vermouth']
+      : dessert
+        ? ['300 g flour', '150 g sugar', '120 ml milk', '50 g butter', '2 eggs']
+        : ['400 g vegetables', '30 ml olive oil', 'salt']
   return {
-    title: title || (chicken ? 'Lemon chicken — memory draft' : drink ? 'Cocktail — starting draft' : 'Vegetable skillet — starting draft'),
+    title: title || (chicken ? 'Lemon chicken — memory draft' : drink ? 'Cocktail — starting draft' : dessert ? 'Dessert / Pastry — starting draft' : 'Vegetable skillet — starting draft'),
     description: 'Deterministic culinary starting point, not a reconstruction of the source. Review every ingredient and step before saving.',
-    servings: drink ? 1 : 4, recipeType: drink ? 'cocktail' : 'food', originalSaltType: null,
-    heirloomNotes: source.slice(0, 9000), prepTimeMinutes: 15, cookTimeMinutes: drink ? 0 : 30, totalTimeMinutes: drink ? 15 : 45,
-    ingredients: ingredients.map(line => ({ ...parseIngredient(line, drink ? 1 : 4), notes: '[Inferred by AI] Deterministic baseline, not a source measurement. ' + (drink ? '2:1 spirit to vermouth starting ratio.' : chicken ? '150 g chicken, 15 ml lemon and 7.5 ml oil per serving.' : '100 g vegetables and 7.5 ml oil per serving.') })),
-    steps: [{ stepNumber: 1, instruction: drink ? 'Stir ingredients with ice until cold, then strain into a chilled glass.' : chicken ? 'Roast chicken with lemon and oil. Use a food thermometer and verify an appropriate safe internal temperature; timing depends on cut and size.' : 'Sauté vegetables in oil until tender. Season gradually and taste.', failurePrevention: 'This is a suggested method. Confirm quantities and cooking requirements before use.' }],
-    equipment: [{ name: drink ? 'Mixing glass' : chicken ? 'Roasting dish and food thermometer' : 'Skillet' }]
+    servings: drink ? 1 : 4,
+    recipeType: drink ? 'cocktail' : dessert ? 'dessert' : 'food',
+    originalSaltType: null,
+    heirloomNotes: source.slice(0, 9000),
+    prepTimeMinutes: dessert ? 25 : 15,
+    cookTimeMinutes: drink ? 0 : dessert ? 20 : 30,
+    totalTimeMinutes: drink ? 15 : 45,
+    ingredients: ingredients.map(line => ({
+      ...parseIngredient(line, drink ? 1 : 4),
+      notes: '[Inferred by AI] Deterministic baseline, not a source measurement. ' + (drink ? '2:1 spirit to vermouth starting ratio.' : chicken ? '150 g chicken, 15 ml lemon and 7.5 ml oil per serving.' : dessert ? 'Standard baking ratio; adjust for filling and glaze.' : '100 g vegetables and 7.5 ml oil per serving.')
+    })),
+    steps: [{
+      stepNumber: 1,
+      instruction: drink
+        ? 'Stir ingredients with ice until cold, then strain into a chilled glass.'
+        : chicken
+          ? 'Roast chicken with lemon and oil. Use a food thermometer and verify an appropriate safe internal temperature; timing depends on cut and size.'
+          : dessert
+            ? 'Prepare the dough and filling. Fry or bake until golden, fill with crème, and coat with caramel glaze before serving.'
+            : 'Sauté vegetables in oil until tender. Season gradually and taste.',
+      failurePrevention: 'This is a suggested method. Confirm quantities and cooking requirements before use.'
+    }],
+    equipment: [{ name: drink ? 'Mixing glass' : chicken ? 'Roasting dish and food thermometer' : dessert ? 'Mixing bowl, frying pan or oven' : 'Skillet' }]
   }
 }
