@@ -47,6 +47,7 @@ async (page) => {
       await view.reload()
       await view.getByRole('heading', { name: recipe.title, exact: true }).waitFor()
       if (await card.count()) throw Error('Converted measures proposed twice')
+      await view.getByText('More', { exact: true }).click()
       await view.getByRole('button', { name: 'Edit recipe', exact: true }).click()
       const grams = view.getByLabel('Gram equivalent (optional)', { exact: true }).first()
       await grams.waitFor(); if (await grams.inputValue() !== '120') throw Error('Gram field unavailable')

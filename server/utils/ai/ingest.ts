@@ -3,7 +3,7 @@ import { createError, type H3Event } from 'h3'
 import { load } from 'cheerio'
 import { aiClient } from './client'
 import { safeFetch } from './safe-fetch'
-import { extractHtml, extractJsonLd, fallbackRecipe } from './normalize'
+import { extractHtml, extractJsonLd, fallbackRecipe, structuredDraft } from './normalize'
 import { enrichScience } from './science'
 import { recipeCreateSchema, validate } from '../validation'
 
@@ -62,7 +62,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') source = ''
     provenance = 'Video description (transcript unavailable)'
     const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks
-    const track = Array.isArray(tracks) ? tracks.find(item => item.languageCode === (request.language || 'en')) || tracks[0] : undefined
+    const track = Array.isArray(tracks) ? tracks.find(item => item.languageCode === ((request.kind === 'video' ? request.language : undefined) || 'en')) || tracks[0] : undefined
     if (track?.baseUrl) {
       try {
         const captions = await safeFetch(track.baseUrl, signal)
@@ -78,7 +78,9 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Video has no accessible title, captions, or description. Paste your notes in Memory instead.' })
   }
   progress('Preserving measurements and identifying gaps')
-  const recipe = extracted || await client.generate(recipeCreateSchema, 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.', source.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal)
+  // Without a model, prefer the source's own ingredients and numbered method over the generic template.
+  const structured = !extracted && client.mode === 'fallback' ? structuredDraft(source, title || undefined) : null
+  const recipe = extracted || structured || await client.generate(recipeCreateSchema, 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.', source.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal)
   const sanitized = { ...recipe, originalSaltType: extracted?.originalSaltType ?? null }
   if (!extracted) {
     delete sanitized.imageUrl
@@ -86,5 +88,5 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     delete sanitized.isFavorite
   }
   const draft = recipeCreateSchema.parse(enrichScience({ ...sanitized, sourceType: request.kind, sourceUrl: sourceUrl || null }))
-  return { recipe: draft, mode: extracted ? 'extracted' as const : client.mode, provenance, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : client.mode === 'fallback' ? 'No live model used. This is a deterministic starting draft, not a recovered recipe.' : 'AI-generated draft: verify inferred quantities and cooking requirements.'] }
+  return { recipe: draft, mode: extracted ? 'extracted' as const : client.mode, provenance: structured ? provenance + ' · parsed sections' : provenance, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : structured ? 'No live model used. Ingredients and steps were parsed from the source’s own sections; check lines marked “as needed” and any estimates.' : client.mode === 'fallback' ? 'No live model used. This is a deterministic starting draft, not a recovered recipe.' : 'AI-generated draft: verify inferred quantities and cooking requirements.'] }
 }

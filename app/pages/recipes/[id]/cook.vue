@@ -5,6 +5,7 @@ import { burnerAdvice, convertOven, ovenTemperature, type Oven } from '#shared/c
 import { parseDurations, timerLabel } from '../../../utils/timers'
 import type { CookingTimer } from '../../../utils/timers'
 import { swipeIntent } from '../../../utils/swipe'
+import { isPlaceholderIngredients, parseStructuredRecipe, splitNotesUpdate, stepCountPhrase } from '#shared/culinary/structured-recipe'
 
 definePageMeta({ layout: 'kitchen' })
 const route = useRoute()
@@ -19,6 +20,26 @@ const mounted = ref(false)
 const steps = computed(() => [...(recipe.value?.steps || [])].sort((a, b) => a.stepNumber - b.stepNumber))
 const step = computed(() => steps.value[index.value])
 const { timers, alerts, sound, persistence, start, toggle, reset, remove, restore, enableSound } = useCookingTimers(id)
+
+// One saved step but a numbered method in the notes (typical of an offline video import): offer to split it.
+const notesPlan = computed(() => recipe.value && recipe.value.steps.length <= 1 ? parseStructuredRecipe(recipe.value.heirloomNotes, recipe.value.servings) : null)
+const splitting = ref(false)
+const splitError = ref('')
+const { state: splitState, label: splitLabel } = useActionFeedback(splitting, splitError)
+
+async function splitIntoSteps() {
+  if (!recipe.value || !notesPlan.value || splitting.value) return
+  splitting.value = true
+  splitError.value = ''
+  try {
+    recipe.value = await $fetch<RecipeDetail>('/api/recipes/' + id, { method: 'PUT', body: splitNotesUpdate(recipe.value, notesPlan.value) })
+    index.value = 0
+  } catch {
+    splitError.value = 'Could not split the notes into steps. Nothing was changed; try again.'
+  } finally {
+    splitting.value = false
+  }
+}
 
 useHead({ meta: [{ name: 'theme-color', content: '#0d0a09' }] })
 const stepArticle = ref<HTMLElement>()
@@ -284,6 +305,20 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
       <p v-if="!steps.length" class="mt-8">No cooking steps yet. Add a method in the recipe editor.</p>
       <template v-if="step">
         <p class="mt-8 text-xl num">Step {{ index + 1 }} of {{ steps.length }}</p>
+        <section v-if="notesPlan" class="kitchen-panel !mt-4 rounded-lg border border-k-rule p-5" aria-labelledby="split-hint-title">
+          <h2 id="split-hint-title" class="text-2xl">Only one step saved</h2>
+          <p class="mt-3 text-lg">This recipe’s notes contain {{ stepCountPhrase(notesPlan.steps.length) }} method{{ notesPlan.steps.some(row => row.durationMinutes) ? ' with timings' : '' }}. Split it into steps to cook one stage at a time.</p>
+          <p class="mt-2 text-base text-k-muted">Replaces the single step{{ notesPlan.ingredients.length && isPlaceholderIngredients(recipe.ingredients) ? ' and the placeholder ingredients' : '' }}. You can refine everything later in Edit recipe.</p>
+          <button
+            class="kitchen-button step-next mt-4"
+            v-stable-action="splitState"
+            :data-state="splitState"
+            :aria-busy="splitting"
+            :disabled="splitting"
+            @click="splitIntoSteps"
+          >{{ splitLabel(`Split into ${notesPlan.steps.length} steps`, 'Splitting…') }}</button>
+          <p v-if="splitError" role="alert" class="mt-3 text-lg">{{ splitError }}</p>
+        </section>
         <Teleport v-if="mounted" to="#kitchen-progress">
           <progress class="kitchen-progress" :value="index + 1" :max="steps.length" aria-label="Cooking progress"
         /></Teleport>
@@ -329,7 +364,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
             <li
               v-for="row in matchedIngredients.length ? matchedIngredients : recipe.ingredients"
               :key="row.id"
-            >{{ row.amount }} {{ row.unit }} {{ row.name }}</li>
+            >{{ row.unit === 'as needed' && !row.amount ? 'As needed ·' : row.amount + ' ' + row.unit }} {{ row.name }}</li>
           </ul>
         </section>
         <section v-if="temperature" class="kitchen-panel">

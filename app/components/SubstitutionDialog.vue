@@ -16,7 +16,16 @@ async function open() {
 }
 </script>
 <template>
-  <button class="button-secondary mt-2 text-sm" :disabled="!ready || busy" @click="open" v-stable-action="state" :data-state="state" :aria-busy="busy">{{ label('Ask AI for Substitution', 'Checking…') }}<span class="sr-only"> for {{ ingredient }}</span></button>
+  <button
+    type="button"
+    class="sub-trigger"
+    :aria-label="'Ask AI for a substitution for ' + ingredient"
+    title="Substitution ideas"
+    :disabled="!ready || busy"
+    :data-state="state"
+    :aria-busy="busy"
+    @click="open"
+  ><UIcon name="i-lucide-arrow-left-right" class="size-[18px]" aria-hidden="true" /></button>
   <dialog ref="dialog" class="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-xl bg-cream p-6 text-espresso backdrop:bg-ink/40" :aria-label="'Substitutions for ' + ingredient" @close="controller?.abort()">
     <form method="dialog"><button class="button-secondary float-right" autofocus>Close</button></form>
     <h2 class="pr-20">Instead of {{ ingredient }}</h2>
@@ -26,3 +35,19 @@ async function open() {
     <p class="mt-5 text-sm">Review the ingredient’s role in this recipe and check allergen labels. Suggestions do not change your recipe.</p>
   </dialog>
 </template>
+
+<style>
+/* Quiet per-ingredient trigger: revealed on row hover/focus for pointer users, always present (muted) on touch. */
+.sub-trigger { display: inline-grid; flex: none; width: 44px; height: 44px; place-items: center; border-radius: 999px; color: var(--color-muted); }
+.sub-trigger:active { background: var(--color-paper-3); }
+.sub-trigger:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; opacity: 1; }
+.sub-trigger:disabled { opacity: .45; cursor: not-allowed; }
+.sub-trigger[data-state='loading'] { cursor: progress; }
+.sub-trigger[data-state='error'] { color: var(--color-error); }
+@media (hover: hover) and (pointer: fine) {
+  .sub-trigger { opacity: 0; transition: opacity var(--dur-short) var(--ease-out); }
+  .ingredient-row:hover .sub-trigger, .ingredient-row:focus-within .sub-trigger { opacity: 1; }
+  .sub-trigger:hover { background: var(--color-paper-2); color: var(--color-ink); }
+}
+@media (prefers-reduced-motion: reduce) { .sub-trigger { transition: none; } }
+</style>

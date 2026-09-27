@@ -1,33 +1,17 @@
 import { load } from 'cheerio'
 import { recipeCreateSchema, saltTypes, type RecipeInput } from '../validation'
+import { parseIngredientLine, type IngredientDraft } from '../../../shared/culinary/ingredient-line'
+import { parseStructuredRecipe, stripPromotional } from '../../../shared/culinary/structured-recipe'
 
 const clean = (value: unknown): string => typeof value === 'string' ? load(value).text().trim() : ''
-const quantityPattern = String.raw`(?:\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?)`
-const quantity = (value: string) => value.split(/\s+/).reduce((sum, part) => {
-  const [a, b] = part.split('/').map(Number)
-  return sum + a! / (b ?? 1)
-}, 0)
+export function parseIngredient(line: string, servings = 4): IngredientDraft {
+  return parseIngredientLine(clean(line), servings)
+}
+
 export function duration(value: unknown) {
   const match = typeof value === 'string' && value.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/)
   return match ? Math.ceil(Number(match[1] || 0) * 1440 + Number(match[2] || 0) * 60 + Number(match[3] || 0) + Number(match[4] || 0) / 60) : 0
 }
-export function parseIngredient(line: string, servings = 4): NonNullable<RecipeInput['ingredients']>[number] {
-  const text = clean(line).replace(/[½¼¾⅓⅔⅛]/g, value => ({ '½': ' 1/2', '¼': ' 1/4', '¾': ' 3/4', '⅓': ' 1/3', '⅔': ' 2/3', '⅛': ' 1/8' })[value]!).replace(/(\d),(?=\d)/g, '$1.').trim()
-  const range = text.match(new RegExp(`^(${quantityPattern})\\s*[-–]\\s*(${quantityPattern})\\s+(.+)$`))
-  if (range) return { ...parseIngredient(Math.min(quantity(range[1]!), quantity(range[2]!)) + ' ' + range[3], servings), notes: '[Inferred by AI] Source range: ' + range[1] + '–' + range[2] + '. Using the lower bound; adjust within the original range.' }
-  const match = text.match(new RegExp(`^(${quantityPattern})\\s*(.*)$`))
-  if (match) {
-    const amount = quantity(match[1]!)
-    const unitMatch = match[2]!.match(/^(kg|g|grams?|ml|l|liters?|tsp|teaspoons?|tbsp|tablespoons?|cups?|oz|ounces?|lb|pounds?|pinch(?:es)?|dash(?:es)?|cloves?|cans?|slices?|bunch(?:es)?|κ\.?\s*σ\.?|κ\.?\s*γ\.?|γρ\.?|γραμμ[άα]ρι[αο]|κιλ[άαόο]|λ[ίι]τρ[αο]|φλιτζ[άα]νι[α]?)(?=$|\s)\s*(.*)$/i)
-    const rawUnit = unitMatch?.[1]?.normalize('NFD').replace(/\p{M}|[.\s]/gu, '').toLowerCase() || 'piece'
-    const aliases: Record<string, string> = { grams: 'g', gram: 'g', liters: 'l', liter: 'l', teaspoons: 'tsp', teaspoon: 'tsp', tablespoons: 'tbsp', tablespoon: 'tbsp', cups: 'cup', ounces: 'oz', ounce: 'oz', pounds: 'lb', pound: 'lb', κσ: 'tbsp', κγ: 'tsp', γρ: 'g', γραμμαρια: 'g', γραμμαριο: 'g', κιλα: 'kg', κιλο: 'kg', λιτρο: 'l', λιτρα: 'l', φλιτζανι: 'cup', φλιτζανια: 'cup' }
-    return { name: (unitMatch?.[2] || match[2] || 'ingredient').slice(0, 200), amount, unit: aliases[rawUnit] || rawUnit }
-  }
-  const salt = /salt|αλάτι|αλατι/i.test(text)
-  const oil = /oil|λάδι/i.test(text)
-  return { name: text.slice(0, 200) || 'Ingredient to identify', amount: salt ? servings * 0.25 : oil ? servings * 7.5 : 0, unit: salt ? 'tsp' : oil ? 'ml' : 'g', notes: '[Inferred by AI] ' + (salt ? 'Starting estimate: ¼ tsp per serving; adjust to taste and salt type.' : oil ? 'Starting estimate: 7.5 ml per serving.' : 'No reliable offline ratio. Quantity is unset (0); determine the measure before cooking.') }
-}
-
 export function extractJsonLd(html: string): RecipeInput | null {
   const $ = load(html)
   let found: Record<string, unknown> | undefined
@@ -74,12 +58,38 @@ export function extractHtml(html: string) {
   return { title: title.trim().slice(0, 200), text: ($('main, article').first().text() || $('body').text()).replace(/\s+/g, ' ').trim().slice(0, 30000) }
 }
 
+const isDrink = (text: string) => /cocktail|martini|margarita|negroni/i.test(text)
+const isDessert = (text: string) => /\b(?:donut|doughnut|cake|caramel|creme|dessert|baking|pastry|cookie|tart|pie)\b/i.test(text)
+
+/** Offline draft from source text that already has its own ingredients and method sections. */
+export function structuredDraft(source: string, title?: string): RecipeInput | null {
+  const parsed = parseStructuredRecipe(source)
+  if (!parsed) return null
+  const text = (source + ' ' + (title || '')).toLowerCase()
+  const prepTimeMinutes = 15
+  const cookTimeMinutes = Math.min(100000, parsed.cookTimeMinutes || 30)
+  return {
+    title: (title || parsed.description?.split(/[.!?]/)[0] || 'Imported recipe').trim().slice(0, 200),
+    description: parsed.description ?? 'Parsed from the source’s own ingredient and method sections without AI. Review before cooking.',
+    servings: parsed.servings ?? 4,
+    recipeType: isDrink(text) ? 'cocktail' : isDessert(text) ? 'dessert' : 'food',
+    originalSaltType: null,
+    heirloomNotes: parsed.notes,
+    prepTimeMinutes,
+    cookTimeMinutes,
+    totalTimeMinutes: Math.min(100000, prepTimeMinutes + cookTimeMinutes),
+    ingredients: parsed.ingredients,
+    steps: parsed.steps,
+    equipment: []
+  }
+}
+
 export function fallbackRecipe(source: string, title?: string): RecipeInput {
   const text = (source + ' ' + (title || '')).toLowerCase()
   const chicken = /chicken|κοτόπουλ/i.test(text)
   const meat = /beef|short rib|ribs|lamb|pork|steak|stew|braise|boulud|bourguignon|μοσχαρ|αρνι|χοιριν/i.test(text)
-  const drink = /cocktail|martini|margarita|negroni/i.test(text)
-  const dessert = /\b(?:donut|doughnut|cake|caramel|creme|dessert|baking|pastry|cookie|tart|pie)\b/i.test(text)
+  const drink = isDrink(text)
+  const dessert = isDessert(text)
   const ingredients = chicken
     ? ['600 g chicken', '60 ml lemon juice', '30 ml olive oil', 'salt']
     : meat
@@ -95,7 +105,7 @@ export function fallbackRecipe(source: string, title?: string): RecipeInput {
     servings: drink ? 1 : 4,
     recipeType: drink ? 'cocktail' : dessert ? 'dessert' : 'food',
     originalSaltType: null,
-    heirloomNotes: source.slice(0, 9000),
+    heirloomNotes: stripPromotional(source).slice(0, 9000),
     prepTimeMinutes: meat ? 20 : dessert ? 25 : 15,
     cookTimeMinutes: drink ? 0 : meat ? 120 : dessert ? 20 : 30,
     totalTimeMinutes: drink ? 15 : meat ? 140 : 45,

@@ -2,6 +2,7 @@
 import type { RecipeDetail } from '../../shared/types/recipe'
 import type { RecipeInput } from '../../server/utils/validation'
 import { saltDensities, saltLabels } from '../utils/units'
+import { isPlaceholderIngredients, parseStructuredRecipe, splitNotesUpdate, stepCountPhrase } from '#shared/culinary/structured-recipe'
 
 const props = defineProps<{ recipe?: RecipeDetail }>()
 const emit = defineEmits<{ saved: [recipe: RecipeDetail]; cancel: [] }>()
@@ -34,6 +35,51 @@ function fieldIssue(path: string) {
   return issues.value.some(issue => issue.path === path)
     ? { 'aria-invalid': 'true' as const, 'aria-describedby': 'issue-' + path.replaceAll('.', '-') }
     : {}
+}
+
+// A numbered method pasted or imported into the notes can become real, editable steps.
+const notesPlan = computed(() => parseStructuredRecipe(form.heirloomNotes, form.servings))
+const canSplit = computed(() => !!notesPlan.value && notesPlan.value.steps.length > form.steps.length)
+const replacesIngredients = computed(() => !!notesPlan.value?.ingredients.length && (!form.ingredients.some(row => row.name.trim()) || isPlaceholderIngredients(form.ingredients)))
+type SplitBackup = Pick<typeof form, 'steps' | 'ingredients' | 'heirloomNotes' | 'description' | 'cookTimeMinutes'>
+const splitBackup = ref<SplitBackup | null>(null)
+const splitSummary = ref('')
+
+function splitNotes() {
+  const plan = notesPlan.value
+  if (!plan) return
+  splitBackup.value = JSON.parse(JSON.stringify(toRaw({ steps: form.steps, ingredients: form.ingredients, heirloomNotes: form.heirloomNotes, description: form.description, cookTimeMinutes: form.cookTimeMinutes })))
+  const current = form.ingredients.some(row => row.name.trim()) ? form.ingredients : []
+  const update = splitNotesUpdate({ title: form.title, description: form.description, prepTimeMinutes: form.prepTimeMinutes, ingredients: current, steps: form.steps }, plan)
+  form.steps = update.steps.map((step, index) => ({
+    stepNumber: index + 1,
+    instruction: step.instruction,
+    durationMinutes: step.durationMinutes ?? null,
+    timerRequired: step.timerRequired ?? false,
+    heatLevel: step.heatLevel ?? 'none',
+    scienceWhy: step.scienceWhy ?? '',
+    failurePrevention: step.failurePrevention ?? '',
+    sensoryVisual: step.sensoryVisual ?? '',
+    sensoryAudio: step.sensoryAudio ?? '',
+    sensoryAroma: step.sensoryAroma ?? '',
+    sensoryTexture: step.sensoryTexture ?? '',
+    internalTempTargetC: step.internalTempTargetC ?? null,
+    sortOrder: index
+  }))
+  if (update.ingredients) {
+    form.ingredients = update.ingredients.map((row, index) => ({ name: row.name, amount: row.amount, unit: row.unit, gramsEquivalent: null, category: 'pantry', notes: row.notes ?? '', sortOrder: index }))
+  }
+  form.heirloomNotes = update.heirloomNotes
+  if (update.description) form.description = update.description
+  if (update.cookTimeMinutes) form.cookTimeMinutes = update.cookTimeMinutes
+  splitSummary.value = `Split into ${update.steps.length} steps` + (update.ingredients ? ` and ${update.ingredients.length} ingredients` : '') + '. Review them, then save the recipe.'
+}
+
+function undoSplit() {
+  if (!splitBackup.value) return
+  Object.assign(form, splitBackup.value)
+  splitBackup.value = null
+  splitSummary.value = ''
 }
 
 function addStep() {
@@ -254,6 +300,12 @@ async function save() {
 
     <fieldset :disabled="saving" class="space-y-5">
       <legend class="form-legend">The method</legend>
+      <div v-if="canSplit" class="row-panel space-y-3" role="group" aria-labelledby="split-notes-title">
+        <p id="split-notes-title" class="font-semibold">Your notes contain {{ stepCountPhrase(notesPlan!.steps.length) }} method.</p>
+        <p class="text-sm">Split it into editable steps with timers where the text gives a time{{ replacesIngredients ? `, and use the ${notesPlan!.ingredients.length} ingredients listed in the notes` : '' }}. The notes keep just the story.</p>
+        <button type="button" class="button-primary" @click="splitNotes">Split notes into steps</button>
+      </div>
+      <p v-if="splitBackup" role="status" class="flex flex-wrap items-center gap-x-3">{{ splitSummary }}<button type="button" class="text-action" @click="undoSplit">Undo split</button></p>
       <div v-for="(row, index) in form.steps" :key="index" class="row-panel space-y-5">
         <label class="block">Step {{ index + 1 }}<textarea
             v-model="row.instruction"
@@ -382,7 +434,7 @@ async function save() {
     <label class="block font-serif text-2xl">Heirloom notes<textarea
         v-model="form.heirloomNotes"
         v-bind="fieldIssue('heirloomNotes')"
-        rows="4"
+        :rows="Math.min(14, Math.max(4, form.heirloomNotes.split('\n').length))"
         maxlength="10000"
         class="field mt-3 font-sans text-base"
         placeholder="The family story, the small secret, the person who taught you…"

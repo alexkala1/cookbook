@@ -393,10 +393,10 @@ async function journey(browser, viewport) {
       await audit.getByRole('checkbox', { name: 'Maria' }).check()
       await audit.getByRole('checkbox', { name: 'Traditional Spanakopita' }).check()
       await tap(audit.getByRole('button', { name: 'Audit meal' }))
-      await audit.getByText(/conflicts to review/).waitFor()
+      await audit.getByText(/conflicts? to review/).waitFor()
       const text = await audit.innerText()
       assert(/critical allergen/i.test(text) && /feta/i.test(text), 'Spanakopita feta should be flagged for a dairy allergy')
-      await shot(page, viewport, 'guests-audit', audit.getByText(/conflicts to review/))
+      await shot(page, viewport, 'guests-audit', audit.getByText(/conflicts? to review/))
     })
 
     // Flow 7 — Settings: BYOK keys, kitchen hardware, Cook's Handbook
