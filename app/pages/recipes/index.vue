@@ -49,7 +49,7 @@ async function loadStarters() {
       <button v-if="search || type || favorites" class="button-secondary mt-6" @click="search = ''; type = ''; favorites = false">Clear filters</button>
       <div v-else class="mt-6 flex flex-wrap gap-3">
         <button v-stable-action type="button" class="button-primary starter-button inline-flex items-center" :data-state="seedFeedback.state.value" :disabled="seeding" :aria-busy="seeding" @click="loadStarters">
-          <UIcon name="i-lucide-sprout" class="mr-2 size-5 shrink-0" aria-hidden="true" />
+          <UIcon name="i-lucide-sprout" class="size-5" aria-hidden="true" />
           {{ seedFeedback.label('Load Starter Heirloom Recipes', 'Loading recipes…') }}
         </button>
         <NuxtLink to="/recipes/new" class="button-secondary">Write your first recipe</NuxtLink>

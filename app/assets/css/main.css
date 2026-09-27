@@ -69,6 +69,7 @@ html, body { overflow-x: clip; }
     transition: background-color var(--dur-short) var(--ease-out), transform 80ms var(--ease-out);
   }
   .button-primary { background: var(--color-ink); color: var(--color-paper); padding: .75rem 1.5rem; }
+  :is(.button-primary, .button-secondary, .filter-pill, .kitchen-button, .text-action) > :is(svg, .iconify) { flex: none; }
   .button-secondary { background: transparent; color: var(--color-ink); border-color: var(--color-rule); padding: .75rem 1.25rem; }
   .filter-pill { background: transparent; color: var(--color-ink); border-color: var(--color-rule); padding: .5rem 1.25rem; }
   .filter-pill[aria-pressed='true'] { background: var(--color-ink); color: var(--color-paper); border-color: var(--color-ink); }
@@ -102,7 +103,7 @@ html, body { overflow-x: clip; }
   :is(.button-primary, .button-secondary, .filter-pill, .kitchen-button)[data-state='loading']::after {
     content: ''; flex: none; width: 1em; height: 1em; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite;
   }
-  [data-action] { padding-right: 2.5rem; }
+  [data-action][data-state='loading'] { padding-right: 2.5rem; }
   [data-action][data-state='loading']::after { position: absolute; right: .75rem; }
   :is(.button-primary, .button-secondary, .filter-pill, .field)[data-state='error'], .field[aria-invalid='true'] { border-color: var(--color-error); color: var(--color-error); background: var(--color-paper); }
   :is(.button-primary, .button-secondary, .filter-pill)[data-state='success'] { background: var(--color-olive-ink); color: var(--color-paper); }
