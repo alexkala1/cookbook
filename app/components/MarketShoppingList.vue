@@ -1,21 +1,30 @@
 <script setup lang="ts">
-import type { MenuCourse } from '#shared/culinary/grocery'
-import { shoppingListText, type MarketShoppingList } from '../utils/shopping-list'
+import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
+import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
 
 const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number }>()
 const list = ref<MarketShoppingList | null>(null)
 const checked = ref<string[]>([])
+const mode = ref<ShoppingMode>('market')
+const destinations = ref<Record<string, MarketSection>>({})
+const routedList = computed(() => list.value ? routeShoppingList(list.value, destinations.value, mode.value) : null)
 const busy = ref(false)
 const error = ref('')
 const { state, label } = useActionFeedback(busy, error)
 const copying = ref(false)
 const copyError = ref('')
 const { state: copyState, label: copyLabel } = useActionFeedback(copying, copyError)
-const summary = computed(() => list.value ? shoppingListText(list.value, checked.value) : '')
+const summary = computed(() => routedList.value ? shoppingListText(routedList.value, checked.value) : '')
 const itemCount = computed(() => list.value?.destinations.reduce((count, store) => count + store.items.length, 0) ?? 0)
 let controller: AbortController | undefined
 let disposed = false
 onBeforeUnmount(() => { disposed = true; controller?.abort() })
+
+async function moveItem(id: string, destination: MarketSection) {
+  destinations.value[id] = destination
+  await nextTick()
+  document.getElementById('destination-' + id)?.focus()
+}
 
 async function generate() {
   if (busy.value || copying.value) return
@@ -31,6 +40,8 @@ async function generate() {
     if (disposed) return
     list.value = result
     checked.value = []
+    destinations.value = {}
+    mode.value = 'market'
   } catch {
     if (!disposed) error.value = 'Could not generate the shopping list. Your schedule is still available. Please try again.'
   } finally { if (!disposed) busy.value = false }
@@ -56,7 +67,12 @@ async function copy() {
     </div>
     <p class="mt-4">Grouped for your chosen courses{{ servings ? ' and ' + servings + ' guests' : ', using each recipe’s servings' }}. Check your pantry before buying; stock is not subtracted.</p>
     <p v-if="error" role="alert" class="mt-4 rounded-lg border border-error bg-paper p-4 text-error">{{ error }}</p>
-    <div v-if="list" class="mt-6 space-y-6">
+    <div v-if="list && routedList" class="mt-6 space-y-6">
+      <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2">
+        <button class="filter-pill" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
+        <button class="filter-pill" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
+      </div>
+      <p v-if="mode === 'supermarket'" class="text-sm">All items are grouped into supermarket aisles. Return to Market Route to edit destinations; your custom route and checkmarks are kept.</p>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p role="status" class="num">{{ checked.length }} of {{ itemCount }} items checked</p>
         <button type="button" class="button-secondary" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
@@ -74,14 +90,20 @@ async function copy() {
         </ul>
       </section>
       <p v-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
-      <section v-for="destination in list.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
+      <section v-for="destination in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
         <h3 :id="'market-' + destination.section" class="text-2xl">{{ destination.name }}</h3>
         <p lang="el" class="mt-1">{{ destination.localizedName }}</p>
         <ul class="mt-4 divide-y divide-rule border-y border-rule">
-          <li v-for="item in destination.items" :key="item.id" class="py-5">
+          <li v-for="(item, index) in destination.items" :key="item.id" class="py-5">
+            <h4 v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="mb-4 font-semibold">{{ item.aisle }}</h4>
             <label class="flex min-h-11 items-start gap-3">
               <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
               <span class="min-w-0 pt-2 font-semibold" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
+            </label>
+            <label class="mt-3 block max-w-sm">Shop at
+              <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field mt-2" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
+                <option v-for="section in marketSections" :key="section" :value="section">{{ sectionInfo[section].name }}</option>
+              </select>
             </label>
             <div class="ml-0 mt-3 space-y-2 sm:ml-14">
               <p v-if="item.counterPhrase"><strong>At the counter:</strong> <span lang="el">{{ item.counterPhrase }}</span></p>

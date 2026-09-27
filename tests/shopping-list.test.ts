@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shoppingListText, type MarketShoppingList } from '../app/utils/shopping-list'
+import { shoppingListText, routeShoppingList, type MarketShoppingList } from '../app/utils/shopping-list'
 
 const list: MarketShoppingList = {
   listId: 'list', title: 'Sunday dinner',
@@ -15,6 +15,28 @@ const list: MarketShoppingList = {
 }
 
 describe('market shopping clipboard summary', () => {
+  it('moves items into new destinations without duplicating, mutating or losing guidance', () => {
+    const before = structuredClone(list)
+    const routed = routeShoppingList(list, { feta: 'laiki', lamb: 'supermarket' })
+    expect(routed.destinations.map(store => store.section)).toEqual(['laiki', 'supermarket'])
+    expect(routed.destinations[0]?.items[0]?.id).toBe('feta')
+    expect(routed.destinations[1]?.items[0]?.counterPhrase).toBe('1,8 κιλά αρνί, σπάλα')
+    const text = shoppingListText(routed, ['feta'])
+    expect(text).toContain('Laiki market · Λαϊκή Αγορά\n[x] 300 g Feta')
+    expect(text).not.toContain('Butcher ·')
+    expect(list).toEqual(before)
+  })
+  it('consolidates supermarket aisles and restores custom routing when mode changes', () => {
+    const overrides = { feta: 'laiki' as const }
+    const single = routeShoppingList(list, overrides, 'supermarket')
+    expect(single.destinations).toHaveLength(1)
+    expect(single.destinations[0]?.section).toBe('supermarket')
+    expect(single.destinations[0]?.items.map(item => item.aisle)).toEqual(['Meat counter', 'Dairy, pantry & other'])
+    expect(shoppingListText(single, ['lamb'])).toContain('Meat counter\n[x] 1.8 kg Lamb shoulder')
+    expect(shoppingListText(single)).not.toContain('Butcher ·')
+    expect(routeShoppingList(list, overrides).destinations[0]?.items[0]?.id).toBe('feta')
+    expect(overrides).toEqual({ feta: 'laiki' })
+  })
   it('preserves destination order, Greek phrases, quantities, prep and package guidance', () => {
     expect(shoppingListText(list)).toBe([
       'Sunday dinner', '', 'Prepare ahead', '- Fasolada: Soak beans overnight for 12 hours.', '',

@@ -206,12 +206,19 @@ async function save() {
               maxlength="40"
               class="field mt-2"
           /></label>
-          <label>Ingredient notes<input
+          <label>Gram equivalent (optional)<input
+              :value="row.gramsEquivalent"
+              v-bind="fieldIssue('ingredients.' + index + '.gramsEquivalent')"
+              type="number" min="0" max="1000000" step="any" class="field mt-2"
+              @input="row.gramsEquivalent = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"
+          /></label>
+          <label>Ingredient notes (including original measures)<textarea
               v-model="row.notes"
               v-bind="fieldIssue('ingredients.' + index + '.notes')"
               maxlength="10000"
               class="field mt-2"
               placeholder="Diced, room temperature…"
+              rows="3"
           /></label>
         </div>
         <button
@@ -223,7 +230,7 @@ async function save() {
       </div>
       <datalist id="recipe-units">
         <option
-          v-for="unit in ['g', 'kg', 'ml', 'l', 'tsp', 'tbsp', 'cup', 'oz', 'lb', 'fl oz', 'piece']"
+          v-for="unit in ['g', 'kg', 'ml', 'l', 'tsp', 'tbsp', 'cup', 'stick', 'oz', 'lb', 'fl oz', 'piece']"
           :key="unit"
           :value="unit"
         />

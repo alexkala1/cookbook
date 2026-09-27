@@ -3,6 +3,7 @@ import type { KitchenProfile, RecipeDetail } from '../../../../shared/types/reci
 import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../../utils/units'
 import type { SaltType } from '../../../utils/units'
 import { evaluateCocktail } from '#shared/culinary/cocktails'
+import { suggestMetric, applyMetric } from '#shared/culinary/densities'
 
 const route = useRoute()
 const id = String(route.params.id)
@@ -18,6 +19,25 @@ const editing = ref(false)
 const deleting = ref(false)
 const busy = ref(false)
 const actionError = ref('')
+const metricDismissed = ref(false)
+const metricBusy = ref(false)
+const metricError = ref('')
+const { state: metricState, label: metricLabel } = useActionFeedback(metricBusy, metricError)
+const metricSuggestions = computed(() => recipe.value?.ingredients.flatMap(row => {
+  const suggestion = suggestMetric(row, recipe.value?.originalSaltType)
+  return suggestion ? [{ ...suggestion, name: row.name, id: row.id, originalAmount: row.amount, originalUnit: row.unit }] : []
+}) ?? [])
+async function applyConversions() {
+  if (!recipe.value || busy.value) return
+  busy.value = true
+  metricBusy.value = true
+  metricError.value = ''
+  try {
+    const ingredients = recipe.value.ingredients.map(({ id: _id, recipeId: _recipeId, ...row }) => applyMetric(row, recipe.value!.originalSaltType))
+    recipe.value = await $fetch<RecipeDetail>('/api/recipes/' + id, { method: 'PUT', body: { ingredients } })
+  } catch { metricError.value = 'Could not apply conversions. Your original measures are unchanged. Try again.' }
+  finally { metricBusy.value = false; busy.value = false }
+}
 const thermodynamics = computed(() => recipe.value && ['drink', 'cocktail'].includes(recipe.value.recipeType) ? evaluateCocktail(recipe.value.ingredients, recipe.value.title + ' ' + recipe.value.steps.map(step => step.instruction).join(' ')) : null)
 const safeServings = computed(() => Number.isFinite(servings.value) && servings.value > 0 && servings.value <= 1000 ? servings.value : recipe.value?.servings ?? 4)
 const displayIngredients = computed(() => {
@@ -89,8 +109,8 @@ function saved(value: RecipeDetail) {
           <NuxtLink :to="'/recipes/' + id + '/cook'" class="button-primary">Start cooking</NuxtLink>
           <NuxtLink :to="'/recipes/' + id + '/print'" class="button-secondary">Print heirloom card</NuxtLink>
           <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" :aria-busy="busy" v-stable-action="busy ? 'loading' : actionError ? 'error' : undefined" :data-state="busy ? 'loading' : actionError ? 'error' : undefined" @click="toggleFavorite"><UIcon name="i-lucide-heart" :class="{ 'fill-current': recipe.isFavorite }" aria-hidden="true" />{{ recipe.isFavorite ? 'Favorited' : 'Favorite' }}</button>
-          <button class="button-secondary" @click="editing = true">Edit recipe</button>
-          <button class="text-action px-3" @click="deleting = true">Delete recipe</button>
+          <button class="button-secondary" :disabled="busy" @click="editing = true">Edit recipe</button>
+          <button class="text-action px-3" :disabled="busy" @click="deleting = true">Delete recipe</button>
         </div>
         <div v-if="deleting" class="notice mt-6" role="alert">
           <p>Delete “{{ recipe.title }}” and its cooking history? This cannot be undone.</p>
@@ -98,6 +118,19 @@ function saved(value: RecipeDetail) {
         </div>
         <p v-if="actionError" role="alert" class="notice mt-4">{{ actionError }}</p>
       </header>
+      <section v-if="!metricDismissed && metricSuggestions.length" aria-labelledby="metric-heading" class="row-panel mt-8 text-ink">
+        <h2 id="metric-heading" class="text-2xl">Suggest Metric Conversions (g/ml)</h2>
+        <p class="mt-3">Review these estimates for the saved recipe’s original servings. Cups use a rounded 240 ml kitchen measure. Packing and ingredient brands vary; original measures will be kept in ingredient notes.</p>
+        <ul class="my-4 space-y-3">
+          <li v-for="item in metricSuggestions" :key="item.id" class="break-words"><strong>{{ item.originalAmount }} {{ item.originalUnit }} {{ item.name }} → ~{{ item.amount }} {{ item.unit }}</strong><p class="text-sm">{{ item.basis }}</p></li>
+        </ul>
+        <div class="flex flex-wrap gap-3">
+          <button class="button-primary" :disabled="busy" v-stable-action="metricState" :data-state="metricState" :aria-busy="metricBusy" @click="applyConversions">{{ metricLabel('Apply to recipe', 'Applying…') }}</button>
+          <button class="button-secondary" :disabled="busy" @click="metricDismissed = true">Dismiss</button>
+        </div>
+        <p v-if="metricError" role="alert" class="mt-4 text-error">{{ metricError }}</p>
+      </section>
+      <p v-if="metricState === 'success'" role="status" class="mt-4">Metric conversions saved. Original measures are preserved in ingredient notes.</p>
       <img v-if="recipe.imageUrl" :src="recipe.imageUrl" :alt="recipe.title" class="mt-8 max-h-96 w-full object-cover">
       <div class="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <aside class="min-w-0">

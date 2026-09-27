@@ -75,6 +75,16 @@ Open a recipe card to see its ingredients, equipment, method and heirloom notes.
 
 **Food Science Why** explains the method. **Sensory Milestones** describe appearance, sound, aroma or texture. An internal-temperature target is shown when present. Sensory cues help judge progress; they are not proof of food safety.
 
+### Save metric measures without losing the original
+
+After saving or importing a recipe, look for **Suggest Metric Conversions (g/ml)**. The card lists supported conversions for the recipe's saved serving count, independently of the temporary servings scaler. Review the proposals, then choose **Apply to recipe**, or **Dismiss** to hide the card for this visit without changing the recipe.
+
+The assistant uses practical estimates: flour about 120 g per cup, granulated sugar 200 g, packed brown sugar 220 g, powdered sugar 120 g, rolled oats 90 g and uncooked rice 185 g. Honey is about 340 g per cup; oil uses 240 ml per cup with about 215 g recorded as its gram equivalent. A US butter stick is about 113 g, eight tablespoons of butter about 113 g, and a cup about 227 g. Packing, brands and cup standards vary. These estimates use rounded 240 ml cups and 15 ml tablespoons, rather than the reader toggle's exact US customary volume factors.
+
+Known salt types use the existing salt-density values: table salt about 5.9 g/tsp, Morton kosher 4.8 g, Diamond Crystal 2.8 g and Greek fine sea salt 5.5 g. Generic salt needs a saved original salt type. Unknown volume ingredients and unsupported compounds stay unchanged. Ounces (`oz`) are treated as weight; fluid ounces are a separate unit. A recorded gram equivalent takes precedence over a volume density estimate.
+
+Applying updates amount, unit and gram equivalent while keeping the existing ingredient notes and appending **Original measure: 1 cup**, for example. Source recipe metadata remains intact. Once metric, those ingredients are not offered again. In **Edit recipe**, each ingredient exposes **Gram equivalent (optional)** and **Ingredient notes (including original measures)**; you can correct estimates, clear an unknown gram equivalent, or inspect the saved source measure. Preserve these notes when editing if you want to retain the provenance.
+
 ## Cook in Kitchen Mode
 
 Select **Start cooking**. The large current-step text, progress indicator and fixed **Prev / Next** controls keep the method within reach. The ingredient panel shows names mentioned in the current step; if no explicit match is found, it shows the recipe's ingredients. This matching is a convenience, not a complete mise-en-place checklist.
@@ -159,7 +169,13 @@ The result can include package-size suggestions, surplus ideas and advance-prep 
 4. Check an item's box when bought. The count updates and the item is crossed out; its package recommendations and surplus tips stay readable. Uncheck it to put it back on your list.
 5. Select **Copy shopping list** to copy a plain-text version grouped by destination, including prep alerts, Greek counter phrases, quantities, package suggestions, surplus tips and checked markers. A short confirmation appears. If clipboard permission is unavailable, select and copy the text offered below the button.
 
-Checkoffs are local to the currently displayed list. Regenerating, leaving or reloading the page, or changing dinner inputs clears them. Copy the list into your notes before heading out if you need a lasting checklist. Each successful generation saves a new list on the server, but this view does not retrieve earlier lists or save checkmarks back to them. Review your pantry separately before buying.
+### Choose your own shopping route
+
+**Market Route** starts with the Greek destination split. Use **Shop at** beside an item to move it to Laiki, Butcher, Bakery or Supermarket. For example, move feta to Laiki or meat to Supermarket. Empty sections disappear and new ones appear as needed; quantities, counter phrases, checkmarks and package guidance travel with the item.
+
+Select **One-Stop Supermarket** to consolidate everything under Supermarket, with Produce, Meat counter, Bakery, and Dairy/pantry/other aisle headings based on the original classification. These are broad shopping aids, not a particular store's floor plan. Destination selectors are disabled in this mode. Switch back to **Market Route** to restore and edit your custom destinations. Checkmarks survive mode changes, and **Copy shopping list** always exports the route or supermarket aisles currently displayed.
+
+Checkoffs, destination overrides and shopping mode are local to the currently displayed list. Regenerating, leaving or reloading the page, or changing dinner inputs resets them. Copy the list into your notes before heading out if you need a lasting checklist. Each successful generation saves a new list on the server, but this view does not retrieve earlier lists or save checkmarks and destination changes back to them. Review your pantry separately before buying.
 
 ## Keep a useful pantry
 
