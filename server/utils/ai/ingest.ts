@@ -44,14 +44,15 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   let provenance = 'Conversational memory'
   progress('Reading the source')
   if (request.kind === 'prompt') source = request.prompt
-  else if (request.kind === 'url') {
+  else if (request.kind === 'url' && !/^(?:https?:)?\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\//i.test(request.url)) {
     sourceUrl = request.url
     const html = await safeFetch(sourceUrl, signal)
     extracted = extractJsonLd(html)
     const plain = extractHtml(html); source = plain.text; title = plain.title
     provenance = extracted ? 'Recipe JSON-LD' : 'Page text'
   } else {
-    sourceUrl = 'https://www.youtube.com/watch?v=' + youtubeId(request.videoUrl)
+    const videoTarget = request.kind === 'video' ? request.videoUrl : request.url
+    sourceUrl = 'https://www.youtube.com/watch?v=' + youtubeId(videoTarget)
     const html = await safeFetch(sourceUrl, signal)
     const player = playerData(html)
     // Generic YouTube error/consent pages also have a description meta tag.

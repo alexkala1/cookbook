@@ -120,7 +120,10 @@ export function aiClient(event: H3Event) {
                 ? data.message?.content
                 : data.choices?.[0]?.message?.content
         return schema.parse(JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, '')))
-      } catch {
+      } catch (err: any) {
+        if (err && typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+          throw err
+        }
         // Never attach upstream exceptions, response bodies, or request headers.
         throw createError({
           statusCode: 502,
