@@ -113,6 +113,7 @@ After schema edits, run `pnpm run db:generate`, inspect the SQL, then run `pnpm 
 
 ## Documentation
 
+- [Cook's Handbook](docs/USER_GUIDE.md) — practical kitchen workflows; also available in Settings inside the app.
 - [Architecture and stack](docs/02_ARCHITECTURE_AND_TECH_STACK.md)
 - [AI/BYOK design](docs/03_AI_ENGINE_AND_MULTI_MODEL_BYOK.md) and [ingestion design](docs/04_MULTIMODAL_INGESTION_PIPELINE.md)
 - [Database schema and API contracts](docs/07_DATABASE_SCHEMA_AND_API_CONTRACTS.md)

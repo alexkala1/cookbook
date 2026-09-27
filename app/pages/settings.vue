@@ -40,6 +40,10 @@ async function saveKitchen() {
 <template>
   <section class="page-section max-w-4xl">
     <h1 class="mt-3">Your kitchen & keys</h1>
+    <div class="mt-6 flex flex-wrap items-center gap-4">
+      <NuxtLink to="/handbook" class="button-secondary">Cook's Handbook</NuxtLink>
+      <p class="max-w-xl text-ink">Practical help for your first recipe, tonight’s dinner and the next family gathering.</p>
+    </div>
     <section class="mt-12 border-t border-espresso/20 pt-8">
       <h2>Your AI providers</h2>
       <p class="mt-4 max-w-2xl">Keys are saved in this browser’s localStorage, without encryption. Anyone with access to this browser profile can read them. When you request AI help, the selected key travels in a request header to Heirloom and then to the selected provider; the server never saves or logs it. Source text is sent to that provider. Use HTTPS when accessing a remote server.</p>
