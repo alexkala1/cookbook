@@ -14,7 +14,9 @@ A local-first family cookbook with food-science guidance, Greek market shopping,
 | 5 · Guests and keepsakes | Guest allergy/dietary/dislike profiles, structured meal audits with cross-contact guidance, tasting logs and family memories, vintage printable recipe cards. |
 | 6 · Self-hosting | Multi-stage Docker image, non-root runtime, persistent SQLite storage, automatic startup migrations, healthcheck, and Docker Compose. |
 
-Receipt input accepts raw text or text from an OCR app; it does not perform image OCR. Camera gestures use local motion detection, not MediaPipe. Full PWA caching, voice ingestion, and OpenRouter are not implemented. Allergy checks and culinary inference need human review and cannot guarantee food safety. Timers survive reload in the same browser tab; background audio can be delayed.
+Receipt input accepts raw text or text from an OCR app; it does not perform image OCR. Camera gestures use local motion detection, not MediaPipe. Voice ingestion and OpenRouter are not implemented. Allergy checks and culinary inference need human review and cannot guarantee food safety. Timers survive reload in the same browser tab; background audio can be delayed.
+
+The responsive shell uses self-hosted Literata and Commissioner (Latin and Greek), mobile destination tabs, and 44px controls. Kitchen Mode adds touch swipes, fixed step controls, five-second timer Undo, and an exit warning while timers run.
 
 ## Self-host with Docker Compose
 
@@ -31,6 +33,8 @@ docker compose ps
 ```
 
 Open **http://localhost:3000**. Compose publishes port 3000 only on the host's loopback interface. Nitro listens on `0.0.0.0` inside the container so Docker can forward that port. The application runs as `node` (UID 1000), with dropped Linux capabilities and no privilege escalation.
+
+The installable PWA requires **HTTPS or localhost** for its service worker. Home, static assets/fonts, previously visited pages, and selected GET API responses are available offline after loading online. Offline writes and AI calls are not queued; never assume an unsaved edit was persisted. AI/BYOK requests and mutations are excluded from runtime caching. Cached reads can be up to seven days old when offline; clear this site's browser storage when using a shared device. Updates offer an explicit Reload action outside Kitchen Mode rather than interrupting cooking.
 
 If port 3000 is occupied, set `HEIRLOOM_PORT=3107` in your shell or Compose `.env` file before starting, then open `http://localhost:3107`. Retain the setting for subsequent Compose commands.
 

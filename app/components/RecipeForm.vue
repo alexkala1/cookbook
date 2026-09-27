@@ -19,7 +19,9 @@ const form = reactive({
 })
 const saving = ref(false)
 const error = ref('')
+const { state, label } = useActionFeedback(saving, error)
 const issues = ref<{ path: string, message: string }[]>([])
+function fieldIssue(path: string) { return issues.value.some(issue => issue.path === path) ? { 'aria-invalid': 'true' as const, 'aria-describedby': 'issue-' + path.replaceAll('.', '-') } : {} }
 function addStep() {
   form.steps.push({ stepNumber: form.steps.length + 1, instruction: '', durationMinutes: null, timerRequired: false, heatLevel: 'none', scienceWhy: '', failurePrevention: '', sensoryVisual: '', sensoryAudio: '', sensoryAroma: '', sensoryTexture: '', internalTempTargetC: null, sortOrder: form.steps.length })
 }
@@ -51,27 +53,27 @@ async function save() {
   <form class="mt-10 max-w-4xl space-y-10" @submit.prevent="save">
     <fieldset :disabled="saving" class="space-y-6">
       <legend class="form-legend">The essentials</legend>
-      <label class="block">Recipe title<input v-model="form.title" class="field mt-2" required maxlength="200"></label>
-      <label class="block">Description<textarea v-model="form.description" class="field mt-2" rows="3" maxlength="10000" /></label>
+      <label class="block">Recipe title<input v-model="form.title" v-bind="fieldIssue('title')" class="field mt-2" required maxlength="200"></label>
+      <label class="block">Description<textarea v-model="form.description" v-bind="fieldIssue('description')" class="field mt-2" rows="3" maxlength="10000" /></label>
       <div class="form-grid">
-        <label>Recipe type<select v-model="form.recipeType" aria-label="Recipe type" class="field mt-2"><option value="food">Food</option><option value="drink">Drink</option><option value="cocktail">Cocktail</option><option value="baking">Baking</option><option value="dessert">Dessert</option></select></label>
-        <label>Difficulty<select v-model="form.difficulty" aria-label="Difficulty" class="field mt-2"><option value="easy">Easy</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="master">Master</option></select></label>
-        <label>Servings<input v-model.number="form.servings" type="number" min="1" max="1000" required class="field mt-2"></label>
-        <label>Cuisine<input v-model="form.cuisine" maxlength="200" class="field mt-2"></label>
-        <label>Prep time (minutes)<input v-model.number="form.prepTimeMinutes" type="number" min="0" max="100000" required class="field mt-2"></label>
-        <label>Cook time (minutes)<input v-model.number="form.cookTimeMinutes" type="number" min="0" max="100000" required class="field mt-2"></label>
+        <label>Recipe type<select v-model="form.recipeType" v-bind="fieldIssue('recipeType')" aria-label="Recipe type" class="field mt-2"><option value="food">Food</option><option value="drink">Drink</option><option value="cocktail">Cocktail</option><option value="baking">Baking</option><option value="dessert">Dessert</option></select></label>
+        <label>Difficulty<select v-model="form.difficulty" v-bind="fieldIssue('difficulty')" aria-label="Difficulty" class="field mt-2"><option value="easy">Easy</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="master">Master</option></select></label>
+        <label>Servings<input v-model.number="form.servings" v-bind="fieldIssue('servings')" type="number" min="1" max="1000" required class="field mt-2"></label>
+        <label>Cuisine<input v-model="form.cuisine" v-bind="fieldIssue('cuisine')" maxlength="200" class="field mt-2"></label>
+        <label>Prep time (minutes)<input v-model.number="form.prepTimeMinutes" v-bind="fieldIssue('prepTimeMinutes')" type="number" min="0" max="100000" required class="field mt-2"></label>
+        <label>Cook time (minutes)<input v-model.number="form.cookTimeMinutes" v-bind="fieldIssue('cookTimeMinutes')" type="number" min="0" max="100000" required class="field mt-2"></label>
       </div>
-      <label class="block">Original salt type<select v-model="form.originalSaltType" aria-label="Original salt type" class="field mt-2"><option :value="null">Unknown</option><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
-      <label class="block">Image URL (optional)<input v-model="form.imageUrl" type="url" placeholder="https://" maxlength="2000" class="field mt-2"></label>
+      <label class="block">Original salt type<select v-model="form.originalSaltType" v-bind="fieldIssue('originalSaltType')" aria-label="Original salt type" class="field mt-2"><option :value="null">Unknown</option><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
+      <label class="block">Image URL (optional)<input v-model="form.imageUrl" v-bind="fieldIssue('imageUrl')" type="url" placeholder="https://" maxlength="2000" class="field mt-2"></label>
     </fieldset>
     <fieldset :disabled="saving" class="space-y-5">
       <legend class="form-legend">Ingredients</legend>
       <div v-for="(row, index) in form.ingredients" :key="index" class="row-panel">
         <div class="form-grid">
-          <label>Ingredient {{ index + 1 }}<input v-model="row.name" required maxlength="200" class="field mt-2"></label>
-          <label>Amount<input v-model.number="row.amount" type="number" min="0" max="1000000" step="any" required class="field mt-2"></label>
-          <label>Unit<input v-model="row.unit" list="recipe-units" required maxlength="40" class="field mt-2"></label>
-          <label>Ingredient notes<input v-model="row.notes" maxlength="10000" class="field mt-2" placeholder="Diced, room temperature…"></label>
+          <label>Ingredient {{ index + 1 }}<input v-model="row.name" v-bind="fieldIssue('ingredients.' + index + '.name')" required maxlength="200" class="field mt-2"></label>
+          <label>Amount<input v-model.number="row.amount" v-bind="fieldIssue('ingredients.' + index + '.amount')" type="number" min="0" max="1000000" step="any" required class="field mt-2"></label>
+          <label>Unit<input v-model="row.unit" v-bind="fieldIssue('ingredients.' + index + '.unit')" list="recipe-units" required maxlength="40" class="field mt-2"></label>
+          <label>Ingredient notes<input v-model="row.notes" v-bind="fieldIssue('ingredients.' + index + '.notes')" maxlength="10000" class="field mt-2" placeholder="Diced, room temperature…"></label>
         </div>
         <button type="button" class="text-action mt-4" :aria-label="'Remove ingredient ' + (index + 1)" @click="form.ingredients.splice(index, 1)">Remove ingredient</button>
       </div>
@@ -81,18 +83,18 @@ async function save() {
     <fieldset :disabled="saving" class="space-y-5">
       <legend class="form-legend">The method</legend>
       <div v-for="(row, index) in form.steps" :key="index" class="row-panel space-y-5">
-        <label class="block">Step {{ index + 1 }}<textarea v-model="row.instruction" required maxlength="10000" rows="3" class="field mt-2" /></label>
+        <label class="block">Step {{ index + 1 }}<textarea v-model="row.instruction" v-bind="fieldIssue('steps.' + index + '.instruction')" required maxlength="10000" rows="3" class="field mt-2" /></label>
         <div class="form-grid">
-          <label>Heat level<select v-model="row.heatLevel" aria-label="Heat level" class="field mt-2"><option v-for="heat in ['none', 'low', 'medium-low', 'medium', 'medium-high', 'high']" :key="heat" :value="heat">{{ heat }}</option></select></label>
-          <label>Duration (minutes)<input :value="row.durationMinutes" type="number" min="0" max="100000" class="field mt-2" @input="row.durationMinutes = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"></label>
-          <label>Look for<input v-model="row.sensoryVisual" class="field mt-2" placeholder="A deep golden crust"></label>
-          <label>Listen for<input v-model="row.sensoryAudio" class="field mt-2" placeholder="A gentle sizzle"></label>
-          <label>Aroma<input v-model="row.sensoryAroma" class="field mt-2"></label>
-          <label>Texture<input v-model="row.sensoryTexture" class="field mt-2"></label>
-          <label>The science behind it<input v-model="row.scienceWhy" class="field mt-2"></label>
-          <label>What to watch out for<input v-model="row.failurePrevention" class="field mt-2"></label>
+          <label>Heat level<select v-model="row.heatLevel" v-bind="fieldIssue('steps.' + index + '.heatLevel')" aria-label="Heat level" class="field mt-2"><option v-for="heat in ['none', 'low', 'medium-low', 'medium', 'medium-high', 'high']" :key="heat" :value="heat">{{ heat }}</option></select></label>
+          <label>Duration (minutes)<input :value="row.durationMinutes" v-bind="fieldIssue('steps.' + index + '.durationMinutes')" type="number" min="0" max="100000" class="field mt-2" @input="row.durationMinutes = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"></label>
+          <label>Look for<input v-model="row.sensoryVisual" v-bind="fieldIssue('steps.' + index + '.sensoryVisual')" class="field mt-2" placeholder="A deep golden crust"></label>
+          <label>Listen for<input v-model="row.sensoryAudio" v-bind="fieldIssue('steps.' + index + '.sensoryAudio')" class="field mt-2" placeholder="A gentle sizzle"></label>
+          <label>Aroma<input v-model="row.sensoryAroma" v-bind="fieldIssue('steps.' + index + '.sensoryAroma')" class="field mt-2"></label>
+          <label>Texture<input v-model="row.sensoryTexture" v-bind="fieldIssue('steps.' + index + '.sensoryTexture')" class="field mt-2"></label>
+          <label>The science behind it<input v-model="row.scienceWhy" v-bind="fieldIssue('steps.' + index + '.scienceWhy')" class="field mt-2"></label>
+          <label>What to watch out for<input v-model="row.failurePrevention" v-bind="fieldIssue('steps.' + index + '.failurePrevention')" class="field mt-2"></label>
         </div>
-        <label class="flex items-center gap-3"><input v-model="row.timerRequired" type="checkbox"> Timer needed</label>
+        <label class="flex items-center gap-3"><input v-model="row.timerRequired" v-bind="fieldIssue('steps.' + index + '.timerRequired')" type="checkbox"> Timer needed</label>
         <button type="button" class="text-action" :aria-label="'Remove step ' + (index + 1)" @click="form.steps.splice(index, 1)">Remove step</button>
       </div>
       <button type="button" class="button-secondary" @click="addStep">+ Add step</button>
@@ -101,20 +103,20 @@ async function save() {
       <legend class="form-legend">Equipment</legend>
       <div v-for="(row, index) in form.equipment" :key="index" class="row-panel">
         <div class="form-grid">
-          <label>Equipment {{ index + 1 }}<input v-model="row.name" required maxlength="200" class="field mt-2"></label>
-          <label>Substitute tool<input v-model="row.substituteTool" class="field mt-2"></label>
+          <label>Equipment {{ index + 1 }}<input v-model="row.name" v-bind="fieldIssue('equipment.' + index + '.name')" required maxlength="200" class="field mt-2"></label>
+          <label>Substitute tool<input v-model="row.substituteTool" v-bind="fieldIssue('equipment.' + index + '.substituteTool')" class="field mt-2"></label>
         </div>
-        <label class="my-4 flex items-center gap-3"><input v-model="row.isEssential" type="checkbox"> Essential</label>
+        <label class="my-4 flex items-center gap-3"><input v-model="row.isEssential" v-bind="fieldIssue('equipment.' + index + '.isEssential')" type="checkbox"> Essential</label>
         <button type="button" class="text-action" :aria-label="'Remove equipment ' + (index + 1)" @click="form.equipment.splice(index, 1)">Remove equipment</button>
       </div>
       <button type="button" class="button-secondary" @click="form.equipment.push({ name: '', isEssential: true, substituteTool: '' })">+ Add equipment</button>
     </fieldset>
-    <label class="block font-serif text-2xl">Heirloom notes<textarea v-model="form.heirloomNotes" rows="4" maxlength="10000" class="field mt-3 font-sans text-base" placeholder="The family story, the small secret, the person who taught you…" /></label>
+    <label class="block font-serif text-2xl">Heirloom notes<textarea v-model="form.heirloomNotes" v-bind="fieldIssue('heirloomNotes')" rows="4" maxlength="10000" class="field mt-3 font-sans text-base" placeholder="The family story, the small secret, the person who taught you…" /></label>
     <div v-if="error" role="alert" class="notice">
-      <p>{{ error }}</p><ul v-if="issues.length" class="mt-3 list-inside list-disc"><li v-for="issue in issues" :key="issue.path">{{ issue.path }}: {{ issue.message }}</li></ul>
+      <p>{{ error }}</p><ul v-if="issues.length" class="mt-3 list-inside list-disc"><li v-for="issue in issues" :key="issue.path" :id="'issue-' + issue.path.replaceAll('.', '-')">{{ issue.path }}: {{ issue.message }}</li></ul>
     </div>
     <div class="flex flex-wrap gap-4">
-      <button type="submit" class="button-primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save recipe' }}</button>
+      <button type="submit" class="button-primary" :disabled="saving" v-stable-action="state" :data-state="state" :aria-busy="saving">{{ label('Save recipe', 'Saving…') }}</button>
       <button v-if="recipe" type="button" class="button-secondary" :disabled="saving" @click="emit('cancel')">Cancel edit</button>
       <NuxtLink v-else to="/recipes" class="button-secondary">Cancel</NuxtLink>
     </div>

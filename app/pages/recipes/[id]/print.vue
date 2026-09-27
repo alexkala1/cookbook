@@ -21,12 +21,12 @@ useSeoMeta({ title: () => (recipe.value?.title ?? 'Recipe') + ' — Heirloom car
   </main>
 </template>
 <style>
-.print-page { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; color: #2c221e; }
+.print-page { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; color: var(--color-ink); }
 .print-controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 2rem; }
 .print-controls p { width: 100%; font-size: .875rem; }
-.vintage-card { border: 6px double #796249; padding: clamp(1rem, 4vw, 3rem); background: #fffdf7; font-family: Georgia, 'Times New Roman', serif; overflow-wrap: anywhere; }
-.card-heading { text-align: center; border-bottom: 1px solid #796249; padding-bottom: 1.5rem; }
-.card-ornament { font-size: 2.5rem; line-height: 1; color: #657963; }
+.vintage-card { border: 6px double var(--color-rule); padding: clamp(1rem, 4vw, 3rem); background: var(--color-paper); font-family: var(--font-display); overflow-wrap: anywhere; }
+.card-heading { text-align: center; border-bottom: 1px solid var(--color-rule); padding-bottom: 1.5rem; }
+.card-ornament { font-size: 2.5rem; line-height: 1; color: var(--color-sage); }
 .card-kicker { letter-spacing: .2em; text-transform: uppercase; font-size: .75rem; margin: 1rem 0; }
 .vintage-card h1 { font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.15; margin: 1rem 0; }
 .vintage-card h2 { font-size: 1.6rem; margin: 1.75rem 0 .8rem; }
@@ -34,15 +34,15 @@ useSeoMeta({ title: () => (recipe.value?.title ?? 'Recipe') + ' — Heirloom car
 .vintage-card p, .vintage-card dd { white-space: pre-line; }
 .card-meta { font-size: .9rem; margin-top: 1rem; }
 .card-ingredients ul { list-style: none; padding: 0; }
-.card-ingredients li { padding: .4rem 0; border-bottom: 1px dotted #b6a18b; }
+.card-ingredients li { padding: .4rem 0; border-bottom: 1px dotted var(--color-rule); }
 .card-method { list-style: none; padding: 0; }
 .card-method li { margin: 1.2rem 0; }
-.card-senses { border-left: 2px solid #657963; padding-left: 1rem; margin: .8rem 0; font-size: .9rem; }
+.card-senses { border-left: 2px solid var(--color-sage); padding-left: 1rem; margin: .8rem 0; font-size: .9rem; }
 .card-senses:empty { display: none; }
 .card-senses dt { display: inline; font-weight: bold; }
 .card-senses dd { display: inline; margin-left: .4rem; }
-.card-memory { border-top: 1px solid #796249; margin-top: 1.5rem; font-style: italic; }
-.card-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #796249; font-size: .8rem; text-align: center; }
+.card-memory { border-top: 1px solid var(--color-rule); margin-top: 1.5rem; font-style: italic; }
+.card-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--color-rule); font-size: .8rem; text-align: center; }
 @media print {
   @page { size: A4; margin: 14mm; }
   html, body { background: white !important; color: black !important; }

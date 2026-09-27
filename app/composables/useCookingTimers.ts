@@ -68,6 +68,22 @@ export function useCookingTimers(recipeId: string) {
   }
   function reset(timer: CookingTimer) { timer.remaining = timer.duration; timer.state = 'idle'; persist() }
   function remove(timer: CookingTimer) { timers.value = timers.value.filter(row => row.id !== timer.id); persist() }
+  function restore(timer: CookingTimer) {
+    if (timers.value.some(row => row.id === timer.id) || timers.value.length >= 20) return
+    const restored = { ...timer }
+    if (restored.state === 'running') {
+      restored.remaining = remainingSeconds(restored, Date.now())
+      if (!restored.remaining) {
+        restored.state = 'finished'
+        alerts.value.push(`${restored.name} finished`)
+        chime()
+      }
+    }
+    timers.value.push(restored)
+    timers.value.sort((a, b) => a.id - b.id)
+    nextId = Math.max(nextId, restored.id)
+    persist()
+  }
   onMounted(() => {
     try { timers.value = restoreTimers(sessionStorage.getItem(storageKey)) }
     catch { persistence.value = 'Session storage unavailable: timers cannot survive reload.' }
@@ -77,5 +93,5 @@ export function useCookingTimers(recipeId: string) {
     window.addEventListener('pagehide', persist)
   })
   onBeforeUnmount(() => { persist(); disposed = true; clearInterval(interval); document.removeEventListener('visibilitychange', tick); window.removeEventListener('pagehide', persist); void audio?.close().catch(() => {}) })
-  return { timers, alerts, sound, persistence, start, toggle, reset, remove, enableSound }
+  return { timers, alerts, sound, persistence, start, toggle, reset, remove, restore, enableSound }
 }

@@ -1,0 +1,13 @@
+{
+  "date": "2026-09-27",
+  "systemRecord": "docs/HALLMARK_RESPONSIVE_SPEC.md",
+  "genre": "editorial",
+  "theme": "Heirloom custom editorial",
+  "framework": "Nuxt 4.5 / Vue 3.5 / Tailwind 4 / Nuxt UI 3",
+  "originalFonts": "Segoe UI and Georgia, app/assets/css/main.css",
+  "targetFonts": "Literata 600/700 and Commissioner 400/600, Latin and Greek",
+  "palette": "Locked OKLCH tokens from specification section 2.1",
+  "motion": "No motion library; reduced-motion-aware control feedback only",
+  "scope": "In-place responsive shell and interaction polish; no server/database edits",
+  "preserved": "Routes, page content intent, existing data and culinary logic"
+}

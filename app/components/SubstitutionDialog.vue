@@ -3,6 +3,7 @@ const props = defineProps<{ ingredient: string, context: string }>()
 const dialog = ref<HTMLDialogElement>()
 const { requestHeaders, ready } = useByokSettings()
 const busy = ref(false), error = ref('')
+const { state, label } = useActionFeedback(busy, error)
 const options = ref<{ name: string, ratio: string, science: string, adjustment: string }[]>([])
 let controller: AbortController | undefined
 onBeforeUnmount(() => controller?.abort())
@@ -15,8 +16,8 @@ async function open() {
 }
 </script>
 <template>
-  <button class="text-action mt-2 block text-sm" :disabled="!ready || busy" @click="open">Ask AI for Substitution<span class="sr-only"> for {{ ingredient }}</span></button>
-  <dialog ref="dialog" class="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-xl bg-cream p-6 text-espresso backdrop:bg-black/40" :aria-label="'Substitutions for ' + ingredient" @close="controller?.abort()">
+  <button class="button-secondary mt-2 text-sm" :disabled="!ready || busy" @click="open" v-stable-action="state" :data-state="state" :aria-busy="busy">{{ label('Ask AI for Substitution', 'Checking…') }}<span class="sr-only"> for {{ ingredient }}</span></button>
+  <dialog ref="dialog" class="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-xl bg-cream p-6 text-espresso backdrop:bg-ink/40" :aria-label="'Substitutions for ' + ingredient" @close="controller?.abort()">
     <form method="dialog"><button class="button-secondary float-right" autofocus>Close</button></form>
     <h2 class="pr-20">Instead of {{ ingredient }}</h2>
     <p v-if="busy" role="status" class="mt-5">Checking culinary alternatives…</p>

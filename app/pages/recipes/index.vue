@@ -15,15 +15,15 @@ const { data: recipes, status, error, refresh } = await useFetch<Recipe[]>('/api
 <template>
   <section class="page-section">
     <div class="section-heading">
-      <div><p class="eyebrow">From your kitchen</p><h1>Your recipe collection</h1></div>
-      <NuxtLink to="/recipes/new" class="button-primary">+ New Recipe</NuxtLink>
+      <h1>Your recipe collection</h1>
+      <div class="flex flex-wrap gap-3"><NuxtLink to="/recipes/import" class="button-secondary">Import Recipe</NuxtLink><NuxtLink to="/recipes/new" class="button-primary">+ New Recipe</NuxtLink></div>
     </div>
     <label class="mt-10 block max-w-xl">Search recipes
       <input v-model="search" type="search" class="field mt-2" placeholder="A dish, a drink, a family favourite…" maxlength="200">
     </label>
     <div class="my-6 flex flex-wrap items-center gap-2" aria-label="Recipe filters">
       <button v-for="filter in filters" :key="filter.value" type="button" class="filter-pill" :aria-pressed="type === filter.value" @click="type = filter.value">{{ filter.label }}</button>
-      <button type="button" class="filter-pill" :aria-pressed="favorites" @click="favorites = !favorites">♥ Favorites</button>
+      <button type="button" class="filter-pill" :aria-pressed="favorites" @click="favorites = !favorites"><UIcon name="i-lucide-heart" :class="{ 'fill-current': favorites }" aria-hidden="true" /> Favorites</button>
     </div>
     <p v-if="status === 'pending'" role="status" class="py-10">Opening your cookbook…</p>
     <div v-else-if="error" role="alert" class="notice"><p>We couldn’t load your recipes.</p><button class="button-secondary mt-4" @click="refresh()">Try again</button></div>
@@ -35,18 +35,19 @@ const { data: recipes, status, error, refresh } = await useFetch<Recipe[]>('/api
     </div>
     <div v-else class="grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
       <article v-for="recipe in recipes" :key="recipe.id" class="min-w-0 border-b border-espresso/20 pb-6">
-        <NuxtLink :to="'/recipes/' + recipe.id" class="group block">
           <div class="mb-5 flex aspect-[4/3] items-center justify-center overflow-hidden bg-sage/10">
             <img v-if="recipe.imageUrl" :src="recipe.imageUrl" :alt="recipe.title" loading="lazy" class="h-full w-full object-cover">
             <span v-else class="font-serif text-4xl text-sage">{{ recipe.recipeType === 'cocktail' || recipe.recipeType === 'drink' ? 'To good company.' : 'Made with care.' }}</span>
           </div>
-          <p class="eyebrow">{{ recipe.recipeType }} <span v-if="recipe.isFavorite" aria-label="Favorite">· ♥</span></p>
-          <h2 class="mt-3 break-words text-3xl group-hover:underline">{{ recipe.title }}</h2>
-        </NuxtLink>
+          <p class="meta-label">{{ recipe.recipeType }} <UIcon v-if="recipe.isFavorite" name="i-lucide-heart" class="fill-current" aria-label="Favorite" /></p>
+          <h2 class="mt-3 min-w-0 text-3xl"><NuxtLink :to="'/recipes/' + recipe.id" class="recipe-title-link" :title="recipe.title">{{ recipe.title }}</NuxtLink></h2>
         <p class="mt-3 line-clamp-2 break-words">{{ recipe.description }}</p>
         <p class="mt-5 text-sm">{{ recipe.totalTimeMinutes }} min · {{ recipe.servings }} servings · {{ recipe.difficulty }}</p>
       </article>
     </div>
   </section>
 </template>
-
+<style scoped>
+.recipe-title-link { display: block; min-height: 44px; line-height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) { .recipe-title-link:hover { text-decoration: underline; } }
+</style>

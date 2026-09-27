@@ -80,7 +80,7 @@ function saved(value: RecipeDetail) {
     </template>
     <template v-else>
       <header class="mt-8 border-b border-espresso/20 pb-10">
-        <p class="eyebrow">{{ recipe.recipeType }} · {{ recipe.cuisine || 'From your kitchen' }}</p>
+        <p class="meta-label">{{ recipe.recipeType }} · {{ recipe.cuisine || 'From your kitchen' }}</p>
         <h1 class="mt-4 max-w-4xl break-words">{{ recipe.title }}</h1>
         <p class="mt-6 max-w-2xl whitespace-pre-line break-words text-lg">{{ recipe.description }}</p>
         <p class="mt-6">{{ recipe.totalTimeMinutes }} min · {{ recipe.difficulty }} · {{ recipe.rating == null ? 'Not rated yet' : recipe.rating + ' / 5' }}</p>
@@ -88,7 +88,7 @@ function saved(value: RecipeDetail) {
         <div class="mt-6 flex flex-wrap gap-3">
           <NuxtLink :to="'/recipes/' + id + '/cook'" class="button-primary">Start cooking</NuxtLink>
           <NuxtLink :to="'/recipes/' + id + '/print'" class="button-secondary">Print heirloom card</NuxtLink>
-          <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" @click="toggleFavorite">{{ recipe.isFavorite ? '♥ Favorited' : '♡ Favorite' }}</button>
+          <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" :aria-busy="busy" v-stable-action="busy ? 'loading' : actionError ? 'error' : undefined" :data-state="busy ? 'loading' : actionError ? 'error' : undefined" @click="toggleFavorite"><UIcon name="i-lucide-heart" :class="{ 'fill-current': recipe.isFavorite }" aria-hidden="true" />{{ recipe.isFavorite ? 'Favorited' : 'Favorite' }}</button>
           <button class="button-secondary" @click="editing = true">Edit recipe</button>
           <button class="text-action px-3" @click="deleting = true">Delete recipe</button>
         </div>
@@ -105,7 +105,7 @@ function saved(value: RecipeDetail) {
           <div class="row-panel mt-6 space-y-4">
             <label class="block">Servings<input v-model.number="servings" type="number" min="1" max="1000" class="field mt-2"></label>
             <p v-if="safeServings !== servings" role="status" class="text-sm">Enter 1–1000 servings. Showing the original quantities.</p>
-            <button class="filter-pill" :aria-pressed="imperial" @click="imperial = !imperial">{{ imperial ? 'US / imperial · switch to metric' : 'Metric · switch to US / imperial' }}</button>
+            <div class="inline-flex gap-1 rounded-full border border-rule p-1" role="group" aria-label="Measurement system"><button class="filter-pill" :aria-pressed="!imperial" @click="imperial = false">Metric</button><button class="filter-pill" :aria-pressed="imperial" @click="imperial = true">US</button></div>
             <label class="block">Salt used in the recipe<select v-model="fromSalt" aria-label="Salt used in the recipe" class="field mt-2"><option :value="null">Unknown — no substitution</option><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
             <label class="block">Salt you are using<select v-model="toSalt" aria-label="Salt you are using" class="field mt-2"><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
             <p v-if="!fromSalt" role="status" class="text-sm">Original salt unknown. Density substitution is off until you choose it. Serving changes still scale all ingredient quantities.</p>
@@ -113,7 +113,7 @@ function saved(value: RecipeDetail) {
           </div>
           <ul v-if="displayIngredients.length" class="mt-6 divide-y divide-espresso/15">
             <li v-for="ingredient in displayIngredients" :key="ingredient.id" class="py-4 break-words">
-              <span class="font-semibold tabular-nums">{{ ingredient.amount }} {{ ingredient.unit }}</span> {{ ingredient.name }}
+              <span class="font-semibold num">{{ ingredient.amount }} {{ ingredient.unit }}</span> {{ ingredient.name }}
               <p v-if="ingredient.notes" class="mt-1 text-sm">{{ ingredient.notes }}</p>
               <p v-if="ingredient.conversionNote" class="mt-1 text-sm">{{ ingredient.conversionNote }}</p>
               <SubstitutionDialog :ingredient="ingredient.name" :context="recipe.title + ': ' + recipe.steps.map(step => step.instruction).join(' ')" />
@@ -140,7 +140,7 @@ function saved(value: RecipeDetail) {
           </ol>
           <p v-else class="mt-6">No steps recorded yet. Add your method with “Edit recipe”.</p>
           <section v-if="recipe.heirloomNotes" class="mt-12 border-t-2 border-terracotta pt-6">
-            <p class="eyebrow">Passed down, kept close</p><h2 class="mt-3">Heirloom notes</h2><p class="mt-4 whitespace-pre-line break-words leading-relaxed">{{ recipe.heirloomNotes }}</p>
+            <h2 class="mt-3">Heirloom notes</h2><p class="mt-4 whitespace-pre-line break-words leading-relaxed">{{ recipe.heirloomNotes }}</p>
           </section>
         </div>
       </div>

@@ -3,9 +3,7 @@ useSeoMeta({ title: 'New recipe — Heirloom' })
 </script>
 <template>
   <section class="page-section">
-    <p class="eyebrow">A new page in your cookbook</p>
     <h1 class="mt-3">Keep something delicious.</h1>
     <RecipeForm />
   </section>
 </template>
-

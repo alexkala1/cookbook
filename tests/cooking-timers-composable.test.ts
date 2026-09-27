@@ -77,3 +77,39 @@ it('persists timer removal immediately', () => {
   expect(cooking.timers.value.map(timer => timer.name)).toEqual(['Rest'])
   expect(JSON.parse(stored.get('heirloom:timers:v1:recipe')!).timers.map((timer: { name: string }) => timer.name)).toEqual(['Rest'])
 })
+
+it('restores the original deadline and writes storage exactly once', () => {
+  const writes = vi.fn()
+  vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: writes })
+  const cooking = useCookingTimers('recipe')
+  mount(); cooking.start('Simmer', 60)
+  const original = { ...cooking.timers.value[0]! }
+  cooking.remove(original)
+  vi.advanceTimersByTime(4000)
+  writes.mockClear()
+  cooking.restore(original)
+  expect(writes).toHaveBeenCalledTimes(1)
+  expect(cooking.timers.value[0]).toMatchObject({ id: original.id, deadline: original.deadline, remaining: 56, state: 'running' })
+  cooking.restore(original)
+  expect(writes).toHaveBeenCalledTimes(1)
+  expect(cooking.timers.value).toHaveLength(1)
+})
+
+it('finishes a restored overdue timer once without resetting its deadline', () => {
+  const cooking = useCookingTimers('recipe')
+  mount(); cooking.start('Rest', 2)
+  const original = { ...cooking.timers.value[0]! }
+  cooking.remove(original); vi.advanceTimersByTime(3000); cooking.restore(original)
+  expect(cooking.timers.value[0]).toMatchObject({ deadline: original.deadline, remaining: 0, state: 'finished' })
+  expect(cooking.alerts.value).toEqual(['Rest finished'])
+  vi.advanceTimersByTime(1000)
+  expect(cooking.alerts.value).toEqual(['Rest finished'])
+})
+
+it('restores paused timers without counting removed time against them', () => {
+  const cooking = useCookingTimers('recipe')
+  mount(); cooking.start('Rest', 60); cooking.toggle(cooking.timers.value[0]!)
+  const paused = { ...cooking.timers.value[0]! }
+  cooking.remove(paused); vi.advanceTimersByTime(4000); cooking.restore(paused)
+  expect(cooking.timers.value[0]).toEqual(paused)
+})

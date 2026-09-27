@@ -14,16 +14,17 @@ const { data: recipes, status, error: loadError, refresh } = await useFetch<Reci
 const month = useState('conductor-month', () => new Date().getMonth() + 1)
 const monthNames = Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).toLocaleString('en-GB', { month: 'long' }))
 const courseLabels: Record<ConductorCourse, string> = { appetizer: 'Appetizer', main: 'Main', side: 'Side', dessert: 'Dessert', beverage: 'Beverage' }
-const courseTag: Record<ConductorCourse, string> = { appetizer: 'bg-sage text-cream', main: 'bg-[#9c3f1f] text-cream', side: 'bg-amber-200 text-espresso', dessert: 'bg-espresso text-cream', beverage: 'bg-sky-200 text-espresso' }
+const courseTag: Record<ConductorCourse, string> = { appetizer: 'bg-olive-ink text-paper', main: 'bg-terracotta-ink text-cream', side: 'bg-olive text-paper', dessert: 'bg-espresso text-cream', beverage: 'bg-paper-3 text-ink' }
 const seasonBadge: Record<SeasonStatus, [string, string]> = {
-  peak: ['Peak season', 'bg-sage text-cream'], in_season: ['In season', 'border border-sage text-espresso'],
-  greenhouse: ['Greenhouse', 'bg-amber-100 text-espresso'], off_season: ['Off-season', 'bg-terracotta/15 text-[#9c3f1f]']
+  peak: ['Peak season', 'bg-olive-ink text-paper'], in_season: ['In season', 'border border-sage text-espresso'],
+  greenhouse: ['Greenhouse', 'bg-paper-3 text-ink border border-rule'], off_season: ['Off-season', 'bg-terracotta/15 text-terracotta-ink']
 }
 const target = ref('20:30'), guestCount = ref<number | ''>(''), burners = ref(4), ovens = ref(1)
 const courses = ref<{ recipeId: string, course: ConductorCourse, serveAt: string }[]>([
   { recipeId: '', course: 'appetizer', serveAt: '' }, { recipeId: '', course: 'main', serveAt: '' }, { recipeId: '', course: 'dessert', serveAt: '' }
 ])
 const plan = ref<Plan | null>(null), busy = ref(false), error = ref(''), done = ref<string[]>([])
+const { state, label } = useActionFeedback(busy, error)
 watch([target, guestCount, burners, ovens, month, courses], () => {
   plan.value = null; done.value = []; error.value = ''
 }, { deep: true })
@@ -53,7 +54,7 @@ async function conduct() {
 
 <template>
   <section class="page-section">
-    <p class="eyebrow">Everything on the table at once</p><h1 class="mt-3">Dinner conductor</h1>
+    <h1 class="mt-3">Dinner conductor</h1>
     <p class="mt-4 max-w-2xl">Choose your courses and when guests sit down. Heirloom works backwards from each course, flags oven and burner clashes, and checks what is in season.</p>
 
     <p v-if="status === 'pending'" role="status" class="py-10">Opening your cookbook…</p>
@@ -80,7 +81,7 @@ async function conduct() {
         <label>Month<select v-model.number="month" class="field mt-2"><option v-for="(name, i) in monthNames" :key="name" :value="i + 1">{{ name }}</option></select></label>
       </fieldset>
       <p class="text-sm">Serving defaults: first course at the sit-down time, mains and sides 25 minutes later, dessert after 60 minutes. Steps run one after another within each recipe.</p>
-      <button class="button-primary" :disabled="busy">{{ busy ? 'Conducting…' : 'Build the schedule' }}</button>
+      <button class="button-primary" :disabled="busy" v-stable-action="state" :data-state="state" :aria-busy="busy">{{ label('Build the schedule', 'Conducting…') }}</button>
       <p v-if="error" role="alert" class="notice">{{ error }}</p>
     </form>
 
@@ -101,13 +102,13 @@ async function conduct() {
           <li v-for="row in rows" :key="row.key" class="relative ml-5 border-b border-espresso/10 py-4 last:border-b-0">
             <span class="absolute -left-[1.72rem] top-6 size-3 rounded-full" :class="row.kind === 'serve' ? 'bg-terracotta' : 'bg-espresso/40'" aria-hidden="true" />
             <template v-if="row.kind === 'serve'">
-              <p class="font-serif text-2xl"><span class="tabular-nums">{{ row.serve.clock }}</span> · Serve {{ courseLabels[row.serve.course].toLowerCase() }}: {{ row.serve.recipeTitle }}</p>
+              <p class="font-serif text-2xl"><span class="num">{{ row.serve.clock }}</span> · Serve {{ courseLabels[row.serve.course].toLowerCase() }}: {{ row.serve.recipeTitle }}</p>
               <p class="text-sm">{{ row.serve.label }}{{ dayNote(row.serve.dayOffset) }}</p>
             </template>
             <div v-else class="grid gap-3 sm:grid-cols-[7rem_minmax(0,1fr)]" :class="[done.includes(row.event.id) && 'opacity-60', conflictSteps.has(row.event.id) && 'rounded-md bg-terracotta/5 px-3 ring-1 ring-terracotta/50']">
-              <p class="tabular-nums"><span class="font-semibold">{{ row.event.clock }}</span><br><span class="text-sm">{{ row.event.label }}{{ dayNote(row.event.dayOffset) }}</span></p>
+              <p class="num"><span class="font-semibold">{{ row.event.clock }}</span><br><span class="text-sm">{{ row.event.label }}{{ dayNote(row.event.dayOffset) }}</span></p>
               <div class="min-w-0">
-                <p class="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                <p class="flex flex-wrap items-center gap-2 meta-label font-semibold">
                   <span class="rounded-full px-3 py-1" :class="courseTag[row.event.course]">{{ courseLabels[row.event.course] }}</span>
                   <span class="rounded-full border border-espresso/25 px-3 py-1">{{ phaseLabels[row.event.phase] }}</span>
                   <span v-if="row.event.oven" class="rounded-full border border-espresso/25 px-3 py-1">Oven{{ row.event.ovenTempC ? ' ' + row.event.ovenTempC + ' °C' : '' }}</span>
@@ -128,13 +129,13 @@ async function conduct() {
         <h2>What’s in season · {{ monthNames[plan.month - 1] }}</h2>
         <p class="mt-3 text-sm">Greek harvest calendar. Canned, dried, and preserved ingredients are never flagged.</p>
         <div v-for="course in plan.seasonality" :key="course.recipeId + course.course" class="row-panel mt-5">
-          <p class="flex flex-wrap items-center gap-3"><span class="rounded-full px-3 py-1 text-xs font-semibold uppercase" :class="courseTag[course.course]">{{ courseLabels[course.course] }}</span><span class="font-serif text-xl">{{ course.recipeTitle }}</span></p>
+          <p class="flex flex-wrap items-center gap-3"><span class="rounded-full px-3 py-1 meta-label font-semibold" :class="courseTag[course.course]">{{ courseLabels[course.course] }}</span><span class="font-serif text-xl">{{ course.recipeTitle }}</span></p>
           <p v-if="!course.items.length" class="mt-3 text-sm">No seasonal produce to check.</p>
           <ul class="mt-3 space-y-3">
             <li v-for="item in course.items" :key="item.ingredient" class="break-words">
               <span class="font-semibold">{{ item.ingredient }}</span>
               <span class="ml-2 inline-block rounded-full px-3 py-0.5 text-xs font-semibold" :class="seasonBadge[item.status][1]">{{ seasonBadge[item.status][0] }}</span>
-              <details v-if="item.advice.length" class="mt-2"><summary class="cursor-pointer text-sm font-semibold underline underline-offset-4">Flavor fix</summary><ul class="mt-2 list-disc space-y-1 pl-5 text-sm"><li v-for="tip in item.advice" :key="tip">{{ tip }}</li></ul></details>
+              <details v-if="item.advice.length" class="mt-2"><summary class="min-h-11 flex items-center whitespace-nowrap cursor-pointer text-sm font-semibold underline underline-offset-4">Flavor fix</summary><ul class="mt-2 list-disc space-y-1 pl-5 text-sm"><li v-for="tip in item.advice" :key="tip">{{ tip }}</li></ul></details>
             </li>
           </ul>
         </div>

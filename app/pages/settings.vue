@@ -9,6 +9,13 @@ const { data: profile, error, refresh } = await useFetch<KitchenProfile>('/api/s
 const saving = ref(false)
 const message = ref('')
 const saveError = ref('')
+const { state: kitchenState, label: kitchenLabel } = useActionFeedback(saving, saveError)
+const keySaving = ref(false)
+const { state: keyState, label: keyLabel } = useActionFeedback(keySaving, keyError)
+async function storeKeys() { keySaving.value = true; try { saveKeys() } finally { keySaving.value = false } }
+let messageTimer: ReturnType<typeof setTimeout> | undefined
+watch([message, keyMessage], () => { clearTimeout(messageTimer); messageTimer = setTimeout(() => { message.value = ''; keyMessage.value = '' }, 2000) })
+onBeforeUnmount(() => clearTimeout(messageTimer))
 const hardware = [
   { key: 'hasMicrowave', label: 'Microwave' }, { key: 'hasAirFryer', label: 'Air fryer' },
   { key: 'hasInstantPot', label: 'Instant Pot' }, { key: 'hasCastIron', label: 'Cast iron' },
@@ -32,12 +39,12 @@ async function saveKitchen() {
 
 <template>
   <section class="page-section max-w-4xl">
-    <p class="eyebrow">Make yourself at home</p><h1 class="mt-3">Your kitchen & keys</h1>
+    <h1 class="mt-3">Your kitchen & keys</h1>
     <section class="mt-12 border-t border-espresso/20 pt-8">
       <h2>Your AI providers</h2>
       <p class="mt-4 max-w-2xl">Keys are saved in this browser’s localStorage, without encryption. Anyone with access to this browser profile can read them. When you request AI help, the selected key travels in a request header to Heirloom and then to the selected provider; the server never saves or logs it. Source text is sent to that provider. Use HTTPS when accessing a remote server.</p>
       <p class="mt-3 text-sm">Enter a model ID supported by your provider. Without a key, imports use recipe metadata or a labeled deterministic draft. Ollama uses the server’s local service at 127.0.0.1:11434 when selected with a model; no key is required.</p>
-      <form class="mt-6 space-y-5" @submit.prevent="saveKeys">
+      <form class="mt-6 space-y-5" @submit.prevent="storeKeys">
         <fieldset :disabled="!ready" class="space-y-5">
           <label v-for="provider in byokProviders" :key="provider" class="block capitalize">{{ provider }} API key <span v-if="provider === 'ollama'" class="normal-case">(optional for local models)</span>
             <input v-model="settings.keys[provider]" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" class="field mt-2" :aria-label="provider + ' API key'">
@@ -46,7 +53,7 @@ async function saveKitchen() {
             <label>Active provider<select v-model="settings.activeProvider" aria-label="Active provider" class="field mt-2"><option v-for="provider in byokProviders" :key="provider" :value="provider">{{ provider }}</option></select></label>
             <label>Active model<input v-model="settings.activeModel" class="field mt-2" placeholder="Model ID from your provider" maxlength="200"></label>
           </div>
-          <div class="flex flex-wrap gap-3"><button type="submit" class="button-primary">Save keys & model</button><button type="button" class="button-secondary" @click="clear">Clear saved keys</button></div>
+          <div class="flex flex-wrap gap-3"><button type="submit" class="button-primary" v-stable-action="keyState" :data-state="keyState" :aria-busy="keySaving">{{ keyLabel('Save keys & model', 'Saving…') }}</button><button type="button" class="button-secondary" @click="clear">Clear saved keys</button></div>
         </fieldset>
         <p v-if="keyError" role="alert" class="notice">{{ keyError }}</p>
         <p v-if="keyMessage" role="status">{{ keyMessage }}</p>
@@ -63,7 +70,7 @@ async function saveKitchen() {
           </div>
           <div class="grid gap-4 sm:grid-cols-2"><label v-for="item in hardware" :key="item.key" class="flex items-center gap-3"><input :checked="Boolean(profile[item.key])" type="checkbox" @change="profile[item.key] = ($event.target as HTMLInputElement).checked">{{ item.label }}</label></div>
           <label class="block">Preferred salt<select v-model="profile.preferredSaltType" aria-label="Preferred salt" class="field mt-2"><option v-for="(_, salt) in saltDensities" :key="salt" :value="salt">{{ saltLabels[salt] }}</option></select></label>
-          <button class="button-primary" type="submit">{{ saving ? 'Saving…' : 'Save kitchen profile' }}</button>
+          <button class="button-primary" type="submit" v-stable-action="kitchenState" :data-state="kitchenState" :aria-busy="saving">{{ kitchenLabel('Save kitchen profile', 'Saving…') }}</button>
         </fieldset>
         <p v-if="saveError" role="alert" class="notice">{{ saveError }}</p><p v-if="message" role="status">{{ message }}</p>
       </form>

@@ -3,6 +3,7 @@ import { rescueGuides, rescueTriage, type RescueAdvice, type RescueIssue } from 
 const props = defineProps<{ context: string, currentStep?: number }>()
 const emit = defineEmits<{ open: [value: boolean] }>()
 const dialog = ref<HTMLDialogElement>(), problem = ref(''), busy = ref(false), error = ref('')
+const { state, label } = useActionFeedback(busy, error)
 const advice = ref<RescueAdvice>(rescueTriage('')), mode = ref('Instant offline guide')
 const { requestHeaders, ready } = useByokSettings()
 let controller: AbortController | undefined
@@ -21,18 +22,18 @@ async function ask() {
 onBeforeUnmount(() => controller?.abort())
 </script>
 <template>
-  <ClientOnly><Teleport to="#kitchen-rescue-dock"><button class="rescue-trigger" @click="show">🚨 Rescue My Dish</button></Teleport></ClientOnly>
+  <ClientOnly><Teleport to="#kitchen-rescue-dock"><button class="rescue-trigger" aria-label="Rescue My Dish" @click="show"><UIcon name="i-lucide-siren" aria-hidden="true" />Rescue</button></Teleport></ClientOnly>
   <dialog ref="dialog" class="rescue-drawer" aria-label="Rescue My Dish" @close="close">
-    <form method="dialog"><button class="kitchen-button float-right" autofocus>Close rescue</button></form>
+    <form method="dialog"><button class="kitchen-button float-right" autofocus>Close</button></form>
     <h2 class="clear-both pt-5 text-3xl">Rescue My Dish</h2>
     <p class="mt-3 text-base">Quick guides work instantly, without a key or network request.</p>
     <div class="mt-5 flex flex-wrap gap-2"><button v-for="(guide, issue) in rescueGuides" v-show="issue !== 'unknown'" :key="issue" class="kitchen-button text-base" @click="choose(issue)">{{ guide.title }}</button></div>
-    <article class="mt-6 rounded-xl border border-amber-300 p-5" aria-live="polite">
-      <p class="text-sm text-amber-200">{{ mode }}</p><h3 class="mt-2 text-2xl font-semibold">{{ advice.title }}</h3>
+    <article class="mt-6 rounded-xl border border-k-accent p-5" aria-live="polite">
+      <p class="text-sm text-k-accent">{{ mode }}</p><h3 class="mt-2 text-2xl font-semibold">{{ advice.title }}</h3>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-lg"><li v-for="action in advice.actions" :key="action">{{ action }}</li></ol>
-      <p class="mt-5 text-lg"><strong>Why:</strong> {{ advice.science }}</p><p class="mt-4 text-base text-amber-200">{{ advice.caution }}</p>
+      <p class="mt-5 text-lg"><strong>Why:</strong> {{ advice.science }}</p><p class="mt-4 text-base text-k-accent">{{ advice.caution }}</p>
     </article>
-    <form class="mt-6 space-y-3" @submit.prevent="ask"><label class="block text-lg">Describe another problem<textarea v-model="problem" class="kitchen-input mt-2" rows="3" required minlength="3" maxlength="3000" /></label><button class="kitchen-button" :disabled="busy || !ready">{{ busy ? 'Checking…' : 'Get custom rescue advice' }}</button></form>
-    <p v-if="error" role="alert" class="mt-4 text-lg text-amber-200">{{ error }}</p>
+    <form class="mt-6 space-y-3" @submit.prevent="ask"><label class="block text-lg">Describe another problem<textarea v-model="problem" class="kitchen-input mt-2" rows="3" required minlength="3" maxlength="3000" /></label><button class="kitchen-button" :disabled="busy || !ready" v-stable-action="state" :data-state="state" :aria-busy="busy">{{ label('Get rescue advice', 'Checking…') }}</button></form>
+    <p v-if="error" role="alert" class="mt-4 text-lg text-k-accent">{{ error }}</p>
   </dialog>
 </template>
