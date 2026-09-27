@@ -10,6 +10,22 @@ const favorites = ref(false)
 const filters = [{ label: 'All', value: '' }, { label: 'Food', value: 'food' }, { label: 'Drinks', value: 'drinks' }, { label: 'Baking', value: 'baking' }, { label: 'Desserts', value: 'dessert' }]
 const query = computed(() => ({ ...(delayedSearch.value ? { search: delayedSearch.value } : {}), ...(type.value ? { type: type.value } : {}), ...(favorites.value ? { isFavorite: 'true' } : {}) }))
 const { data: recipes, status, error, refresh } = await useFetch<Recipe[]>('/api/recipes', { query })
+const seeding = ref(false)
+const seedError = ref('')
+const seedFeedback = useActionFeedback(seeding, seedError)
+async function loadStarters() {
+  if (seeding.value) return
+  seeding.value = true
+  seedError.value = ''
+  try {
+    await $fetch('/api/recipes/seed', { method: 'POST' })
+    await refresh()
+  } catch {
+    seedError.value = 'We couldn’t load the starter recipes. Please try again.'
+  } finally {
+    seeding.value = false
+  }
+}
 </script>
 
 <template>
@@ -31,7 +47,11 @@ const { data: recipes, status, error, refresh } = await useFetch<Recipe[]>('/api
       <h2>{{ search || type || favorites ? 'No recipes match just yet.' : 'Every collection starts with one recipe.' }}</h2>
       <p class="mt-4">{{ search || type || favorites ? 'Try another search or clear your filters.' : 'Save a family favourite, a weekend bake, or your signature drink.' }}</p>
       <button v-if="search || type || favorites" class="button-secondary mt-6" @click="search = ''; type = ''; favorites = false">Clear filters</button>
-      <NuxtLink v-else to="/recipes/new" class="button-primary mt-6">Write your first recipe</NuxtLink>
+      <div v-else class="mt-6 flex flex-wrap gap-3">
+        <button v-stable-action type="button" class="button-primary starter-button" :data-state="seedFeedback.state.value" :disabled="seeding" :aria-busy="seeding" @click="loadStarters">{{ seedFeedback.label('🌱 Load Starter Heirloom Recipes', 'Loading recipes…') }}</button>
+        <NuxtLink to="/recipes/new" class="button-secondary">Write your first recipe</NuxtLink>
+      </div>
+      <p v-if="seedError" role="alert" class="mt-4 text-error">{{ seedError }}</p>
     </div>
     <div v-else class="grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
       <article v-for="recipe in recipes" :key="recipe.id" class="min-w-0 border-b border-espresso/20 pb-6">
@@ -48,6 +68,7 @@ const { data: recipes, status, error, refresh } = await useFetch<Recipe[]>('/api
   </section>
 </template>
 <style scoped>
+.starter-button { white-space: normal; text-align: center; }
 .recipe-title-link { display: block; min-height: 44px; line-height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (hover: hover) { .recipe-title-link:hover { text-decoration: underline; } }
 </style>

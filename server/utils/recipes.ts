@@ -27,8 +27,8 @@ export function listRecipes(query: { search?: string, type?: string, difficulty?
   return db.select().from(recipes).where(and(...conditions)).orderBy(desc(recipes.createdAt), asc(recipes.id)).all()
 }
 
-export function saveRecipe(input: Partial<RecipeInput>, id?: string) {
-  return db.transaction(tx => {
+export function saveRecipe(input: Partial<RecipeInput>, id?: string, connection: Pick<typeof db, 'transaction'> = db) {
+  return connection.transaction(tx => {
     const current = id ? tx.select().from(recipes).where(eq(recipes.id, id)).get() : undefined
     if (id && !current) throw createError({ statusCode: 404, statusMessage: 'Recipe not found' })
     const recipeId = id ?? randomUUID()

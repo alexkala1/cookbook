@@ -91,6 +91,8 @@ pnpm dev
 
 SQLite defaults to `./heirloom.db`. Export a filesystem path in `DATABASE_URL` to override it; create its parent directory first and use the same value for migrations and the server. Outside Docker, migrations remain explicit. Production does not automatically load `.env`.
 
+An empty recipe collection offers **🌱 Load Starter Heirloom Recipes**: five Greek dishes with ingredients, equipment, science notes, sensory cues and family-table guidance. The same pack can be loaded locally with `pnpm run db:seed` (which applies migrations first). Both paths load all five atomically only when the cookbook contains zero recipes; existing recipes are never replaced or supplemented. Docker users can use the in-app action without installing development tools.
+
 ```sh
 pnpm test
 pnpm run typecheck
