@@ -2,6 +2,7 @@ import { load } from 'cheerio'
 import { recipeCreateSchema, saltTypes, type RecipeInput } from '../validation'
 import { parseIngredientLine, type IngredientDraft } from '../../../shared/culinary/ingredient-line'
 import { parseStructuredRecipe, stripPromotional } from '../../../shared/culinary/structured-recipe'
+import { cookingSentences, splitInstructions, timedStep } from '../../../shared/culinary/method-steps'
 
 const clean = (value: unknown): string => typeof value === 'string' ? load(value).text().trim() : ''
 export function parseIngredient(line: string, servings = 4): IngredientDraft {
@@ -28,7 +29,8 @@ export function extractJsonLd(html: string): RecipeInput | null {
   const instructions: string[] = []
   function steps(value: unknown, depth = 0) {
     if (depth > 20 || instructions.length >= 500) return
-    if (typeof value === 'string') { instructions.push(...clean(value).split(/\n+/).filter(Boolean)); return }
+    // Sites often ship the whole method as one string or one HowToStep; split it into discrete, timed actions.
+    if (typeof value === 'string') { instructions.push(...clean(value).split(/\n+/).flatMap(splitInstructions)); return }
     if (Array.isArray(value)) { value.forEach(item => steps(item, depth + 1)); return }
     if (value && typeof value === 'object') { const item = value as Record<string, unknown>; if (item.itemListElement) steps(item.itemListElement, depth + 1); else steps(item.text || item.name, depth + 1) }
   }
@@ -45,17 +47,28 @@ export function extractJsonLd(html: string): RecipeInput | null {
     totalTimeMinutes: duration(data.totalTime) || duration(data.prepTime) + duration(data.cookTime),
     ...(typeof imageUrl === 'string' && /^https?:\/\//.test(imageUrl) ? { imageUrl } : {}),
     ingredients: Array.isArray(data.recipeIngredient) ? data.recipeIngredient.filter(item => typeof item === 'string').map(item => parseIngredient(item, servings)) : [],
-    steps: instructions.map((instruction, index) => ({ stepNumber: index + 1, instruction })), equipment: []
+    steps: instructions.slice(0, 500).map((instruction, index) => timedStep(instruction, index + 1)), equipment: []
   }
   const result = recipeCreateSchema.safeParse(input)
   return result.success ? result.data : null
 }
 
+// Recipe cards from schema.org microdata and common recipe plugins, most specific first.
+const RECIPE_CONTAINERS = ['[itemtype*="schema.org/Recipe" i]', '.wprm-recipe-container', '.tasty-recipes', '.mv-create-card', '.recipe-card', '[class*="recipe-card"]', 'main', 'article']
+const BLOCKS = 'p, li, h1, h2, h3, h4, h5, h6, div, section, tr, dt, dd, blockquote, pre, figcaption'
+
 export function extractHtml(html: string) {
   const $ = load(html)
-  const title = $('h1').first().text() || $('title').text()
-  $('script, style, nav, aside, footer, header, form, noscript').remove()
-  return { title: title.trim().slice(0, 200), text: ($('main, article').first().text() || $('body').text()).replace(/\s+/g, ' ').trim().slice(0, 30000) }
+  const pageTitle = $('h1').first().text() || $('title').text()
+  $('script, style, nav, aside, footer, header, form, noscript, svg, button').remove()
+  const container = RECIPE_CONTAINERS.map(selector => $(selector).first()).find(node => node.text().trim().length >= 80) ?? $('body')
+  const title = container.find('[itemprop="name"]').first().text() || pageTitle
+  // Keep block boundaries: list items and paragraphs become their own lines (blank-line separated) so the
+  // structured parser can find the ingredient list and one method step per item.
+  container.find('br').replaceWith('\n')
+  container.find(BLOCKS).each((_index, element) => { $(element).prepend('\n').append('\n\n') })
+  const text = container.text().split('\n').map(line => line.replace(/[^\S\n]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return { title: title.replace(/\s+/g, ' ').trim().slice(0, 200), text: text.slice(0, 30000) }
 }
 
 const isDrink = (text: string) => /cocktail|martini|margarita|negroni/i.test(text)
@@ -90,6 +103,9 @@ export function fallbackRecipe(source: string, title?: string): RecipeInput {
   const meat = /beef|short rib|ribs|lamb|pork|steak|stew|braise|boulud|bourguignon|μοσχαρ|αρνι|χοιριν/i.test(text)
   const drink = isDrink(text)
   const dessert = isDessert(text)
+  // The cook's own actions beat any template: keep each cooking sentence as a timed step.
+  const sourceSteps = cookingSentences(stripPromotional(source)).slice(0, 40).map((sentence, index) => timedStep(sentence, index + 1))
+  const sourceMinutes = sourceSteps.reduce((sum, step) => sum + (step.durationMinutes ?? 0), 0)
   const ingredients = chicken
     ? ['600 g chicken', '60 ml lemon juice', '30 ml olive oil', 'salt']
     : meat
@@ -107,13 +123,13 @@ export function fallbackRecipe(source: string, title?: string): RecipeInput {
     originalSaltType: null,
     heirloomNotes: stripPromotional(source).slice(0, 9000),
     prepTimeMinutes: meat ? 20 : dessert ? 25 : 15,
-    cookTimeMinutes: drink ? 0 : meat ? 120 : dessert ? 20 : 30,
-    totalTimeMinutes: drink ? 15 : meat ? 140 : 45,
+    cookTimeMinutes: sourceMinutes ? Math.min(100000, sourceMinutes) : drink ? 0 : meat ? 120 : dessert ? 20 : 30,
+    totalTimeMinutes: sourceMinutes ? Math.min(100000, sourceMinutes + (meat ? 20 : dessert ? 25 : 15)) : drink ? 15 : meat ? 140 : 45,
     ingredients: ingredients.map(line => ({
       ...parseIngredient(line, drink ? 1 : 4),
       notes: '[Inferred by AI] Deterministic baseline, not a source measurement. ' + (drink ? '2:1 spirit to vermouth starting ratio.' : chicken ? '150 g chicken, 15 ml lemon and 7.5 ml oil per serving.' : meat ? '200 g meat, 60 ml wine and vegetables per serving.' : dessert ? 'Standard baking ratio; adjust for filling and glaze.' : '100 g vegetables and 7.5 ml oil per serving.')
     })),
-    steps: [{
+    steps: sourceSteps.length ? sourceSteps : [{
       stepNumber: 1,
       instruction: drink
         ? 'Stir ingredients with ice until cold, then strain into a chilled glass.'

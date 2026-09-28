@@ -2,7 +2,8 @@
 const durationPattern = /(?<![\d.])(\d+(?:\.\d+)?)(?:\s*(?:[-–]|to|εως|ως)\s*(\d+(?:\.\d+)?))?(?:\s*-\s*|\s*)(hours?|hrs?|h|minutes?|mins?|min|seconds?|secs?|sec|s|ωρ(?:α|ες|ας|ων)|λεπτ(?:α|ο|ων)|δευτ(?:ερολεπτ(?:α|ο|ων))?\.?)(?!\p{L})/gu
 // Ranges return the lower bound: check doneness early, then extend.
 export function parseDurations(text: string): number[] {
-  const source = text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/(\d+)?([½¼¾])/g, (_all, whole, fraction) => String(Number(whole || 0) + ({ '½': 0.5, '¼': 0.25, '¾': 0.75 } as Record<string, number>)[fraction]!))
+  // Start once per digit run: retrying every suffix without a fraction is quadratic.
+  const source = text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/(?<!\d)(\d+)?([½¼¾])/g, (_all, whole, fraction) => String(Number(whole || 0) + ({ '½': 0.5, '¼': 0.25, '¾': 0.75 } as Record<string, number>)[fraction]!))
     .replace(/\b(\d+)\s+(\d+)\/(\d+)\b/g, (_all, whole, numerator, denominator) => Number(denominator) ? String(Number(whole) + Number(numerator) / Number(denominator)) : 'unknown')
     .replace(/\b(\d+)\/(\d+)\b/g, (_all, numerator, denominator) => Number(denominator) ? String(Number(numerator) / Number(denominator)) : 'unknown')
   const durations: number[] = []

@@ -239,12 +239,14 @@ async function journey(browser, viewport) {
       const draft = await importDraft('Web URL', 'Recipe URL', 'https://fixtures.heirloom.test/recipe.html', 'Recipe JSON-LD · extracted')
       assert(await draft.getByLabel('Recipe title').inputValue() === 'Fasolakia Ladera', 'Web import should keep the JSON-LD recipe name')
       assert((await draft.innerText()).includes('500 g green beans'), 'Web import should keep source measurements')
+      assert(await draft.getByText('40 min timer', { exact: true }).count() === 1 && await draft.getByText('low heat', { exact: true }).count() === 1, 'Web import should time the simmer step and show its heat')
       await shot(page, viewport, 'import-web-url', page.getByRole('button', { name: 'Save to Cookbook' }))
     })
     await step(page, viewport, 'Flow 2 · import from a video link', async () => {
       const draft = await importDraft('Video Link', 'YouTube URL or video ID', 'https://www.youtube.com/watch?v=TESTVIDEO11', 'Video description (transcript unavailable) · parsed sections')
       assert(await draft.getByLabel('Recipe title').inputValue() === 'Patates Lemonates', 'Video import should use the video title')
       assert(await draft.locator('ol > li').count() === 3, 'Video import should parse the three numbered steps from the description')
+      assert(await draft.getByText('1 h timer', { exact: true }).count() === 1 && await draft.getByText('5 min timer', { exact: true }).count() === 1, 'Video import should show timer badges for the roast and rest')
       await shot(page, viewport, 'import-video-link', page.getByRole('button', { name: 'Save to Cookbook' }))
     })
     await step(page, viewport, 'Flow 2 · import a scanned recipe card (OCR)', async () => {

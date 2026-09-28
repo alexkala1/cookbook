@@ -117,3 +117,15 @@ it('imports the web and video fixtures end to end', async () => {
   expect(video.steps).toHaveLength(3)
   expect(video.ingredients).toHaveLength(6)
 })
+it('imports timed steps from a recipe page without JSON-LD', async () => {
+  vi.mocked(safeFetch).mockResolvedValue(`<html><head><title>Fava · Blog</title></head><body><nav>Home</nav><article>
+    <h1>Santorini Fava</h1><p>Silky split-pea purée from the island, served warm. Serves 6.</p>
+    <h2>Ingredients</h2><ul><li>500 g yellow split peas</li><li>1 onion</li><li>100 ml olive oil</li></ul>
+    <h2>Instructions</h2><ol><li>Rinse the split peas well.</li><li>Bring to a boil with the onion, skimming the foam.</li><li>Simmer for 45–50 minutes until soft.</li><li>Blend with the olive oil and rest for 10 minutes.</li></ol>
+  </article></body></html>`)
+  const draft = await (await request('url', { url: 'https://recipes.example/fava' })).json()
+  expect(draft).toMatchObject({ title: 'Santorini Fava', servings: 6, sourceType: 'url' })
+  expect(draft.ingredients.map((row: { amount: number, unit: string, name: string }) => `${row.amount} ${row.unit} ${row.name}`)).toEqual(['500 g yellow split peas', '1 piece onion', '100 ml olive oil'])
+  expect(draft.steps.map((step: { durationMinutes: number | null, timerRequired: boolean, heatLevel?: string }) => [step.durationMinutes ?? null, step.timerRequired, step.heatLevel ?? null]))
+    .toEqual([[null, false, null], [null, false, 'high'], [45, true, 'low'], [10, true, null]])
+})

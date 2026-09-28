@@ -1,11 +1,10 @@
 import type { RecipeInput } from '../../server/utils/validation'
-import { parseDurations } from './durations'
+import { timedStep } from './method-steps'
 import { ovenTemperature } from './heat'
 import { parseIngredientLine, type IngredientDraft } from './ingredient-line'
 import { enrichScience } from './science'
 
 type StepDraft = NonNullable<RecipeInput['steps']>[number]
-type HeatLevel = NonNullable<StepDraft['heatLevel']>
 
 export interface StructuredRecipe {
   description: string | null
@@ -47,15 +46,6 @@ export function stripPromotional(text: string): string {
     .trim()
 }
 
-function heatLevelOf(text: string): HeatLevel | null {
-  const value = fold(text)
-  if (/medium[- ]high heat/.test(value)) return 'medium-high'
-  if (/medium[- ]low heat/.test(value)) return 'medium-low'
-  if (/medium heat/.test(value)) return 'medium'
-  if (/\bhigh heat/.test(value)) return 'high'
-  if (/\blow heat/.test(value)) return 'low'
-  return null
-}
 
 function ingredientFrom(line: string, group: string | null, servings: number): IngredientDraft {
   const text = line.replace(BULLET, '').trim()
@@ -121,15 +111,7 @@ export function parseStructuredRecipe(text: string | null | undefined, fallbackS
       const oven = ovenTemperature(instruction)
       if (oven && /oven|preheat|φουρν|προθερμ/i.test(fold(instruction))) lastOven = oven
       else if (!oven && lastOven && /\boven\b|φουρν/.test(fold(instruction))) instruction += ` (oven at ${lastOven.temperature}°${lastOven.unit})`
-      const seconds = parseDurations(instruction).reduce((sum, value) => sum + value, 0)
-      const heatLevel = heatLevelOf(instruction)
-      return {
-        stepNumber: index + 1,
-        instruction: instruction.slice(0, 10000),
-        durationMinutes: seconds ? Math.min(100000, Math.ceil(seconds / 60)) : null,
-        timerRequired: seconds > 0,
-        ...(heatLevel ? { heatLevel } : {})
-      }
+      return timedStep(instruction, index + 1)
     })
   if (steps.length < 2) return null
 
