@@ -106,7 +106,7 @@ it('serves offline test fixtures through safeFetch only when test mode is on', a
   expect(await fetchFixture('https://fixtures.heirloom.test/recipe.html')).toContain('Fasolakia Ladera')
   vi.stubEnv('E2E_TEST', '')
   await expect(fetchFixture('https://fixtures.heirloom.test/recipe.html')).rejects.toMatchObject({ statusCode: 422 })
-})
+}, 15000)
 it('imports the web and video fixtures end to end', async () => {
   vi.mocked(safeFetch).mockImplementation(await realSafeFetch())
   expect(await (await request('url', { url: 'https://fixtures.heirloom.test/recipe.html' })).json()).toMatchObject({

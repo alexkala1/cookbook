@@ -173,13 +173,8 @@ watch(
   },
   { immediate: true }
 )
-const temperature = computed(() =>
-  /oven|bake|roast|preheat|φουρν|ψησ|ψην|προθερμ/i.test(
-    (step.value?.instruction || '').normalize('NFD').replace(/\p{M}/gu, '')
-  )
-    ? ovenTemperature(step.value!.instruction)
-    : null
-)
+const ovenStep = (text: string) => /oven|bake|roast|preheat|φουρν|ψησ|ψην|προθερμ/i.test(text.normalize('NFD').replace(/\p{M}/gu, ''))
+const temperature = computed(() => ovenStep(step.value?.instruction || '') ? ovenTemperature(step.value!.instruction) : null)
 const rawDurations = computed(() => {
   const parsed = parseDurations(step.value?.instruction || '')
   return parsed.length ? parsed : step.value?.durationMinutes ? [step.value.durationMinutes * 60] : []
@@ -230,6 +225,18 @@ const matchedIngredients = computed(() => {
     ) || []
   )
 })
+
+// Kitchen HUD: the oven's current set point (this step's adjusted value, else the last one set) and the live timers.
+const ovenState = computed(() => {
+  if (temperature.value && converted.value) return `${converted.value.temperature} °${temperature.value.unit}`
+  for (let i = index.value - 1; i >= 0; i--) {
+    const text = steps.value[i]?.instruction ?? ''
+    const set = ovenStep(text) ? ovenTemperature(text) : null
+    if (set) return `${set.temperature} °${set.unit}`
+  }
+  return null
+})
+const liveTimers = computed(() => timers.value.filter(timer => timer.state !== 'idle').sort((a, b) => a.remaining - b.remaining))
 
 function startStepTimer(seconds: number, number: number) {
   start(`Step ${index.value + 1}${durations.value.length > 1 ? ' · timer ' + (number + 1) : ''}`, seconds)
@@ -310,7 +317,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <p class="mt-3 text-lg">This recipe’s notes contain {{ stepCountPhrase(notesPlan.steps.length) }} method{{ notesPlan.steps.some(row => row.durationMinutes) ? ' with timings' : '' }}. Split it into steps to cook one stage at a time.</p>
           <p class="mt-2 text-base text-k-muted">Replaces the single step{{ notesPlan.ingredients.length && isPlaceholderIngredients(recipe.ingredients) ? ' and the placeholder ingredients' : '' }}. You can refine everything later in Edit recipe.</p>
           <button
-            class="kitchen-button step-next mt-4"
+            class="kitchen-button kitchen-primary step-next mt-4"
             v-stable-action="splitState"
             :data-state="splitState"
             :aria-busy="splitting"
@@ -319,6 +326,16 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           >{{ splitLabel(`Split into ${notesPlan.steps.length} steps`, 'Splitting…') }}</button>
           <p v-if="splitError" role="alert" class="mt-3 text-lg">{{ splitError }}</p>
         </section>
+        <Teleport v-if="mounted" to="#kitchen-hud">
+          <div class="kitchen-hud" role="group" aria-label="Kitchen status">
+            <p class="hud-step"><span class="hud-label">Step</span><span class="num hud-value">{{ index + 1 }}/{{ steps.length }}</span><span class="hud-instruction">{{ step.instruction }}</span></p>
+            <p v-if="ovenState" class="hud-chip"><UIcon name="i-lucide-heater" class="size-5" aria-hidden="true" /><span class="hud-label">Oven</span><span class="num hud-value">{{ ovenState }}</span></p>
+            <p v-for="timer in liveTimers.slice(0, 3)" :key="timer.id" class="hud-chip" :class="{ 'hud-chip--done': timer.state === 'finished', 'hud-chip--paused': timer.state === 'paused' }">
+              <UIcon :name="timer.state === 'finished' ? 'i-lucide-bell-ring' : timer.state === 'paused' ? 'i-lucide-pause' : 'i-lucide-timer'" class="size-5" aria-hidden="true" /><span class="hud-label">{{ timer.name }}</span><span class="num hud-value">{{ timerLabel(timer.remaining) }}</span>
+            </p>
+            <p v-if="liveTimers.length > 3" class="hud-chip"><span class="hud-value">+{{ liveTimers.length - 3 }}</span></p>
+          </div>
+        </Teleport>
         <Teleport v-if="mounted" to="#kitchen-progress">
           <progress class="kitchen-progress" :value="index + 1" :max="steps.length" aria-label="Cooking progress"
         /></Teleport>
@@ -346,10 +363,9 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <p v-if="step.failurePrevention" class="mt-4 text-xl text-k-accent">{{ step.failurePrevention }}</p>
         </article>
         <nav class="step-bar" aria-label="Cooking steps">
-          <button class="kitchen-button" :disabled="index === 0" @click="navigate('previous')">← Prev</button>
+          <button class="kitchen-button" :disabled="index === 0" @click="navigate('previous')"><UIcon name="i-lucide-chevron-left" class="size-7" aria-hidden="true" />Prev</button>
           <span class="num text-base">{{ index + 1 }} / {{ steps.length }}</span>
-          <button v-if="index < steps.length - 1" class="kitchen-button step-next" @click="navigate('next')">Next
-            →</button>
+          <button v-if="index < steps.length - 1" class="kitchen-button step-next" @click="navigate('next')">Next<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
           <NuxtLink v-else :to="'/recipes/' + id" class="kitchen-button step-next">Done</NuxtLink>
         </nav>
         <p v-if="index === steps.length - 1" class="mt-4 text-xl">Final step. Check your active timers before
@@ -418,10 +434,10 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <button
             v-for="(seconds, number) in durations"
             :key="number"
-            class="kitchen-button"
+            class="kitchen-button kitchen-primary"
             :disabled="timers.length + removed.length >= 20"
             @click="startStepTimer(seconds, number)"
-          >Start Timer · {{ timerLabel(seconds) }}</button>
+          ><UIcon name="i-lucide-play" class="size-6" aria-hidden="true" />Start Timer · {{ timerLabel(seconds) }}</button>
           <button class="kitchen-button text-base" @click="enableSound">Enable sound</button>
         </div>
         <p v-if="!durations.length" class="mt-3 text-lg">No duration found in this step.</p>
@@ -447,13 +463,13 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
                 aria-hidden="true"
               />
               {{ slot.timer.name }} · {{ slot.timer.state }}</p>
-            <p class="num my-3 text-[2.5rem]" role="timer" :aria-label="slot.timer.name">{{ timerLabel(slot.timer.remaining) }}</p>
+            <p class="num my-3 text-[clamp(3rem,11vw,4.5rem)] font-bold leading-none" role="timer" :aria-label="slot.timer.name">{{ timerLabel(slot.timer.remaining) }}</p>
             <div class="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
               <button
-                class="kitchen-button col-span-2 min-h-14"
+                class="kitchen-button kitchen-primary col-span-2 sm:min-w-48"
                 :aria-label="(slot.timer.state === 'running' ? 'Pause ' : 'Resume ') + slot.timer.name"
                 @click="toggle(slot.timer)"
-              >{{ slot.timer.state === 'running' ? 'Pause' : 'Resume' }}</button>
+              ><UIcon :name="slot.timer.state === 'running' ? 'i-lucide-pause' : 'i-lucide-play'" class="size-6" aria-hidden="true" />{{ slot.timer.state === 'running' ? 'Pause' : 'Resume' }}</button>
               <button
                 class="kitchen-button"
                 :aria-label="'Reset ' + slot.timer.name"
@@ -473,7 +489,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           class="timer-alert mt-6 rounded-lg bg-k-accent p-5 text-k-paper"
         >
           <p v-for="(alert, i) in alerts" :key="i">{{ alert }}</p>
-          <button class="kitchen-button mt-3 min-h-14" @click="alerts = []">Dismiss</button>
+          <button class="kitchen-button kitchen-primary mt-3" @click="alerts = []">Dismiss</button>
         </div>
       </section>
       <section class="kitchen-panel">
@@ -521,8 +537,83 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
   background: var(--color-k-paper);
   border-top: 1px solid var(--color-k-rule);
 }
-.step-bar .kitchen-button {
-  min-height: 56px;
+/* Fitts: primary kitchen actions are ≥64px tall so a wet or floured hand cannot miss them. */
+.step-bar .kitchen-button,
+.kitchen-primary {
+  min-height: 64px;
+  padding-inline: 1.25rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.kitchen-hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline: auto;
+  max-width: 64rem;
+  padding: 0.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+.hud-step {
+  display: flex;
+  flex: 1 1 14rem;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.hud-instruction {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-k-muted);
+}
+.hud-chip {
+  display: inline-flex;
+  min-height: 40px;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--color-k-rule);
+  border-radius: 999px;
+  background: var(--color-k-paper-2);
+  padding: 0.25rem 0.75rem;
+}
+.hud-chip .hud-label {
+  min-width: 0;
+  max-width: 9rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hud-chip--done {
+  border-color: var(--color-k-accent);
+  background: var(--color-k-accent);
+  color: var(--color-k-paper);
+}
+.hud-chip--paused {
+  color: var(--color-k-muted);
+}
+.hud-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.hud-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-k-accent);
+}
+.hud-chip--done .hud-value {
+  color: var(--color-k-paper);
+}
+/* Phones: the step card below already shows the instruction; keep the HUD to one compact row. */
+@media (max-width: 40rem) {
+  .hud-step { flex: 0 0 auto; }
+  .hud-instruction, .hud-chip .hud-label { display: none; }
+  .hud-chip { padding-inline: 0.6rem; }
 }
 .step-next {
   background: var(--color-k-accent);
@@ -550,7 +641,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
 .timer-alert {
   position: fixed;
   inset-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
-  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  bottom: calc(6.5rem + env(safe-area-inset-bottom));
   z-index: 29;
   max-height: 40dvh;
   overflow-y: auto;

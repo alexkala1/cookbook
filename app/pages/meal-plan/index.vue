@@ -9,6 +9,8 @@ import {
   type TimelineEvent
 } from '#shared/culinary/conductor'
 import type { SeasonInfo, SeasonStatus } from '#shared/culinary/seasonality'
+import type { DietaryAudit, Guest } from '#shared/culinary/dietary'
+import { chefBriefing, dayPrefix, milestones } from '../../utils/chef-briefing'
 
 type Serve = {
   course: ConductorCourse
@@ -62,6 +64,34 @@ const seasonBadge: Record<SeasonStatus, [string, string]> = {
   off_season: ['Off-season', 'bg-terracotta/15 text-terracotta-ink']
 }
 
+const { data: guests, error: guestError, refresh: refreshGuests } = await useFetch<Guest[]>('/api/guests')
+
+// Single-task stepper: one decision per screen (guests → menu → plan); the plan unlocks once it is built.
+const stages = [
+  { title: 'Who is at the table?', short: 'Guests', icon: 'i-lucide-users' },
+  { title: 'What are we cooking?', short: 'Menu', icon: 'i-lucide-utensils' },
+  { title: 'The plan', short: 'Plan', icon: 'i-lucide-chef-hat' }
+] as const
+const stage = ref<1 | 2 | 3>(1)
+const stageHeading = ref<HTMLElement>()
+function goTo(next: 1 | 2 | 3) {
+  if (next === 3 && !plan.value) return
+  if (next === 2 && guestCount.value === '' && selectedGuests.value.length) guestCount.value = selectedGuests.value.length
+  stage.value = next
+}
+watch(stage, () => nextTick(() => {
+  stageHeading.value?.focus({ preventScroll: true })
+  stageHeading.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}))
+
+const selectedGuests = ref<string[]>([])
+const tableGuests = computed(() => (guests.value ?? []).filter(guest => selectedGuests.value.includes(guest.id)))
+const allergyTotal = computed(() => new Set(tableGuests.value.flatMap(guest => guest.allergies)).size)
+function toggleGuest(id: string) {
+  selectedGuests.value = selectedGuests.value.includes(id) ? selectedGuests.value.filter(value => value !== id) : [...selectedGuests.value, id]
+}
+const audit = ref<DietaryAudit | null | 'failed'>(null)
+
 const target = ref('20:30')
 const guestCount = ref<number | ''>('')
 const burners = ref(4)
@@ -78,9 +108,10 @@ const done = ref<string[]>([])
 const { state, label } = useActionFeedback(busy, error)
 
 watch(
-  [target, guestCount, burners, ovens, month, courses],
+  [target, guestCount, burners, ovens, month, courses, selectedGuests],
   () => {
     plan.value = null
+    audit.value = null
     done.value = []
     error.value = ''
   },
@@ -118,6 +149,10 @@ const rows = computed(() =>
       ].sort((a, b) => a.start - b.start || (a.kind === 'serve' ? -1 : 1))
     : []
 )
+const briefing = computed(() => plan.value ? chefBriefing(plan.value, ovens.value, { names: tableGuests.value.map(guest => guest.name), audit: audit.value }) : [])
+const keyTimes = computed(() => plan.value ? milestones(plan.value) : [])
+const milestoneIcon = { start: 'i-lucide-play', oven: 'i-lucide-heater', serve: 'i-lucide-utensils' } as const
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 const dayNote = (offset: number) =>
   offset < -1
     ? ` · ${-offset} days before`
@@ -157,6 +192,17 @@ async function conduct() {
     })
 
     done.value = []
+    // The allergen cross-check is advisory: a failure never blocks the schedule.
+    audit.value = null
+    if (selectedGuests.value.length) {
+      try {
+        audit.value = await $fetch<DietaryAudit>('/api/meal-plan/dietary-audit', {
+          method: 'POST',
+          body: { guestIds: selectedGuests.value.slice(0, 20), recipeIds: [...new Set(chosen.value.map(row => row.recipeId))].slice(0, 20) }
+        })
+      } catch { audit.value = 'failed' }
+    }
+    stage.value = 3
   } catch (cause) {
     const failure = cause as { data?: { statusMessage?: string; data?: { issues?: { message: string }[] } } }
     error.value =
@@ -173,9 +219,8 @@ async function conduct() {
   <section class="page-section">
     <h1 class="mt-3">Dinner conductor</h1>
 
-    <p class="mt-4 max-w-2xl">Choose your courses and when guests sit down. Heirloom works backwards from each
-      course, flags oven and burner
-      clashes, and checks what is in season.</p>
+    <p class="mt-4 max-w-2xl">Three short steps: who is coming, what you are cooking, then a plan that works
+      backwards from the moment guests sit down.</p>
 
     <p v-if="status === 'pending'" role="status" class="py-10">Opening your cookbook…</p>
 
@@ -191,7 +236,63 @@ async function conduct() {
     </div>
 
     <template v-else>
-    <section aria-labelledby="presets-heading" class="mt-10 rounded-xl border border-rule bg-paper-2/60 p-5">
+    <nav aria-label="Dinner planning steps" class="mt-8">
+      <ol class="grid grid-cols-3 gap-2">
+        <li v-for="(item, i) in stages" :key="item.short">
+          <button
+            type="button"
+            class="stepper-item"
+            :class="{ 'is-current': stage === i + 1, 'is-done': stage > i + 1 }"
+            :aria-current="stage === i + 1 ? 'step' : undefined"
+            :disabled="busy || (i === 2 && !plan)"
+            @click="goTo((i + 1) as 1 | 2 | 3)"
+          >
+            <span class="stepper-dot num" aria-hidden="true"><UIcon v-if="stage > i + 1" name="i-lucide-check" /><template v-else>{{ i + 1 }}</template></span>
+            <span class="min-w-0"><span class="block text-xs font-semibold uppercase tracking-wide text-muted">Step {{ i + 1 }}</span><span class="hidden sm:inline">{{ item.title }}</span><span class="sm:hidden">{{ item.short }}</span></span>
+          </button>
+        </li>
+      </ol>
+      <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-paper-3" aria-hidden="true"><div class="h-full rounded-full bg-terracotta transition-[width] duration-300 motion-reduce:transition-none" :style="{ width: (stage / 3) * 100 + '%' }" /></div>
+    </nav>
+
+    <section v-if="stage === 1" aria-labelledby="stage-guests" class="mt-8">
+      <h2 id="stage-guests" ref="stageHeading" tabindex="-1" class="text-3xl">Who is at the table?</h2>
+      <p class="mt-3 max-w-2xl text-muted">Tap everyone who is coming. Heirloom checks their allergies and diets against the menu when it builds the plan.</p>
+      <div v-if="guestError" role="alert" class="notice mt-6"><p>Guest profiles are unavailable right now. You can still plan without dietary checks.</p><button type="button" class="button-secondary mt-4" @click="refreshGuests()">Try again</button></div>
+      <div v-else-if="!guests?.length" class="row-panel mt-6">
+        <p class="font-semibold">No guest profiles yet.</p>
+        <p class="mt-2 text-muted">Save allergies and diets once, and every menu gets checked automatically.</p>
+        <NuxtLink to="/guests" class="text-action mt-2">Add guests<UIcon name="i-lucide-arrow-right" class="ml-1.5" aria-hidden="true" /></NuxtLink>
+      </div>
+      <template v-else>
+        <div class="mt-6 flex flex-wrap gap-2" role="group" aria-label="Guests at the table">
+          <button v-for="guest in guests" :key="guest.id" type="button" class="filter-pill" :aria-pressed="selectedGuests.includes(guest.id)" @click="toggleGuest(guest.id)">
+            <UIcon :name="selectedGuests.includes(guest.id) ? 'i-lucide-check' : 'i-lucide-user'" aria-hidden="true" />{{ guest.name }}<span v-if="guest.allergies.length" class="text-xs font-normal text-muted">· {{ guest.allergies.length }} allerg{{ guest.allergies.length === 1 ? 'y' : 'ies' }}</span>
+          </button>
+        </div>
+        <p class="mt-3 text-sm" role="status">{{ tableGuests.length ? `${tableGuests.length} at the table · ${allergyTotal} allerg${allergyTotal === 1 ? 'y' : 'ies'} to respect` : 'Nobody selected yet · dietary checks will be skipped' }}</p>
+        <ul v-if="tableGuests.length" class="mt-5 grid gap-4 sm:grid-cols-2" aria-label="Allergen review">
+          <li v-for="guest in tableGuests" :key="guest.id" class="row-panel min-w-0 break-words">
+            <p class="flex items-center gap-2 font-serif text-xl"><UIcon :name="guest.allergies.length ? 'i-lucide-shield-alert' : 'i-lucide-shield-check'" :class="guest.allergies.length ? 'text-terracotta-ink' : 'text-sage-ink'" aria-hidden="true" />{{ guest.name }}</p>
+            <div class="mt-3 flex flex-wrap gap-2 text-sm">
+              <span v-for="allergy in guest.allergies" :key="allergy" class="rounded-full border border-error/40 bg-error/10 px-3 py-1 font-semibold text-error">Allergy · {{ allergy }}</span>
+              <span v-for="diet in guest.dietaryRestrictions" :key="diet" class="rounded-full border border-sage/50 bg-sage/10 px-3 py-1 font-semibold text-sage-ink">{{ diet }}</span>
+              <span v-if="!guest.allergies.length && !guest.dietaryRestrictions.length" class="text-muted">No allergies or diets recorded</span>
+            </div>
+            <p v-if="guest.dislikes.length" class="mt-3 text-sm text-muted">Avoids {{ guest.dislikes.join(', ') }}</p>
+          </li>
+        </ul>
+      </template>
+      <div class="stepper-footer">
+        <span />
+        <button type="button" class="button-primary stepper-next" @click="goTo(2)">Next: What are we cooking?<UIcon name="i-lucide-arrow-right" aria-hidden="true" /></button>
+      </div>
+    </section>
+
+    <template v-if="stage === 2">
+    <h2 id="stage-menu" ref="stageHeading" tabindex="-1" class="mt-8 text-3xl">What are we cooking?</h2>
+    <p class="mt-3 max-w-2xl text-muted">Pick a preset or choose each course, then tell Heirloom when guests sit down and what your kitchen has.</p>
+    <section aria-labelledby="presets-heading" class="mt-6 rounded-xl border border-rule bg-paper-2/60 p-5">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="presets-heading" class="font-serif text-xl">Menu presets</h2>
         <p class="text-sm text-muted">One tap fills the menu from your cookbook.</p>
@@ -257,18 +358,35 @@ async function conduct() {
       <p class="text-sm">Serving defaults: first course at the sit-down time, mains and sides 25 minutes
         later, dessert after 60 minutes.
         Steps run one after another within each recipe.</p>
-      <button
-        class="button-primary"
-        :disabled="busy"
-        v-stable-action="state"
-        :data-state="state"
-        :aria-busy="busy"
-      >{{ label('Build the schedule', 'Conducting…') }}</button>
       <p v-if="error" role="alert" class="notice">{{ error }}</p>
+      <div class="stepper-footer">
+        <button type="button" class="button-secondary stepper-next" :disabled="busy" @click="goTo(1)"><UIcon name="i-lucide-arrow-left" aria-hidden="true" />Back: guests</button>
+        <button
+          class="button-primary stepper-next"
+          :disabled="busy"
+          v-stable-action="state"
+          :data-state="state"
+          :aria-busy="busy"
+        >{{ label('Build the schedule', 'Conducting…') }}</button>
+      </div>
     </form>
     </template>
+    </template>
 
-    <div v-if="plan" class="mt-14 space-y-10" aria-live="polite">
+    <div v-if="plan && stage === 3" class="mt-8 space-y-10">
+      <h2 id="stage-plan" ref="stageHeading" tabindex="-1" class="text-3xl">The plan</h2>
+      <section aria-labelledby="briefing-title" class="briefing-card">
+        <p class="meta-label font-semibold">Chef’s briefing</p>
+        <h3 id="briefing-title" class="mt-1 font-serif text-3xl">Dinner at <span class="num">{{ plan.serves.slice().sort((a, b) => a.offset - b.offset)[0]?.clock ?? target }}</span></h3>
+        <p v-for="(line, i) in briefing" :key="i" class="mt-3 max-w-3xl text-lg leading-relaxed">{{ line }}</p>
+        <h4 class="mt-6 text-sm font-semibold uppercase tracking-wide text-muted">Key times</h4>
+        <ul class="mt-2 divide-y divide-espresso/10" aria-label="Key times">
+          <li v-for="item in keyTimes" :key="item.key" class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3 py-2.5">
+            <span class="num text-xl font-semibold" :class="item.kind === 'serve' && 'text-terracotta-ink'">{{ item.clock }}</span>
+            <span class="flex min-w-0 items-start gap-2 break-words"><UIcon :name="milestoneIcon[item.kind]" class="mt-1 flex-none text-muted" aria-hidden="true" /><span :class="item.kind === 'serve' && 'font-semibold'">{{ capitalize(dayPrefix(item.dayOffset) + item.text) }}</span></span>
+          </li>
+        </ul>
+      </section>
       <section v-if="plan.bottlenecks.length" aria-label="Equipment conflicts" class="space-y-4">
         <h2 class="text-2xl">Conductor insights &amp; workarounds</h2>
         <article v-for="item in plan.bottlenecks" :key="item.type + item.start" role="alert" class="overflow-hidden rounded-xl border border-terracotta/40 bg-paper">
@@ -395,6 +513,26 @@ async function conduct() {
           </ul>
         </div>
       </section>
+      <div class="stepper-footer">
+        <button type="button" class="button-secondary stepper-next" @click="goTo(2)"><UIcon name="i-lucide-arrow-left" aria-hidden="true" />Back: edit the menu</button>
+        <button type="button" class="button-secondary stepper-next" @click="goTo(1)"><UIcon name="i-lucide-users" aria-hidden="true" />Change guests</button>
+      </div>
     </div>
   </section>
 </template>
+
+<style scoped>
+.stepper-item { display: flex; width: 100%; min-height: 56px; align-items: center; gap: .625rem; border: 1px solid var(--color-rule); border-radius: .875rem; background: var(--color-paper); padding: .5rem .75rem; text-align: left; font-weight: 600; }
+.stepper-item.is-current { border-color: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-ink); }
+.stepper-item:disabled { opacity: .5; cursor: not-allowed; }
+.stepper-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+@media (hover: hover) { .stepper-item:not(:disabled):hover { background: var(--color-paper-2); } }
+.stepper-dot { display: inline-flex; width: 2rem; height: 2rem; flex: none; align-items: center; justify-content: center; border-radius: 999px; background: var(--color-paper-3); color: var(--color-ink); }
+.is-current .stepper-dot { background: var(--color-ink); color: var(--color-paper); }
+.is-done .stepper-dot { background: var(--color-sage-ink); color: var(--color-paper); }
+.stepper-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; margin-top: 2rem; border-top: 1px solid var(--color-rule); padding-top: 1.25rem; }
+/* Fitts: the step-to-step controls are the page's primary actions; make them large and easy to hit. */
+.stepper-next { min-height: 56px; padding-inline: 1.5rem; font-size: 1.0625rem; }
+@media (max-width: 40rem) { .stepper-next { flex: 1 1 100%; } }
+.briefing-card { border: 2px solid color-mix(in oklch, var(--color-terracotta) 45%, transparent); border-radius: 1.25rem; background: linear-gradient(160deg, var(--color-paper-2), color-mix(in oklch, var(--color-terracotta) 8%, var(--color-paper))); padding: clamp(1.25rem, 3vw, 2rem); }
+</style>

@@ -347,6 +347,10 @@ async function journey(browser, viewport) {
     // Flow 4 — Dinner Conductor → backward schedule → conflicts → market list
     await step(page, viewport, 'Flow 4 · build a three-course schedule', async () => {
       await go('/meal-plan')
+      // Single-task stepper: 1 guests → 2 menu → 3 plan. No guest profiles exist yet, so step 1 is skipped.
+      assert(await page.locator('[aria-current="step"]').innerText().then(text => text.includes('Guests') || text.includes('Who is at the table?')), 'Conductor should open on step 1 (guests)')
+      await tap(page.getByRole('button', { name: /^Next: What are we cooking/ }))
+      await page.getByRole('heading', { name: 'What are we cooking?', level: 2 }).waitFor()
       const pick = async (index, title) => {
         const select = page.getByLabel(`Recipe for course ${index}`, { exact: true })
         const value = await select.locator('option', { hasText: title }).getAttribute('value')
@@ -360,6 +364,10 @@ async function journey(browser, viewport) {
       await page.getByLabel('Month').selectOption('1')
       await tap(page.getByRole('button', { name: 'Build the schedule' }))
       await page.getByRole('heading', { name: 'The timeline' }).waitFor()
+      const briefing = page.getByRole('region', { name: 'Dinner at 20:00' })
+      assert((await briefing.innerText()).includes('Guests sit down at 20:00.'), "Step 3 should open with the Chef's Briefing")
+      assert(await briefing.getByRole('list', { name: 'Key times' }).getByText(/^Serve the /).count() === 3, 'Key times should list the three serves')
+      await shot(page, viewport, 'conductor-briefing', briefing)
       const serves = await page.locator('ol li p.font-serif').allInnerTexts()
       assert(serves.some(text => text.includes('20:00')) && serves.some(text => text.includes('20:25')) && serves.some(text => text.includes('21:00')),
         'Courses should be served at 20:00, 20:25 and 21:00')

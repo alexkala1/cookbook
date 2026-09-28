@@ -11,18 +11,22 @@ const { state: saveState, label: saveLabel } = useActionFeedback(saving, error)
 const messages = ref<string[]>([]), warnings = ref<string[]>([])
 const draft = ref<RecipeInput | null>(null)
 const provenance = ref('')
+// What the cook gave us and the text the importer actually read, for side-by-side review.
+const original = ref<{ input: string, text: string, kind: typeof kind.value } | null>(null)
+const compareView = ref<'source' | 'parsed'>('source')
 let controller: AbortController | undefined
 onBeforeUnmount(() => controller?.abort())
-watch(kind, () => { source.value = ''; draft.value = null; error.value = ''; messages.value = [] })
+watch(kind, () => { source.value = ''; draft.value = null; original.value = null; error.value = ''; messages.value = [] })
 async function generate() {
-  controller = new AbortController(); busy.value = true; error.value = ''; draft.value = null; messages.value = []
+  controller = new AbortController(); busy.value = true; error.value = ''; draft.value = null; original.value = null; messages.value = []
+  const input = source.value, inputKind = kind.value
   try {
     const body = kind.value === 'url' ? { kind: kind.value, url: source.value } : kind.value === 'video' ? { kind: kind.value, videoUrl: source.value } : kind.value === 'ocr' ? { kind: kind.value, text: source.value } : { kind: kind.value, prompt: source.value }
     const response = await fetch('/api/ai/recipe/stream', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify(body), signal: controller.signal })
     await readRecipeStream(response, (event, raw) => {
-      const data = raw as { message?: string, recipe?: RecipeInput, warnings?: string[], provenance?: string, mode?: string }
+      const data = raw as { message?: string, recipe?: RecipeInput, warnings?: string[], provenance?: string, mode?: string, sourceText?: string }
       if (data.message) messages.value = [...messages.value.slice(-9), data.message]
-      if (event === 'complete' && data.recipe) { draft.value = data.recipe; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}` }
+      if (event === 'complete' && data.recipe) { draft.value = data.recipe; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}`; original.value = { input, text: data.sourceText || input, kind: inputKind }; compareView.value = 'source' }
     })
   } catch (cause) { draft.value = null; error.value = controller.signal.aborted ? 'Import cancelled.' : cause instanceof Error ? cause.message : 'Import failed. Try again.' }
   finally { busy.value = false }
@@ -61,7 +65,34 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
     </form>
     <ol v-if="messages.length" class="row-panel mt-6 space-y-2" aria-live="polite" aria-label="Import progress"><li v-for="(message, i) in messages" :key="i">{{ message }}</li></ol>
     <p v-if="error" role="alert" class="notice mt-6">{{ error }}</p>
-    <article v-if="draft" class="mt-10 border-t border-espresso/20 pt-8">
+    <details v-if="draft && original" class="group mt-10 rounded-xl border border-rule bg-paper-2/60 p-4" aria-label="Source comparison">
+      <summary class="flex min-h-11 cursor-pointer select-none items-center justify-between gap-3 font-semibold [&::-webkit-details-marker]:hidden">
+        <span class="flex items-center gap-2"><UIcon name="i-lucide-columns-2" class="flex-none" aria-hidden="true" />Original source vs parsed recipe</span>
+        <UIcon name="i-lucide-chevron-down" class="size-5 flex-none transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+      </summary>
+      <p class="mt-2 text-sm text-muted">Check that every quantity, step and time made it across before you save.</p>
+      <div class="mt-4 flex gap-2 lg:hidden" role="group" aria-label="Comparison view">
+        <button type="button" class="filter-pill" :aria-pressed="compareView === 'source'" @click="compareView = 'source'">Original</button>
+        <button type="button" class="filter-pill" :aria-pressed="compareView === 'parsed'" @click="compareView = 'parsed'">Parsed · {{ draft.steps?.length ?? 0 }} steps</button>
+      </div>
+      <div class="mt-4 grid gap-4 lg:grid-cols-2">
+        <section class="min-w-0 rounded-lg border border-rule bg-paper p-4" :class="compareView === 'source' ? '' : 'hidden lg:block'" aria-labelledby="compare-source">
+          <h2 id="compare-source" class="text-lg">Original source</h2>
+          <p v-if="original.kind === 'url' || original.kind === 'video'" class="mt-1 break-all text-sm text-muted">Text read from {{ original.input }}</p>
+          <pre class="mt-3 max-h-[28rem] overflow-y-auto whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{{ original.text }}</pre>
+        </section>
+        <section class="min-w-0 rounded-lg border border-rule bg-paper p-4" :class="compareView === 'parsed' ? '' : 'hidden lg:block'" aria-labelledby="compare-parsed">
+          <h2 id="compare-parsed" class="text-lg">Parsed recipe</h2>
+          <h3 class="mt-3 text-sm font-semibold uppercase tracking-wide text-muted">Ingredients · {{ draft.ingredients?.length ?? 0 }}</h3>
+          <ul class="mt-2 space-y-1 text-sm"><li v-for="(ingredient, i) in draft.ingredients" :key="i"><span class="font-semibold num">{{ ingredient.amount }} {{ ingredient.unit }}</span> {{ ingredient.name }}</li></ul>
+          <h3 class="mt-4 text-sm font-semibold uppercase tracking-wide text-muted">Method · {{ draft.steps?.length ?? 0 }} steps</h3>
+          <ul class="mt-2 space-y-2 text-sm">
+            <li v-for="step in draft.steps" :key="step.stepNumber" class="flex gap-2"><span class="num w-6 flex-none font-semibold">{{ step.stepNumber }}.</span><span class="min-w-0">{{ step.instruction }}<span v-if="step.durationMinutes" class="ml-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sage/15 px-2 text-xs font-semibold text-sage-ink"><UIcon :name="step.timerRequired ? 'i-lucide-timer' : 'i-lucide-clock'" aria-hidden="true" />{{ minutesLabel(step.durationMinutes) }}</span><span v-if="step.heatLevel && step.heatLevel !== 'none'" class="ml-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-terracotta/10 px-2 text-xs font-semibold text-terracotta-ink"><UIcon name="i-lucide-flame" aria-hidden="true" />{{ step.heatLevel }}</span></span></li>
+          </ul>
+        </section>
+      </div>
+    </details>
+    <article v-if="draft" class="mt-6 border-t border-espresso/20 pt-8">
       <p class="meta-label">Review your draft · {{ provenance }}</p>
       <p v-for="warning in warnings" :key="warning" class="notice mt-4">{{ warning }}</p>
       <label class="mt-6 block">Recipe title<input v-model="draft.title" class="field mt-2" maxlength="200"></label>

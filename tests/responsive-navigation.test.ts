@@ -23,7 +23,8 @@ describe('review regressions (static)', () => {
   it('pins the finished-timer alert above the step bar instead of inside the timers panel', () => {
     const rule = read('app/pages/recipes/[id]/cook.vue').match(/\.timer-alert \{[^}]*\}/)?.[0] ?? ''
     expect(rule).toContain('position: fixed')
-    expect(rule).toContain('bottom: calc(5.5rem + env(safe-area-inset-bottom))')
+    // Clears the 64px-target step bar (~5.6rem with padding).
+    expect(rule).toContain('bottom: calc(6.5rem + env(safe-area-inset-bottom))')
     expect(rule).not.toContain('sticky')
   })
   it('self-hosts every Commissioner weight the UI uses, so bold is never synthesised', () => {
