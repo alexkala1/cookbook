@@ -10,8 +10,17 @@ import { recipeCreateSchema, validate } from '../validation'
 export const ingestSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('url'), url: z.string().url().max(2000) }).strict(),
   z.object({ kind: z.literal('video'), videoUrl: z.string().min(1).max(2000), language: z.string().regex(/^[a-zA-Z-]{2,12}$/).optional() }).strict(),
-  z.object({ kind: z.literal('prompt'), prompt: z.string().trim().min(5).max(20000) }).strict()
+  z.object({ kind: z.literal('prompt'), prompt: z.string().trim().min(5).max(20000) }).strict(),
+  z.object({ kind: z.literal('ocr'), text: z.string().trim().min(5).max(30000) }).strict()
 ])
+// A scanned card usually opens with its name: a short line with no quantity, sentence punctuation or section heading.
+export function cardTitle(text: string) {
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+  const line = (lines[0] ?? '').replace(/^[#*\s]+|[#*\s]+$/g, '')
+  if (lines.length < 2 || line.length < 3 || line.length > 80 || line.split(/\s+/).length > 8) return ''
+  if (/[.,:;!?]$/.test(line) || /^[\d½¼¾⅓⅔⅛-]/.test(line) || /^(?:ingredients?|method|directions|instructions|steps|preparation|υλικά|εκτέλεση|οδηγίες)(?!\p{L})/iu.test(line)) return ''
+  return line
+}
 export function youtubeId(input: string) {
   if (/^[\w-]{11}$/.test(input)) return input
   try {
@@ -39,11 +48,18 @@ function playerData(html: string): Record<string, any> | null {
 export async function ingest(event: H3Event, input: unknown, signal?: AbortSignal, progress: (message: string) => void = () => {}) {
   const request = validate(ingestSchema, input)
   const client = aiClient(event)
-  let source = '', title = '', sourceUrl: string | undefined
+  let source = '', title = '', sourceUrl: string | undefined, draftSource = ''
   let extracted: ReturnType<typeof extractJsonLd> = null
   let provenance = 'Conversational memory'
   progress('Reading the source')
   if (request.kind === 'prompt') source = request.prompt
+  else if (request.kind === 'ocr') {
+    source = request.text
+    title = cardTitle(source)
+    // Offline drafts parse the card body; the model still reads the whole card.
+    if (title) draftSource = source.slice(source.indexOf(title) + title.length).replace(/^[#*\s]+/, '')
+    provenance = 'Scanned recipe card / OCR'
+  }
   else if (request.kind === 'url' && !/^(?:https?:)?\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\//i.test(request.url)) {
     sourceUrl = request.url
     const html = await safeFetch(sourceUrl, signal)
@@ -79,14 +95,14 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   }
   progress('Preserving measurements and identifying gaps')
   // Without a model, prefer the source's own ingredients and numbered method over the generic template.
-  const structured = !extracted && client.mode === 'fallback' ? structuredDraft(source, title || undefined) : null
-  const recipe = extracted || structured || await client.generate(recipeCreateSchema, 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.', source.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal)
+  const structured = !extracted && client.mode === 'fallback' ? structuredDraft(draftSource || source, title || undefined) : null
+  const recipe = extracted || structured || await client.generate(recipeCreateSchema, 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.', source.slice(0, 30000), () => fallbackRecipe(draftSource || source, title || undefined), signal)
   const sanitized = { ...recipe, originalSaltType: extracted?.originalSaltType ?? null }
   if (!extracted) {
     delete sanitized.imageUrl
     delete sanitized.rating
     delete sanitized.isFavorite
   }
-  const draft = recipeCreateSchema.parse(enrichScience({ ...sanitized, sourceType: request.kind, sourceUrl: sourceUrl || null }))
+  const draft = recipeCreateSchema.parse(enrichScience({ ...sanitized, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: sourceUrl || null }))
   return { recipe: draft, mode: extracted ? 'extracted' as const : client.mode, provenance: structured ? provenance + ' · parsed sections' : provenance, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : structured ? 'No live model used. Ingredients and steps were parsed from the source’s own sections; check lines marked “as needed” and any estimates.' : client.mode === 'fallback' ? 'No live model used. This is a deterministic starting draft, not a recovered recipe.' : 'AI-generated draft: verify inferred quantities and cooking requirements.'] }
 }

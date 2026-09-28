@@ -69,7 +69,7 @@ async function startServer() {
   sqlite.close()
   const port = Number(process.env.E2E_PORT) || await freePort()
   const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, NITRO_HOST: '127.0.0.1', NITRO_PORT: String(port), DATABASE_URL: database },
+    env: { ...process.env, NITRO_HOST: '127.0.0.1', NITRO_PORT: String(port), DATABASE_URL: database, E2E_TEST: 'true' },
     stdio: ['ignore', 'pipe', 'pipe']
   })
   let log = ''
@@ -222,10 +222,44 @@ async function journey(browser, viewport) {
       await shot(page, viewport, 'starter-pack-loaded')
     })
 
-    // Flow 2 — Import (offline memory draft) → save → metric conversion assistant
-    await step(page, viewport, 'Flow 2 · import a recipe from memory', async () => {
+    // Flow 2 — Import from every source: web URL, video link, scanned card (OCR) and memory → save → metric assistant.
+    // Web and video sources are offline fixtures served by safeFetch because the server runs with E2E_TEST=true.
+    const importDraft = async (tab, label, value, provenance) => {
+      await tap(page.getByRole('button', { name: tab, exact: true }))
+      await page.getByLabel(label, { exact: true }).fill(value)
+      await tap(page.getByRole('button', { name: 'Create recipe draft' }))
+      await page.getByRole('button', { name: 'Save to Cookbook' }).waitFor({ timeout: 20000 })
+      const draft = page.locator('article')
+      assert((await draft.locator('.meta-label').innerText()).includes(provenance), `${tab} draft should cite "${provenance}"`)
+      return draft
+    }
+    await step(page, viewport, 'Flow 2 · import from a web URL', async () => {
       await tap(page.getByRole('link', { name: 'Import Recipe' }).first())
       await page.waitForURL('**/recipes/import')
+      const draft = await importDraft('Web URL', 'Recipe URL', 'https://fixtures.heirloom.test/recipe.html', 'Recipe JSON-LD · extracted')
+      assert(await draft.getByLabel('Recipe title').inputValue() === 'Fasolakia Ladera', 'Web import should keep the JSON-LD recipe name')
+      assert((await draft.innerText()).includes('500 g green beans'), 'Web import should keep source measurements')
+      await shot(page, viewport, 'import-web-url', page.getByRole('button', { name: 'Save to Cookbook' }))
+    })
+    await step(page, viewport, 'Flow 2 · import from a video link', async () => {
+      const draft = await importDraft('Video Link', 'YouTube URL or video ID', 'https://www.youtube.com/watch?v=TESTVIDEO11', 'Video description (transcript unavailable) · parsed sections')
+      assert(await draft.getByLabel('Recipe title').inputValue() === 'Patates Lemonates', 'Video import should use the video title')
+      assert(await draft.locator('ol > li').count() === 3, 'Video import should parse the three numbered steps from the description')
+      await shot(page, viewport, 'import-video-link', page.getByRole('button', { name: 'Save to Cookbook' }))
+    })
+    await step(page, viewport, 'Flow 2 · import a scanned recipe card (OCR)', async () => {
+      const card = 'Yiayia’s Koulourakia\nEaster butter cookies from the tin by the stove.\n\nIngredients\n250 g butter\n200 g sugar\n3 eggs\n1 kg flour\n\nMethod\n1. Cream\nBeat the butter and sugar until pale.\n2. Shape\nAdd the eggs and flour, then roll into twists.\n3. Bake\nBake at 180°C for 20 minutes until golden.'
+      const draft = await importDraft('Scanned Card / Photo OCR', 'Scanned card text', card, 'Scanned recipe card / OCR · parsed sections')
+      assert(await draft.getByLabel('Recipe title').inputValue() === 'Yiayia’s Koulourakia', 'OCR import should take the title from the first line')
+      await shot(page, viewport, 'import-ocr-card', page.getByRole('button', { name: 'Save to Cookbook' }))
+      await tap(page.getByRole('button', { name: 'Save to Cookbook' }))
+      await page.waitForURL(/\/recipes\/[0-9a-f-]{36}$/)
+      const saved = await page.evaluate(async () => (await (await fetch('/api' + location.pathname)).json()).sourceType)
+      assert(saved === 'handwritten_ocr', 'Saved OCR recipe should keep sourceType handwritten_ocr, got ' + saved)
+      await page.getByRole('heading', { name: 'Yiayia’s Koulourakia' }).waitFor()
+    })
+    await step(page, viewport, 'Flow 2 · import a recipe from memory', async () => {
+      await go('/recipes/import')
       await tap(page.getByRole('button', { name: 'Conversational Memory' }))
       await page.getByLabel('What do you remember?').fill('Γιαγιάς lemon chicken, roasted on Sundays with oregano and potatoes')
       await tap(page.getByRole('button', { name: 'Create recipe draft' }))

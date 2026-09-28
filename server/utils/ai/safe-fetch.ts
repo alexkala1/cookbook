@@ -22,9 +22,44 @@ export async function resolvePublicUrl(input: string) {
   return { url, address: addresses[0]! }
 }
 
+// Offline sources for automated tests only: exact-URL matches, read at runtime so a production
+// build can be driven by the E2E suite (E2E_TEST=true) without reaching the network.
+const fixtureVideoDescription = [
+  'Crispy outside, lemony and soft inside. A Greek taverna side for 4.',
+  '',
+  'Ingredients',
+  '1 kg potatoes',
+  '80 ml olive oil',
+  '60 ml lemon juice',
+  '250 ml water',
+  '2 tsp dried oregano',
+  '2 cloves garlic',
+  '',
+  'Method',
+  '1. Prepare the potatoes',
+  'Preheat your oven to 200°C. Peel the potatoes and cut them into thick wedges.',
+  '2. Roast',
+  'Toss with the oil, lemon, water, oregano and garlic, then roast for 60 minutes, turning once.',
+  '3. Finish',
+  'Rest for 5 minutes and spoon the pan juices over before serving.'
+].join('\n')
+export const testFixtures: Record<string, string> = {
+  'https://fixtures.heirloom.test/recipe.html': '<!doctype html><html><head><title>Fasolakia Ladera · Heirloom fixture</title><script type="application/ld+json">' + JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'Recipe', name: 'Fasolakia Ladera', description: 'Greek green beans braised in olive oil and tomato.',
+    recipeYield: '4', recipeCuisine: 'Greek', totalTime: 'PT55M',
+    recipeIngredient: ['500 g green beans', '400 g grated tomatoes', '120 ml olive oil', '1 onion', '2 potatoes', '1 tsp salt'],
+    recipeInstructions: ['Soften the onion in the olive oil over medium heat.', 'Add the beans, potatoes and tomatoes, cover and simmer for 40 minutes.', 'Season with salt and rest for 10 minutes before serving.']
+  }) + '</script></head><body><main><h1>Fasolakia Ladera</h1></main></body></html>',
+  'https://www.youtube.com/watch?v=TESTVIDEO11': '<html><script>var ytInitialPlayerResponse = ' + JSON.stringify({
+    playabilityStatus: { status: 'OK' }, videoDetails: { videoId: 'TESTVIDEO11', title: 'Patates Lemonates', shortDescription: fixtureVideoDescription }
+  }) + ';</script></html>'
+}
+const fixturesEnabled = () => process.env.NODE_ENV === 'test' || process.env.E2E_TEST === 'true'
+
 // Pin each connection to the inspected address. Revalidate every redirect; never forward BYOK headers.
 export async function safeFetch(input: string, signal?: AbortSignal, redirects = 0): Promise<string> {
   if (redirects > 3) throw createError({ statusCode: 422, statusMessage: 'Too many source redirects' })
+  if (fixturesEnabled() && Object.hasOwn(testFixtures, input)) return testFixtures[input]!
   const { url, address } = await resolvePublicUrl(input)
   return new Promise((resolve, reject) => {
     const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {

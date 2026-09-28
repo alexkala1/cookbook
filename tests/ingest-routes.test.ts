@@ -3,11 +3,14 @@ import { createApp, createRouter, toWebHandler } from 'h3'
 import url from '../server/api/ingest/url.post'
 import video from '../server/api/ingest/video.post'
 import prompt from '../server/api/ingest/prompt.post'
+import ocr from '../server/api/ingest/ocr.post'
+import { cardTitle, ingestSchema } from '../server/utils/ai/ingest'
 import { safeFetch } from '../server/utils/ai/safe-fetch'
 vi.mock('../server/utils/ai/safe-fetch', () => ({ safeFetch: vi.fn() }))
-const handle = toWebHandler(createApp().use(createRouter().post('/url', url).post('/video', video).post('/prompt', prompt)))
+const handle = toWebHandler(createApp().use(createRouter().post('/url', url).post('/video', video).post('/prompt', prompt).post('/ocr', ocr)))
 const request = (path: string, body: unknown, headers: Record<string, string> = {}) => handle(new Request('http://localhost/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) }))
-afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+const realSafeFetch = async () => (await vi.importActual<typeof import('../server/utils/ai/safe-fetch')>('../server/utils/ai/safe-fetch')).safeFetch
 it.each(['prompt', 'url', 'video'])('removes hallucinated metadata from generated %s drafts', async kind => {
   const generated = { title: 'Chicken', description: '', originalSaltType: 'table_salt', imageUrl: 'https://invented.example/image.jpg', rating: 5, isFavorite: true, steps: [{ stepNumber: 1, instruction: 'Roast chicken', internalTempTargetC: 50 }] }
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(generated) } }] }))))
@@ -63,4 +66,54 @@ it('keeps the offline template for unstructured sources', async () => {
   const draft = await (await request('prompt', { prompt: 'Grandma lemon chicken, roasted on Sundays' })).json()
   expect(draft.steps).toHaveLength(1)
   expect(draft.ingredients[0].notes).toContain('Deterministic baseline')
+})
+
+const scannedCard = 'Yiayia’s Koulourakia\nEaster butter cookies from the tin by the stove. Makes 40.\n\nIngredients\n250 g butter\n200 g sugar\n3 eggs\n1 kg flour\n\nMethod\n1. Cream\nBeat the butter and sugar until pale.\n2. Shape\nAdd the eggs and flour, then roll into twists.\n3. Bake\nBake at 180°C for 20 minutes until golden.'
+it('turns scanned card text into a structured handwritten_ocr draft titled from its first line', async () => {
+  const response = await request('ocr', { text: scannedCard })
+  expect(response.status).toBe(200)
+  const draft = await response.json()
+  expect(draft).toMatchObject({ title: 'Yiayia’s Koulourakia', sourceType: 'handwritten_ocr', sourceUrl: null, description: 'Easter butter cookies from the tin by the stove. Makes 40.' })
+  expect(draft.steps.map((step: { instruction: string }) => step.instruction.split('.')[0])).toEqual(['Cream', 'Shape', 'Bake'])
+  expect(draft.ingredients.map((row: { amount: number, unit: string, name: string }) => `${row.amount} ${row.unit} ${row.name}`)).toEqual(['250 g butter', '200 g sugar', '3 piece eggs', '1 kg flour'])
+  for (const field of ['imageUrl', 'rating', 'isFavorite']) expect(draft).not.toHaveProperty(field)
+})
+it('keeps untitled OCR text as a labelled offline draft and validates OCR length', async () => {
+  const draft = await (await request('ocr', { text: 'mix flour water and salt then bake the bread' })).json()
+  expect(draft.sourceType).toBe('handwritten_ocr')
+  expect(draft.title).not.toBe('mix flour water and salt then bake the bread')
+  expect((await request('ocr', { text: ' abc ' })).status).toBe(400)
+  expect((await request('ocr', { text: 'x'.repeat(30001) })).status).toBe(400)
+  expect(ingestSchema.safeParse({ kind: 'ocr', text: 'x'.repeat(30000) }).success).toBe(true)
+  expect(ingestSchema.safeParse({ kind: 'ocr', prompt: 'Grandma chicken' }).success).toBe(false)
+})
+it.each([
+  ['Yiayia’s Koulourakia\nIngredients', 'Yiayia’s Koulourakia'],
+  ['## Spanakopita ##\n1 kg spinach', 'Spanakopita'],
+  ['Only one line of text', ''],
+  ['Ingredients\n250 g butter', ''],
+  ['Υλικά\n250 γρ βούτυρο', ''],
+  ['250 g butter\n200 g sugar', ''],
+  ['Beat the butter until it turns pale and fluffy.\nThen add sugar', ''],
+  ['Mom’s lemon chicken, the one we made every single Sunday afternoon\nChicken', '']
+])('detects a recipe title on the first OCR line (%j)', (text, expected) => expect(cardTitle(text)).toBe(expected))
+it('serves offline test fixtures through safeFetch only when test mode is on', async () => {
+  const fetchFixture = await realSafeFetch()
+  expect(await fetchFixture('https://fixtures.heirloom.test/recipe.html')).toContain('"@type":"Recipe"')
+  expect(await fetchFixture('https://www.youtube.com/watch?v=TESTVIDEO11')).toContain('ytInitialPlayerResponse')
+  vi.stubEnv('NODE_ENV', 'production')
+  vi.stubEnv('E2E_TEST', 'true')
+  expect(await fetchFixture('https://fixtures.heirloom.test/recipe.html')).toContain('Fasolakia Ladera')
+  vi.stubEnv('E2E_TEST', '')
+  await expect(fetchFixture('https://fixtures.heirloom.test/recipe.html')).rejects.toMatchObject({ statusCode: 422 })
+})
+it('imports the web and video fixtures end to end', async () => {
+  vi.mocked(safeFetch).mockImplementation(await realSafeFetch())
+  expect(await (await request('url', { url: 'https://fixtures.heirloom.test/recipe.html' })).json()).toMatchObject({
+    title: 'Fasolakia Ladera', sourceType: 'url', sourceUrl: 'https://fixtures.heirloom.test/recipe.html', ingredients: expect.arrayContaining([expect.objectContaining({ name: 'green beans', amount: 500, unit: 'g' })])
+  })
+  const video = await (await request('video', { videoUrl: 'https://www.youtube.com/watch?v=TESTVIDEO11' })).json()
+  expect(video).toMatchObject({ title: 'Patates Lemonates', sourceType: 'video', sourceUrl: 'https://www.youtube.com/watch?v=TESTVIDEO11' })
+  expect(video.steps).toHaveLength(3)
+  expect(video.ingredients).toHaveLength(6)
 })

@@ -2,7 +2,8 @@
 import type { RecipeInput } from '../../../server/utils/validation'
 import { readRecipeStream } from '../../utils/sse'
 const { requestHeaders, ready, settings } = useByokSettings()
-const kind = ref<'url' | 'video' | 'prompt'>('url')
+const kind = ref<'url' | 'video' | 'ocr' | 'prompt'>('url')
+const tabs = { url: 'Web URL', video: 'Video Link', ocr: 'Scanned Card / Photo OCR', prompt: 'Conversational Memory' } as const
 const source = ref('')
 const busy = ref(false), saving = ref(false), error = ref('')
 const { state: generateState, label: generateLabel } = useActionFeedback(busy, error)
@@ -16,7 +17,7 @@ watch(kind, () => { source.value = ''; draft.value = null; error.value = ''; mes
 async function generate() {
   controller = new AbortController(); busy.value = true; error.value = ''; draft.value = null; messages.value = []
   try {
-    const body = kind.value === 'url' ? { kind: kind.value, url: source.value } : kind.value === 'video' ? { kind: kind.value, videoUrl: source.value } : { kind: kind.value, prompt: source.value }
+    const body = kind.value === 'url' ? { kind: kind.value, url: source.value } : kind.value === 'video' ? { kind: kind.value, videoUrl: source.value } : kind.value === 'ocr' ? { kind: kind.value, text: source.value } : { kind: kind.value, prompt: source.value }
     const response = await fetch('/api/ai/recipe/stream', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify(body), signal: controller.signal })
     await readRecipeStream(response, (event, raw) => {
       const data = raw as { message?: string, recipe?: RecipeInput, warnings?: string[], provenance?: string, mode?: string }
@@ -40,10 +41,16 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
     <h1 class="mt-4">Bring a recipe home.</h1>
     <p class="mt-6">Recover a recipe, understand its method, and review the details before adding it to your cookbook.</p>
     <div class="mt-8 flex flex-wrap gap-3" aria-label="Import source">
-      <button v-for="tab in (['url', 'video', 'prompt'] as const)" :key="tab" class="filter-pill" :aria-pressed="kind === tab" :disabled="busy || saving" @click="kind = tab">{{ { url: 'Web URL', video: 'Video Link', prompt: 'Conversational Memory' }[tab] }}</button>
+      <button v-for="(name, tab) in tabs" :key="tab" class="filter-pill" :aria-pressed="kind === tab" :disabled="busy || saving" @click="kind = tab">{{ name }}</button>
     </div>
     <form class="mt-6 space-y-5" @submit.prevent="generate">
-      <label class="block">{{ kind === 'prompt' ? 'What do you remember?' : kind === 'video' ? 'YouTube URL or video ID' : 'Recipe URL' }}
+      <div v-if="kind === 'ocr'">
+        <label class="block">Scanned card text
+          <textarea v-model="source" class="field mt-2 font-mono text-sm" rows="10" required minlength="5" maxlength="30000" :disabled="busy || saving" aria-describedby="ocr-help" placeholder="Yiayia’s Koulourakia&#10;Ingredients&#10;250 g butter…" />
+        </label>
+        <p id="ocr-help" class="mt-2 text-sm text-muted">Scan the card with your phone’s text recognition (Live Text, Google Lens), then paste it here. Put the recipe name on the first line.</p>
+      </div>
+      <label v-else class="block">{{ kind === 'prompt' ? 'What do you remember?' : kind === 'video' ? 'YouTube URL or video ID' : 'Recipe URL' }}
         <textarea v-if="kind === 'prompt'" v-model="source" class="field mt-2" rows="5" required minlength="5" maxlength="20000" :disabled="busy || saving" placeholder="Grandma’s lemon chicken, roasted on Sundays…" />
         <input v-else v-model="source" class="field mt-2" :type="kind === 'url' ? 'url' : 'text'" required maxlength="2000" :disabled="busy || saving">
       </label>
