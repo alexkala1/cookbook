@@ -442,7 +442,12 @@ async function journey(browser, viewport) {
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
   for (const file of readdirSync(SHOTS)) if (file.endsWith('.png')) rmSync(join(SHOTS, file))
-  const browser = await chromium.launch({ executablePath: chromiumPath() })
+  const headed = process.env.HEADED === 'true' || process.env.HEADLESS === 'false'
+  const browser = await chromium.launch({
+    executablePath: chromiumPath(),
+    headless: !headed,
+    slowMo: process.env.SLOWMO ? Number(process.env.SLOWMO) : (headed ? 100 : 0)
+  })
   const started = Date.now()
   try {
     for (const viewport of VIEWPORTS) {

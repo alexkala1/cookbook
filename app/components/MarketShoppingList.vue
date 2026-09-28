@@ -47,6 +47,21 @@ async function generate() {
   } finally { if (!disposed) busy.value = false }
 }
 
+const vendorBadge: Record<MarketSection, { icon: string, category: string, tone: string }> = {
+  laiki: { icon: 'i-lucide-carrot', category: 'Fresh produce', tone: 'border-olive/40 bg-olive/10 text-olive-ink' },
+  chasapis: { icon: 'i-lucide-beef', category: 'Meat & poultry', tone: 'border-terracotta/40 bg-terracotta/10 text-terracotta-ink' },
+  fournos: { icon: 'i-lucide-croissant', category: 'Bread & pastry', tone: 'border-rule bg-paper-3 text-ink' },
+  supermarket: { icon: 'i-lucide-store', category: 'Pantry & dairy', tone: 'border-sage/50 bg-sage/10 text-sage-ink' }
+}
+
+// Print only this list (see the unscoped print styles below), then restore the page.
+function printList() {
+  const root = document.documentElement
+  root.dataset.print = 'market'
+  window.addEventListener('afterprint', () => { delete root.dataset.print }, { once: true })
+  window.print()
+}
+
 async function copy() {
   if (!list.value || copying.value || busy.value) return
   copying.value = true
@@ -75,14 +90,17 @@ async function copy() {
       <p v-if="mode === 'supermarket'" class="text-sm">All items are grouped into supermarket aisles. Return to Market Route to edit destinations; your custom route and checkmarks are kept.</p>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p role="status" class="num">{{ checked.length }} of {{ itemCount }} items checked</p>
-        <button type="button" class="button-secondary" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
+        <div class="flex flex-wrap gap-3 print:hidden">
+          <button type="button" class="button-secondary" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
+          <button type="button" class="button-secondary" :disabled="busy" @click="printList"><UIcon name="i-lucide-printer" aria-hidden="true" />Print or save PDF</button>
+        </div>
       </div>
       <p v-if="copyState === 'success'" role="status">Shopping list copied.</p>
       <div v-if="copyError" class="space-y-3">
         <p role="alert" class="text-error">{{ copyError }}</p>
         <label class="block">Shopping list text<textarea :value="summary" readonly rows="8" class="field mt-2" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
       </div>
-      <p class="text-sm">Checkoffs last while this list is open. Regenerating, changing the dinner inputs or leaving this page clears them. Copy the list to take it with you.</p>
+      <p class="text-sm print:hidden">Checkoffs last while this list is open. Regenerating, changing the dinner inputs or leaving this page clears them. Copy the list to take it with you.</p>
       <section v-if="list.prepAlerts.length" aria-label="Prepare ahead" class="rounded-lg border border-rule bg-paper-2 p-5">
         <h3>Prepare ahead</h3>
         <ul class="mt-3 list-disc space-y-3 pl-5">
@@ -92,7 +110,9 @@ async function copy() {
       <p v-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
       <section v-for="destination in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
         <h3 :id="'market-' + destination.section" class="text-2xl">{{ destination.name }}</h3>
-        <p lang="el" class="mt-1">{{ destination.localizedName }}</p>
+        <p class="mt-2 inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border px-3 py-1 text-sm font-semibold" :class="vendorBadge[destination.section].tone">
+          <UIcon :name="vendorBadge[destination.section].icon" class="flex-none" aria-hidden="true" /><span lang="el">{{ destination.localizedName }}</span><span class="font-normal">· {{ vendorBadge[destination.section].category }}</span>
+        </p>
         <ul class="mt-4 divide-y divide-rule border-y border-rule">
           <li v-for="(item, index) in destination.items" :key="item.id" class="py-5">
             <h4 v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="mb-4 font-semibold">{{ item.aisle }}</h4>
@@ -100,7 +120,7 @@ async function copy() {
               <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
               <span class="min-w-0 pt-2 font-semibold" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
             </label>
-            <label class="mt-3 block max-w-sm">Shop at
+            <label class="market-destination mt-3 block max-w-sm">Shop at
               <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field mt-2" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
                 <option v-for="section in marketSections" :key="section" :value="section">{{ sectionInfo[section].name }}</option>
               </select>
@@ -122,4 +142,13 @@ async function copy() {
 <style scoped>
 .market-shopping { overflow-wrap: anywhere; font-style: normal; }
 .market-action { max-width: 100%; white-space: normal; }
+</style>
+
+<style>
+/* Printing from the list hides everything that neither is nor contains it (app chrome, schedule, seasonality). */
+@media print {
+  html[data-print='market'] body *:not(:has(.market-shopping), .market-shopping, .market-shopping *) { display: none !important; }
+  html[data-print='market'] .market-shopping { border: 0; padding: 0; }
+  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-destination, [role='alert']) { display: none !important; }
+}
 </style>

@@ -31,7 +31,8 @@ function closeMore(focusSummary = false) {
 }
 onClickOutside(moreMenu, () => closeMore())
 const adjustSummary = computed(() => [imperial.value ? 'US measures' : null, fromSalt.value && fromSalt.value !== toSalt.value ? `${saltLabels[fromSalt.value]} → ${saltLabels[toSalt.value]}` : null].filter(Boolean).join(' · '))
-const quantityLabel = (row: { amount: number, unit: string }) => row.unit === 'as needed' && !row.amount ? 'As needed' : `${row.amount} ${row.unit}`
+const INFERRED_TAG = '[Inferred by AI]'
+const quantityLabel =(row: { amount: number, unit: string }) => row.unit === 'as needed' && !row.amount ? 'As needed' : `${row.amount} ${row.unit}`
 const busy = ref(false)
 const actionError = ref('')
 const metricDismissed = ref(false)
@@ -73,9 +74,14 @@ const displayIngredients = computed(() => {
       amount = convertUnit(amount, unit, target)
       unit = target
     }
-    return { ...row, amount: Number(amount.toPrecision(4)), unit, conversionNote: note }
+    const inferred = row.notes?.startsWith(INFERRED_TAG) ?? false
+    const inferredNote = inferred ? row.notes!.slice(INFERRED_TAG.length).trim() : ''
+    return { ...row, amount: Number(amount.toPrecision(4)), unit, conversionNote: note, inferred, notes: inferred ? null : row.notes, inferredNote }
   })
 })
+// AI-inferred quantities get a quiet chip per row; their (often repeated) explanations collapse into one footnote list.
+const inferredNotes = computed(() => [...new Set(displayIngredients.value.filter(row => row.inferred && row.inferredNote).map(row => row.inferredNote))])
+const hasScience = (step: RecipeDetail['steps'][number]) => !!(step.sensoryVisual || step.sensoryAudio || step.sensoryAroma || step.sensoryTexture || step.internalTempTargetC != null || step.scienceWhy || step.failurePrevention)
 async function toggleFavorite() {
   if (!recipe.value || busy.value) return
   busy.value = true
@@ -174,6 +180,7 @@ function saved(value: RecipeDetail) {
             <li v-for="ingredient in displayIngredients" :key="ingredient.id" class="ingredient-row flex items-start gap-2 py-3 break-words">
               <div class="min-w-0 flex-1 pt-2.5">
                 <span class="font-semibold num">{{ quantityLabel(ingredient) }}</span> {{ ingredient.name }}
+                <span v-if="ingredient.inferred" class="inferred-chip" :title="ingredient.inferredNote || undefined"><UIcon name="i-lucide-sparkles" aria-hidden="true" />AI estimate<sup v-if="ingredient.inferredNote" aria-hidden="true">{{ inferredNotes.indexOf(ingredient.inferredNote) + 1 }}</sup></span>
                 <p v-if="ingredient.notes" class="mt-1 text-sm text-muted">{{ ingredient.notes }}</p>
                 <p v-if="ingredient.conversionNote" class="mt-1 text-sm">{{ ingredient.conversionNote }}</p>
               </div>
@@ -181,6 +188,12 @@ function saved(value: RecipeDetail) {
             </li>
           </ul>
           <p v-else class="mt-6">No ingredients recorded yet.</p>
+          <aside v-if="displayIngredients.some(row => row.inferred)" class="mt-4 border-t border-espresso/15 pt-3 text-sm text-muted" aria-label="About AI estimates">
+            <p class="flex items-baseline gap-1.5"><UIcon name="i-lucide-sparkles" class="flex-none translate-y-0.5" aria-hidden="true" /><span>AI estimate: inferred quantity, not a source measurement. Check before cooking.</span></p>
+            <ol v-if="inferredNotes.length" class="mt-2 space-y-1">
+              <li v-for="(note, index) in inferredNotes" :key="note" class="break-words"><sup>{{ index + 1 }}</sup> {{ note }}</li>
+            </ol>
+          </aside>
           <h2 class="mt-10">Equipment</h2>
           <ul v-if="recipe.equipment.length" class="mt-4 space-y-3"><li v-for="tool in recipe.equipment" :key="tool.id" class="break-words">{{ tool.name }} <span class="text-sm">({{ tool.isEssential ? 'essential' : 'optional' }})</span><p v-if="tool.substituteTool" class="text-sm">Alternative: {{ tool.substituteTool }}</p></li></ul>
           <p v-else class="mt-4">No special equipment recorded.</p>
@@ -191,12 +204,18 @@ function saved(value: RecipeDetail) {
             <li v-for="step in recipe.steps" :key="step.id" class="border-t border-espresso/20 pt-5">
               <div class="flex flex-wrap items-center gap-4"><span class="font-serif text-4xl text-sage">{{ step.stepNumber.toString().padStart(2, '0') }}</span><span v-if="step.durationMinutes != null" class="text-sm">{{ step.durationMinutes }} min</span><span v-if="step.heatLevel && step.heatLevel !== 'none'" class="text-sm">{{ step.heatLevel }} heat</span><span v-if="step.timerRequired" class="text-sm">Timer needed</span></div>
               <p class="mt-4 whitespace-pre-line break-words text-lg leading-relaxed">{{ step.instruction }}</p>
-              <dl v-if="step.sensoryVisual || step.sensoryAudio || step.sensoryAroma || step.sensoryTexture || step.internalTempTargetC != null" class="mt-5 space-y-2 border-l-2 border-sage bg-sage/10 p-5">
-                <template v-for="(value, label) in { 'Look for': step.sensoryVisual, 'Listen for': step.sensoryAudio, Aroma: step.sensoryAroma, Texture: step.sensoryTexture }" :key="label"><div v-if="value"><dt class="font-semibold">{{ label }}</dt><dd class="break-words">{{ value }}</dd></div></template>
-                <div v-if="step.internalTempTargetC != null"><dt class="font-semibold">Internal temperature</dt><dd>{{ step.internalTempTargetC }} °C</dd></div>
-              </dl>
-              <p v-if="step.scienceWhy" class="mt-4 break-words"><strong>Food Science Why:</strong> {{ step.scienceWhy }}</p>
-              <p v-if="step.failurePrevention" class="mt-4 break-words"><strong>Watch out:</strong> {{ step.failurePrevention }}</p>
+              <details v-if="hasScience(step)" class="group my-4 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/50 p-4 transition-all">
+                <summary class="science-summary flex items-center justify-between font-serif font-semibold text-stone-800 dark:text-stone-200 cursor-pointer select-none">
+                  <span class="min-w-0"><span aria-hidden="true">🔬 </span>Culinary Science &amp; Milestones<span class="block font-sans text-sm font-normal text-stone-500 dark:text-stone-400 group-open:hidden">Tap to view temperature &amp; sensory cues</span></span>
+                  <UIcon name="i-lucide-chevron-down" class="size-5 flex-none text-stone-500 transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+                </summary>
+                <dl v-if="step.sensoryVisual || step.sensoryAudio || step.sensoryAroma || step.sensoryTexture || step.internalTempTargetC != null" class="mt-4 space-y-2 border-l-2 border-sage bg-sage/10 p-4">
+                  <template v-for="(value, label) in { 'Look for': step.sensoryVisual, 'Listen for': step.sensoryAudio, Aroma: step.sensoryAroma, Texture: step.sensoryTexture }" :key="label"><div v-if="value"><dt class="font-semibold">{{ label }}</dt><dd class="break-words">{{ value }}</dd></div></template>
+                  <div v-if="step.internalTempTargetC != null"><dt class="font-semibold">Internal temperature</dt><dd>{{ step.internalTempTargetC }} °C</dd></div>
+                </dl>
+                <p v-if="step.scienceWhy" class="mt-4 break-words"><strong>Food Science Why:</strong> {{ step.scienceWhy }}</p>
+                <p v-if="step.failurePrevention" class="mt-4 break-words"><strong>Watch out:</strong> {{ step.failurePrevention }}</p>
+              </details>
             </li>
           </ol>
           <p v-else class="mt-6">No steps recorded yet. Add your method with “Edit recipe”.</p>
@@ -237,4 +256,11 @@ function saved(value: RecipeDetail) {
 .adjust-disclosure[open] > summary::before { transform: rotate(90deg); }
 .adjust-summary { margin-left: .375rem; font-weight: 400; text-decoration: none; color: var(--color-muted); }
 @media (prefers-reduced-motion: reduce) { .adjust-disclosure > summary::before { transition: none; } }
+
+.science-summary { min-height: 44px; gap: .75rem; list-style: none; }
+.science-summary::-webkit-details-marker { display: none; }
+.science-summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; border-radius: .5rem; }
+
+.inferred-chip { display: inline-flex; align-items: center; gap: .25rem; margin-left: .375rem; vertical-align: 1px; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper-2); padding: .0625rem .5rem; font-size: .75rem; font-weight: 500; line-height: 1.4; color: var(--color-muted); white-space: nowrap; }
+.inferred-chip sup { font-size: .625rem; }
 </style>

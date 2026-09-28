@@ -128,6 +128,38 @@ function remove(id: string) {
   })
 }
 
+// Starter profiles prefill the form only; the cook still reviews and saves.
+const starterGuests = [
+  { name: 'Eleni', hint: 'Gluten & dairy free', icon: 'i-lucide-wheat-off', allergies: ['gluten', 'dairy'], dietaryRestrictions: [] },
+  { name: 'Nikos', hint: 'Nut allergy', icon: 'i-lucide-nut-off', allergies: ['nuts'], dietaryRestrictions: [] },
+  { name: 'Maria', hint: 'Vegetarian', icon: 'i-lucide-sprout', allergies: [], dietaryRestrictions: ['vegetarian'] }
+]
+const availableStarters = computed(() => starterGuests.filter(starter => !guests.value?.some(guest => guest.name.trim().toLowerCase() === starter.name.toLowerCase())))
+async function useStarter(starter: typeof starterGuests[number]) {
+  reset()
+  Object.assign(form, { name: starter.name, allergies: [...starter.allergies], dietaryRestrictions: [...starter.dietaryRestrictions] })
+  await nextTick()
+  nameInput.value?.focus()
+}
+
+type Status = { label: string, icon: string, tone: string }
+const conflictBadge: Record<DietaryAudit['conflicts'][number]['type'], Status> = {
+  critical_allergen: { label: 'Critical allergen', icon: 'i-lucide-triangle-alert', tone: 'border-error/40 bg-error/10 text-error' },
+  dietary_conflict: { label: 'Dietary conflict', icon: 'i-lucide-circle-alert', tone: 'border-terracotta/40 bg-terracotta/10 text-terracotta-ink' },
+  dislike_warning: { label: 'Dislike', icon: 'i-lucide-info', tone: 'border-rule bg-paper-2 text-muted' }
+}
+const clearBadge: Status = { label: 'No flags', icon: 'i-lucide-circle-check', tone: 'border-sage/50 bg-sage/10 text-sage-ink' }
+// Worst finding per attending guest, so the host sees who needs a conversation at a glance.
+const guestStatuses = computed(() => {
+  if (!audit.value) return []
+  const order = ['critical_allergen', 'dietary_conflict', 'dislike_warning'] as const
+  return (guests.value ?? []).filter(guest => selectedGuests.value.includes(guest.id)).map(guest => {
+    const own = audit.value!.conflicts.filter(conflict => conflict.guestId === guest.id)
+    const worst = order.find(type => own.some(conflict => conflict.type === type))
+    return { id: guest.id, name: guest.name, count: own.length, status: worst ? conflictBadge[worst] : clearBadge }
+  })
+})
+
 function check() {
   void act(async () => {
     audit.value = null
@@ -152,6 +184,14 @@ useSeoMeta({ title: 'Guests & dietary checks — Heirloom' })
 
     <form class="row-panel my-8 space-y-5" aria-label="Guest profile" @submit.prevent="save">
       <h2>{{ form.id ? 'Edit guest' : 'Add a guest' }}</h2>
+      <div v-if="!form.id && availableStarters.length">
+        <p class="text-sm text-muted">Quick start: tap a common profile, then review and save.</p>
+        <div class="mt-2 flex flex-wrap gap-2" role="group" aria-label="Starter guest profiles">
+          <button v-for="starter in availableStarters" :key="starter.name" type="button" class="filter-pill" :disabled="busy" @click="useStarter(starter)">
+            <UIcon :name="starter.icon" aria-hidden="true" />{{ starter.name }}<span class="font-normal text-muted">· {{ starter.hint }}</span>
+          </button>
+        </div>
+      </div>
       <label class="block">Name<input ref="nameInput" v-model="form.name" class="field" required maxlength="200"
       /></label>
       <fieldset>
@@ -285,11 +325,16 @@ useSeoMeta({ title: 'Guests & dietary checks — Heirloom' })
               ? audit.conflicts.length + (audit.conflicts.length === 1 ? ' conflict to review' : ' conflicts to review')
               : 'No ingredient conflicts detected — manual checks still required'
           }}</h3>
+        <ul class="mb-5 flex flex-wrap gap-2" aria-label="Guest status">
+          <li v-for="guest in guestStatuses" :key="guest.id" class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold" :class="guest.status.tone">
+            <UIcon :name="guest.status.icon" class="flex-none" aria-hidden="true" />{{ guest.name }}<span class="font-normal">· {{ guest.status.label }}{{ guest.count > 1 ? ' · ' + guest.count + ' flags' : '' }}</span>
+          </li>
+        </ul>
         <ul v-if="audit.reviewWarnings.length" class="notice mb-4">
           <li v-for="warning in audit.reviewWarnings" :key="warning">{{ warning }}</li>
         </ul>
         <article v-for="(conflict, i) in audit.conflicts" :key="i" class="row-panel mb-4 break-words">
-          <p class="meta-label">{{ conflict.type.replaceAll('_', ' ') }}</p>
+          <p class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold" :class="conflictBadge[conflict.type].tone"><UIcon :name="conflictBadge[conflict.type].icon" class="flex-none" aria-hidden="true" />{{ conflictBadge[conflict.type].label }}</p>
           <h4 class="mt-2 font-serif text-2xl">{{ conflict.guestName }} · {{ conflict.recipeTitle }}</h4>
           <p class="mt-3">
             <strong>{{ conflict.ingredient }}:</strong> {{ conflict.message }}</p>

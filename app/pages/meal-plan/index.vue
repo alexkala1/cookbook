@@ -86,6 +86,21 @@ watch(
   },
   { deep: true }
 )
+// 1-click menus built from recipes already in the cookbook; dishes the cook hasn't saved are skipped and named.
+const presets = [
+  { id: 'sunday', label: 'Greek Sunday Feast', icon: 'i-lucide-sun', courses: [['appetizer', 'Traditional Spanakopita'], ['side', 'Santorini Fava'], ['main', 'Arni me Patates'], ['dessert', 'Revani with Citrus Syrup']] },
+  { id: 'lenten', label: 'Lenten Table', icon: 'i-lucide-leaf', courses: [['appetizer', 'Santorini Fava'], ['main', 'Classic Fasolada']] }
+] as const satisfies readonly { id: string, label: string, icon: string, courses: readonly (readonly [ConductorCourse, string])[] }[]
+const findRecipe = (title: string) => recipes.value?.find(recipe => recipe.title.trim().toLowerCase() === title.toLowerCase())
+const presetMatches = (preset: typeof presets[number]) => preset.courses.filter(([, title]) => findRecipe(title)).length
+const presetNotice = ref('')
+function applyPreset(preset: typeof presets[number]) {
+  const found = preset.courses.flatMap(([course, title]) => { const recipe = findRecipe(title); return recipe ? [{ recipeId: recipe.id, course, serveAt: '' }] : [] })
+  if (!found.length) return
+  courses.value = found
+  const missing = preset.courses.filter(([, title]) => !findRecipe(title)).map(([, title]) => title)
+  presetNotice.value = `${preset.label}: ${found.length} course${found.length > 1 ? 's' : ''} filled.` + (missing.length ? ` Not in your cookbook yet: ${missing.join(', ')}.` : ' Adjust anything below.')
+}
 const chosen = computed(() => courses.value.filter(row => row.recipeId))
 const conflictSteps = computed(
   () => new Set(plan.value?.bottlenecks.flatMap(item => item.steps.map(step => step.id)) ?? [])
@@ -175,7 +190,20 @@ async function conduct() {
       <NuxtLink to="/recipes/new" class="button-primary mt-6">Write a recipe</NuxtLink>
     </div>
 
-    <form v-else class="mt-10 space-y-8" @submit.prevent="conduct">
+    <template v-else>
+    <section aria-labelledby="presets-heading" class="mt-10 rounded-xl border border-rule bg-paper-2/60 p-5">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 id="presets-heading" class="font-serif text-xl">Menu presets</h2>
+        <p class="text-sm text-muted">One tap fills the menu from your cookbook.</p>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-2" role="group" aria-label="Menu presets">
+        <button v-for="preset in presets" :key="preset.id" type="button" class="filter-pill" :disabled="busy || !presetMatches(preset)" @click="applyPreset(preset)">
+          <UIcon :name="preset.icon" aria-hidden="true" />{{ preset.label }}<span class="text-xs font-normal text-muted">{{ presetMatches(preset) }}/{{ preset.courses.length }}</span>
+        </button>
+      </div>
+      <p v-if="presetNotice" role="status" class="mt-3 text-sm">{{ presetNotice }}</p>
+    </section>
+    <form class="mt-8 space-y-8" @submit.prevent="conduct">
       <fieldset :disabled="busy" class="space-y-4">
         <legend class="form-legend">The menu</legend>
         <div
@@ -238,19 +266,30 @@ async function conduct() {
       >{{ label('Build the schedule', 'Conducting…') }}</button>
       <p v-if="error" role="alert" class="notice">{{ error }}</p>
     </form>
+    </template>
 
     <div v-if="plan" class="mt-14 space-y-10" aria-live="polite">
       <section v-if="plan.bottlenecks.length" aria-label="Equipment conflicts" class="space-y-4">
-        <div v-for="item in plan.bottlenecks" :key="item.type + item.start" role="alert" class="notice">
-          <p class="font-semibold">{{ item.type === 'oven_temperature' ? 'Oven clash' : 'Burner overload' }} ·
-            {{ item.clock }} ({{
-              item.label
-            }})</p>
-          <p class="mt-2">{{ item.message }}</p>
-          <ul class="mt-3 list-disc space-y-1 pl-5">
-            <li v-for="tip in item.resolutions" :key="tip">{{ tip }}</li>
-          </ul>
-        </div>
+        <h2 class="text-2xl">Conductor insights &amp; workarounds</h2>
+        <article v-for="item in plan.bottlenecks" :key="item.type + item.start" role="alert" class="overflow-hidden rounded-xl border border-terracotta/40 bg-paper">
+          <header class="flex items-start gap-3 bg-terracotta/10 px-5 py-4">
+            <span class="inline-flex size-10 flex-none items-center justify-center rounded-full bg-paper text-terracotta-ink" aria-hidden="true"><UIcon :name="item.type === 'oven_temperature' ? 'i-lucide-heater' : 'i-lucide-flame'" class="size-5" /></span>
+            <div class="min-w-0">
+              <p class="meta-label font-semibold">Conductor insight</p>
+              <p class="font-semibold">{{ item.type === 'oven_temperature' ? 'Oven clash' : 'Burner overload' }} ·
+                <span class="num">{{ item.clock }}</span> ({{ item.label }})</p>
+            </div>
+          </header>
+          <div class="px-5 py-4">
+            <p class="break-words">{{ item.message }}</p>
+            <template v-if="item.resolutions.length">
+              <p class="mt-4 text-sm font-semibold text-sage-ink">Workarounds</p>
+              <ul class="mt-2 space-y-2">
+                <li v-for="tip in item.resolutions" :key="tip" class="flex items-start gap-2 break-words"><UIcon name="i-lucide-circle-check" class="mt-1 flex-none text-sage-ink" aria-hidden="true" /><span>{{ tip }}</span></li>
+              </ul>
+            </template>
+          </div>
+        </article>
       </section>
       <p v-else role="status" class="row-panel">No oven or burner clashes with {{ ovens }}
         oven{{ ovens > 1 ? 's' : '' }} and {{ burners }} burners.</p>
