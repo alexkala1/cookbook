@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useEventListener, useWakeLock, useSwipe } from '@vueuse/core'
+import { useEventListener, useIntersectionObserver, useWakeLock, useSwipe } from '@vueuse/core'
 import type { KitchenProfile, RecipeDetail } from '#shared/types/recipe'
 import { burnerAdvice, convertOven, ovenTemperature, type Oven } from '#shared/culinary/heat'
-import { parseDurations, timerLabel } from '../../../utils/timers'
+import { parseDurations, timerLabel, QUICK_TIMER_PRESETS, formatTimerHeading } from '../../../utils/timers'
 import { parseServings } from '../../../utils/display-units'
 import { scaleIngredients } from '../../../utils/units'
 import type { CookingTimer } from '../../../utils/timers'
@@ -39,7 +39,34 @@ const rescueOpen = ref(false)
 const mounted = ref(false)
 const steps = computed(() => [...(recipe.value?.steps || [])].sort((a, b) => a.stepNumber - b.stepNumber))
 const step = computed(() => steps.value[index.value])
-const { timers, alerts, sound, persistence, start, toggle, reset, remove, restore, enableSound } = useCookingTimers(id)
+const { timers, activeTimers, alerts, sound, persistence, start, startPreset, startCustom, toggle, reset, remove, restore, enableSound } = useCookingTimers(id)
+
+// Quick presets and a custom timer sit beside the step's own timers.
+const TIMER_LIMIT = 20
+const customName = ref('')
+const customMinutes = ref(5)
+const customValid = computed(() => Number.isFinite(customMinutes.value) && customMinutes.value >= 0.5 && customMinutes.value <= 180)
+function bumpCustom(minutes: number) { customMinutes.value = Math.min(180, Math.max(0, (Number.isFinite(customMinutes.value) ? customMinutes.value : 0) + minutes)) }
+function addCustom() {
+  if (!customValid.value || timers.value.length + removed.value.length >= TIMER_LIMIT) return
+  startCustom(customName.value.trim() || 'Custom timer', customMinutes.value)
+  customName.value = ''
+}
+// A floating summary of the nearest timer while the timers panel is off screen.
+const timersSection = ref<HTMLElement>()
+const timersInView = ref(false)
+useIntersectionObserver(timersSection, ([entry]) => { timersInView.value = entry?.isIntersecting ?? false })
+const nearestTimer = computed(() => {
+  const running = activeTimers.value.filter(timer => timer.state === 'running')
+  return [...(running.length ? running : activeTimers.value)].sort((a, b) => a.remaining - b.remaining)[0]
+})
+const showTimersHud = computed(() => !!nearestTimer.value && !timersInView.value && !alerts.value.length)
+function scrollToTimers() {
+  const section = timersSection.value
+  if (!section) return
+  section.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
+  section.focus({ preventScroll: true })
+}
 
 // One saved step but a numbered method in the notes (typical of an offline video import): offer to split it.
 const notesPlan = computed(() => recipe.value && recipe.value.steps.length <= 1 ? parseStructuredRecipe(recipe.value.heirloomNotes, recipe.value.servings) : null)
@@ -601,8 +628,39 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <p class="mt-4 text-xl">{{ burnerAdvice(kitchen?.stoveType || 'gas', step.heatLevel) }}</p>
         </section>
       </template>
-      <section class="kitchen-panel" aria-label="Cooking timers">
+      <section id="cooking-timers" ref="timersSection" tabindex="-1" class="kitchen-panel scroll-mt-32 focus:outline-none" aria-label="Cooking timers">
         <h2 class="text-2xl">Timers</h2>
+        <div class="mt-4" role="group" aria-labelledby="quick-presets-title">
+          <h3 id="quick-presets-title" class="text-lg font-semibold">Quick presets</h3>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              v-for="preset in QUICK_TIMER_PRESETS"
+              :key="preset.label"
+              type="button"
+              class="kitchen-button min-h-11 inline-flex items-center gap-1.5 px-3.5 rounded-full text-base border border-k-rule hover:border-k-accent active:scale-95 transition-all motion-reduce:transition-none motion-reduce:active:scale-100"
+              :title="preset.description"
+              :aria-label="'Start ' + preset.label + ' timer for ' + preset.description"
+              :disabled="timers.length + removed.length >= TIMER_LIMIT"
+              @click="startPreset(preset.label, preset.seconds); enableSound()"
+            ><UIcon name="i-lucide-timer" class="size-5" aria-hidden="true" />{{ preset.label }}</button>
+          </div>
+        </div>
+        <form class="mt-5" aria-labelledby="custom-timer-title" @submit.prevent="addCustom">
+          <h3 id="custom-timer-title" class="text-lg font-semibold">Custom timer</h3>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <label class="min-w-0 flex-1 basis-48"><span class="sr-only">Timer name</span>
+              <input v-model="customName" type="text" maxlength="60" autocomplete="off" placeholder="Timer name, e.g. Rest dough" class="kitchen-input text-base py-2 px-3 min-h-11 w-full">
+            </label>
+            <label class="w-24"><span class="sr-only">Minutes</span>
+              <input v-model.number="customMinutes" type="number" min="0.5" max="180" step="0.5" inputmode="decimal" class="kitchen-input text-base py-2 px-3 min-h-11 w-full text-center num" aria-describedby="custom-timer-hint">
+            </label>
+            <span class="text-base" aria-hidden="true">min</span>
+            <button type="button" class="kitchen-button min-h-11 min-w-11" aria-label="Add 1 minute" @click="bumpCustom(1)">+1m</button>
+            <button type="button" class="kitchen-button min-h-11 min-w-11" aria-label="Add 5 minutes" @click="bumpCustom(5)">+5m</button>
+            <button class="kitchen-button kitchen-primary min-h-11" :disabled="!customValid || timers.length + removed.length >= TIMER_LIMIT">Add Timer</button>
+          </div>
+          <p id="custom-timer-hint" class="mt-2 text-base" :class="{ 'text-k-accent': !customValid || timers.length + removed.length >= TIMER_LIMIT }">{{ timers.length + removed.length >= TIMER_LIMIT ? 'That’s the limit of ' + TIMER_LIMIT + ' timers. Remove one to add another.' : customValid ? 'Between 0.5 and 180 minutes.' : 'Choose between 0.5 and 180 minutes.' }}</p>
+        </form>
         <p class="mt-3 text-base">{{ persistence }} Sound works while Kitchen Mode is open and may be delayed
           in the background. {{ sound }}</p>
         <div class="mt-4 flex flex-wrap gap-3">
@@ -689,6 +747,20 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           aria-label="Local camera preview"
         />
       </section>
+      <div v-if="showTimersHud && nearestTimer" class="timers-hud" role="region" aria-label="Active cooking timers HUD">
+        <button type="button" class="timers-hud__main" @click="scrollToTimers">
+          <UIcon name="i-lucide-timer" class="size-7 flex-none text-k-accent" :class="{ 'animate-pulse motion-reduce:animate-none': nearestTimer.state === 'running' }" aria-hidden="true" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-base">{{ nearestTimer.name }}<span v-if="nearestTimer.state === 'paused'"> · paused</span></span>
+            <span class="num block text-2xl font-bold leading-tight text-k-accent">{{ timerLabel(nearestTimer.remaining) }}</span>
+          </span>
+          <span v-if="activeTimers.length > 1" class="flex-none text-base">+ {{ activeTimers.length - 1 }} more</span>
+          <span class="sr-only">{{ formatTimerHeading(nearestTimer.name, nearestTimer.remaining) }}. Scroll to timers</span>
+        </button>
+        <button type="button" class="kitchen-button min-h-11 min-w-11 flex-none" :aria-label="(nearestTimer.state === 'running' ? 'Pause ' : 'Resume ') + nearestTimer.name" @click="toggle(nearestTimer)">
+          <UIcon :name="nearestTimer.state === 'running' ? 'i-lucide-pause' : 'i-lucide-play'" class="size-6" aria-hidden="true" />
+        </button>
+      </div>
       <RescueDrawer
         :context="recipe.title + ': ' + (step?.instruction || '')"
         :current-step="step?.stepNumber"
@@ -816,6 +888,31 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
 }
 .kitchen-progress::-moz-progress-bar {
   background: var(--color-k-accent);
+}
+/* Sits just above the step bar so it never covers Prev / Next; hidden while the alert banner uses the same spot. */
+.timers-hud {
+  position: fixed;
+  inset-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
+  bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  z-index: 28;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 36rem;
+  margin-inline: auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-k-rule);
+  border-radius: 1rem;
+  background: color-mix(in oklch, var(--color-k-paper-2) 95%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.45);
+  color: var(--color-k-ink);
+}
+.timers-hud__main { display: flex; flex: 1 1 auto; min-width: 0; min-height: 44px; align-items: center; gap: 0.75rem; border-radius: 0.75rem; text-align: start; }
+.timers-hud__main:focus-visible { outline: 3px solid var(--color-k-accent); outline-offset: 2px; }
+@media (min-width: 48rem) {
+  .timers-hud { margin-inline: 0 auto; inset-inline-start: max(1.5rem, env(safe-area-inset-left)); }
 }
 /* Fixed, not sticky: a sticky banner stays inside the timers panel
    and is invisible while the cook reads the step above it. */

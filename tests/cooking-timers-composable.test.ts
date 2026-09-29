@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createRequire } from 'node:module'
 import { useCookingTimers } from '../app/composables/useCookingTimers'
+import { QUICK_TIMER_PRESETS, formatTimerHeading } from '../app/utils/timers'
+
+// Vue is supplied by Nuxt rather than declared as a direct dependency.
+const require = createRequire(import.meta.url)
+const { computed, ref } = require(require.resolve('vue', { paths: [require.resolve('nuxt/package.json')] }))
 
 let mount: () => void, unmount: () => void
 let stored: Map<string, string>
@@ -7,7 +13,8 @@ const initialTime = new Date('2026-09-26T12:00:00Z')
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(initialTime)
   stored = new Map()
-  vi.stubGlobal('ref', <T>(value: T) => ({ value }))
+  vi.stubGlobal('ref', ref)
+  vi.stubGlobal('computed', computed)
   vi.stubGlobal('onMounted', (callback: () => void) => { mount = callback })
   vi.stubGlobal('onBeforeUnmount', (callback: () => void) => { unmount = callback })
   vi.stubGlobal('document', new EventTarget())
@@ -18,6 +25,35 @@ beforeEach(() => {
   })
 })
 afterEach(() => { unmount?.(); vi.useRealTimers(); vi.unstubAllGlobals() })
+
+it('provides the seven kitchen presets with the requested intervals and descriptions', () => {
+  expect(QUICK_TIMER_PRESETS).toEqual([
+    { label: '1m', seconds: 60, description: 'Flash boil / Taste check' },
+    { label: '3m', seconds: 180, description: 'Soft-boiled eggs' },
+    { label: '5m', seconds: 300, description: 'Blanch / Steam greens' },
+    { label: '10m', seconds: 600, description: 'Sauté / Soften onions' },
+    { label: '15m', seconds: 900, description: 'Roast check' },
+    { label: '30m', seconds: 1800, description: 'Rest dough / Cool' },
+    { label: '45m', seconds: 2700, description: 'Simmer broth' }
+  ])
+})
+
+it.each([
+  ['Eggs', 180, 'Eggs · 03:00'],
+  ['Taste check', 90, 'Taste check · 01:30'],
+  ['Done', 0, 'Done · 00:00'],
+  ['Slow broth', 7200, 'Slow broth · 120:00']
+])('formats the heading for %s', (name, seconds, expected) => {
+  expect(formatTimerHeading(name, seconds)).toBe(expected)
+})
+
+it('starts a preset through the existing persistent timer lifecycle', () => {
+  const cooking = useCookingTimers('recipe')
+  mount()
+  cooking.startPreset('3m', 180)
+  expect(cooking.timers.value[0]).toMatchObject({ name: '3m', duration: 180, remaining: 180, state: 'running', deadline: initialTime.getTime() + 180000 })
+  expect(JSON.parse(stored.get('heirloom:timers:v1:recipe')!).timers).toEqual(cooking.timers.value)
+})
 
 it('finishes and persists an elapsed timer when Pause precedes the interval callback', () => {
   const cooking = useCookingTimers('recipe')
@@ -33,6 +69,60 @@ it('finishes and persists an elapsed timer when Pause precedes the interval call
   vi.advanceTimersByTime(1000)
   expect(cooking.alerts.value).toEqual(['Simmer finished'])
   expect(timer.state).toBe('finished')
+})
+
+it('starts custom timers in minutes, including fractional minutes', () => {
+  const cooking = useCookingTimers('recipe')
+  mount()
+  cooking.startCustom('Rest dough', 15)
+  cooking.startCustom('Taste check', 1.5)
+  expect(cooking.timers.value.map(timer => [timer.name, timer.duration, timer.deadline])).toEqual([
+    ['Rest dough', 900, initialTime.getTime() + 900000],
+    ['Taste check', 90, initialTime.getTime() + 90000]
+  ])
+  expect(JSON.parse(stored.get('heirloom:timers:v1:recipe')!).timers).toEqual(cooking.timers.value)
+})
+
+it('preserves duration validation and the timer limit through both start helpers', () => {
+  const cooking = useCookingTimers('recipe')
+  mount()
+  for (const duration of [0, -1, NaN, Infinity, 604801]) {
+    cooking.startPreset('Invalid', duration)
+    cooking.startCustom('Invalid', duration)
+  }
+  expect(cooking.timers.value).toEqual([])
+  for (let index = 0; index < 20; index++) cooking.startPreset('Eggs', 180)
+  cooking.startCustom('Overflow', 5)
+  cooking.startPreset('Overflow', 60)
+  expect(cooking.timers.value).toHaveLength(20)
+  expect(cooking.runningCount.value).toBe(20)
+})
+
+it('reactively counts running timers and includes paused timers only in the active list', () => {
+  const cooking = useCookingTimers('recipe')
+  mount()
+  expect(cooking.runningCount.value).toBe(0)
+  expect(cooking.activeTimers.value).toEqual([])
+  cooking.startPreset('Quick', 2)
+  cooking.startCustom('Rest', 1)
+  expect(cooking.runningCount.value).toBe(2)
+  expect(cooking.activeTimers.value).toEqual(cooking.timers.value)
+  const [quick, rest] = cooking.timers.value
+  cooking.toggle(rest!)
+  expect(cooking.runningCount.value).toBe(1)
+  expect(cooking.activeTimers.value).toEqual([quick, rest])
+  vi.advanceTimersByTime(2000)
+  expect(cooking.runningCount.value).toBe(0)
+  expect(cooking.activeTimers.value).toEqual([rest])
+  cooking.toggle(rest!)
+  expect(cooking.runningCount.value).toBe(1)
+  cooking.reset(rest!)
+  expect(cooking.runningCount.value).toBe(0)
+  expect(cooking.activeTimers.value).toEqual([])
+  cooking.toggle(rest!)
+  cooking.remove(rest!)
+  expect(cooking.runningCount.value).toBe(0)
+  expect(cooking.activeTimers.value).toEqual([])
 })
 
 it('preserves the remaining duration across an ordinary pause, resume and completion', () => {

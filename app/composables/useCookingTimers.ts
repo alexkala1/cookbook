@@ -2,6 +2,8 @@ import { remainingSeconds, restoreTimers, type CookingTimer } from '../utils/tim
 
 export function useCookingTimers(recipeId: string) {
   const timers = ref<CookingTimer[]>([])
+  const runningCount = computed(() => timers.value.filter(timer => timer.state === 'running').length)
+  const activeTimers = computed(() => timers.value.filter(timer => timer.state === 'running' || timer.state === 'paused'))
   const alerts = ref<string[]>([])
   const sound = ref('Sound not enabled')
   let audio: AudioContext | undefined
@@ -84,6 +86,14 @@ export function useCookingTimers(recipeId: string) {
     persist()
   }
 
+  function startPreset(label: string, seconds: number) {
+    start(label, seconds)
+  }
+
+  function startCustom(name: string, minutes: number) {
+    start(name, minutes * 60)
+  }
+
   function toggle(timer: CookingTimer) {
     if (timer.state === 'running') {
       // A throttled interval may not have reported this deadline yet.
@@ -154,5 +164,5 @@ export function useCookingTimers(recipeId: string) {
     void audio?.close().catch(() => {})
   })
 
-  return { timers, alerts, sound, persistence, start, toggle, reset, remove, restore, enableSound }
+  return { timers, runningCount, activeTimers, alerts, sound, persistence, start, startPreset, startCustom, toggle, reset, remove, restore, enableSound }
 }
