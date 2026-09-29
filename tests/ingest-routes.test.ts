@@ -1,10 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createApp, createRouter, toWebHandler } from 'h3'
+import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3'
 import url from '../server/api/ingest/url.post'
 import video from '../server/api/ingest/video.post'
 import prompt from '../server/api/ingest/prompt.post'
 import ocr from '../server/api/ingest/ocr.post'
-import { cardTitle, ingestSchema } from '../server/utils/ai/ingest'
+import { cardTitle, ingest, ingestSchema } from '../server/utils/ai/ingest'
 import { safeFetch } from '../server/utils/ai/safe-fetch'
 vi.mock('../server/utils/ai/safe-fetch', () => ({ safeFetch: vi.fn() }))
 const handle = toWebHandler(createApp().use(createRouter().post('/url', url).post('/video', video).post('/prompt', prompt).post('/ocr', ocr)))
@@ -69,6 +69,70 @@ it('keeps the offline template for unstructured sources', async () => {
 })
 
 const scannedCard = 'Yiayia’s Koulourakia\nEaster butter cookies from the tin by the stove. Makes 40.\n\nIngredients\n250 g butter\n200 g sugar\n3 eggs\n1 kg flour\n\nMethod\n1. Cream\nBeat the butter and sugar until pale.\n2. Shape\nAdd the eggs and flour, then roll into twists.\n3. Bake\nBake at 180°C for 20 minutes until golden.'
+const cardImage = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRZkAAAAASUVORK5CYII='
+const visionProviders = ['anthropic', 'gemini', 'openai', 'groq', 'ollama'] as const
+const providerReply = (provider: string) => {
+  const content = JSON.stringify({ title: 'Photographed cookies', description: '', ingredients: [{ name: 'flour', amount: 250, unit: 'g' }] })
+  return provider === 'anthropic' ? { content: [{ type: 'text', text: content }] }
+    : provider === 'gemini' ? { candidates: [{ content: { parts: [{ text: content }] } }] }
+      : provider === 'ollama' ? { message: { content } } : { choices: [{ message: { content } }] }
+}
+it.each(visionProviders)('sends OCR image contracts to %s with and without text', async provider => {
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(providerReply(provider))))
+  vi.stubGlobal('fetch', fetchMock)
+  for (const text of ['', scannedCard]) {
+    const body = text ? { text, image: cardImage, mimeType: 'image/png' } : { image: `data:image/png;base64,${cardImage}`, mimeType: 'image/jpeg' }
+    const response = await request('ocr', body, { 'x-byok-provider': provider, 'x-byok-key': 'test', 'x-byok-model': 'vision-test' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ title: 'Photographed cookies', sourceType: 'handwritten_ocr', ingredients: [{ name: 'flour', amount: 250, unit: 'g' }] })
+    const sent = JSON.parse(fetchMock.mock.calls.at(-1)![1]!.body as string)
+    const prompt = text || 'Transcribe and normalize this recipe card.'
+    if (provider === 'anthropic') expect(sent.messages[0]).toEqual({ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: cardImage } }, { type: 'text', text: prompt }] })
+    else if (provider === 'gemini') expect(sent.contents).toEqual([{ parts: [{ inlineData: { mimeType: 'image/png', data: cardImage } }, { text: prompt }] }])
+    else if (provider === 'ollama') expect(sent.messages[1]).toEqual({ role: 'user', content: prompt, images: [cardImage] })
+    else expect(sent.messages[1]).toEqual({ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${cardImage}` } }, { type: 'text', text: prompt }] })
+  }
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+it.each(visionProviders)('preserves text-only OCR contracts for %s', async provider => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(providerReply(provider))))
+  vi.stubGlobal('fetch', fetchMock)
+  expect((await request('ocr', { text: scannedCard }, { 'x-byok-provider': provider, 'x-byok-key': 'test', 'x-byok-model': 'test' })).status).toBe(200)
+  const sent = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)
+  if (provider === 'gemini') expect(sent.contents).toEqual([{ parts: [{ text: scannedCard }] }])
+  else expect(sent.messages.at(-1)).toEqual({ role: 'user', content: scannedCard })
+})
+it('defaults raw base64 to JPEG and returns vision provenance', async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(providerReply('openai'))))
+  vi.stubGlobal('fetch', fetchMock)
+  const inspect = toWebHandler(createApp().use(defineEventHandler(event => ingest(event, { kind: 'ocr', image: '/9j/2Q==' }))))
+  const response = await inspect(new Request('http://localhost/', { headers: { 'x-byok-key': 'test', 'x-byok-model': 'test' } }))
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ provenance: 'Photographed recipe card / Vision AI', sourceText: '', mode: 'live' })
+  const sent = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)
+  expect(sent.messages[1].content[0].image_url.url).toBe('data:image/jpeg;base64,/9j/2Q==')
+})
+it('keeps image-only offline drafts deterministic without calling a provider', async () => {
+  const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock)
+  const first = await request('ocr', { image: cardImage, mimeType: 'image/png' })
+  expect(first.status).toBe(200)
+  const draft = await first.json()
+  expect(draft.sourceType).toBe('handwritten_ocr')
+  expect(await (await request('ocr', { image: cardImage, mimeType: 'image/png' })).json()).toEqual(draft)
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+it('validates optional OCR fields and the 10MB encoded image limit', async () => {
+  for (const body of [{}, { text: '    ' }, { mimeType: 'image/png' }, { image: '' }, { image: ' ' }, { image: cardImage, text: 'x'.repeat(30001) }, { image: 'a'.repeat(10 * 1024 * 1024 + 1) }, { image: cardImage, mimeType: 'text/html' }]) {
+    expect(ingestSchema.safeParse({ kind: 'ocr', ...body }).success).toBe(false)
+  }
+  expect(ingestSchema.safeParse({ kind: 'ocr', image: 'a'.repeat(10 * 1024 * 1024) }).success).toBe(true)
+  expect(ingestSchema.safeParse({ kind: 'ocr', image: cardImage, text: 'abc' }).success).toBe(true)
+  const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock)
+  for (const image of ['https://example.com/card.png', 'data:image/png;base64,', 'data:text/html;base64,YQ==', 'not base64!']) {
+    expect((await request('ocr', { image }, { 'x-byok-key': 'test', 'x-byok-model': 'test' })).status).toBe(400)
+  }
+  expect(fetchMock).not.toHaveBeenCalled()
+})
 it('turns scanned card text into a structured handwritten_ocr draft titled from its first line', async () => {
   const response = await request('ocr', { text: scannedCard })
   expect(response.status).toBe(200)

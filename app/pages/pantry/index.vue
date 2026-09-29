@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { storageLocations, type PantryItem, type PantryDraft, type PantryMatch } from '#shared/culinary/pantry'
+import type { ChefAdvice } from '#shared/culinary/chef-advice'
+
+const { requestHeaders, ready: byokReady } = useByokSettings()
 
 const { data: items, error: loadError, refresh } = await useFetch<PantryItem[]>('/api/pantry')
 const location = ref('all')
@@ -21,6 +24,8 @@ const form = reactive<PantryDraft>({ name: '', quantity: 1, unit: 'item', storag
 const expiry = ref('')
 const drafts = ref<PantryDraft[]>([])
 const matches = ref<PantryMatch[] | null>(null)
+type ChefAnswer = ChefAdvice & { mode: 'live' | 'fallback' }
+const advice = ref<ChefAnswer | null>(null)
 
 function errorText(error: unknown) {
   return (
@@ -81,6 +86,12 @@ function parse() {
 function findRecipes() {
   void act(async () => {
     matches.value = await $fetch<PantryMatch[]>('/api/pantry/match', { method: 'POST' })
+  })
+}
+
+function askChef() {
+  void act(async () => {
+    advice.value = await $fetch<ChefAnswer>('/api/pantry/chef-advice', { method: 'POST', headers: requestHeaders() })
   })
 }
 
@@ -146,15 +157,58 @@ function expiryLabel(item: PantryItem) {
           @click="location = place"
         >{{ place }}</button>
       </div>
-      <button
-        class="button-primary"
-        :disabled="busy"
-        v-stable-action="state"
-        :data-state="state"
-        :aria-busy="busy"
-        @click="findRecipes"
-      >{{ label('Cook With What I Have') }}</button>
+      <div class="flex flex-wrap gap-3">
+        <button
+          class="button-primary inline-flex items-center gap-2"
+          :disabled="busy || !byokReady"
+          v-stable-action="state"
+          :data-state="state"
+          :aria-busy="busy"
+          @click="askChef"
+        ><UIcon name="i-lucide-chef-hat" aria-hidden="true" />{{ label('What can I cook tonight?', 'Asking the chef…') }}</button>
+        <button
+          class="button-secondary"
+          :disabled="busy"
+          v-stable-action="state"
+          :data-state="state"
+          :aria-busy="busy"
+          @click="findRecipes"
+        >{{ label('Cook With What I Have') }}</button>
+      </div>
     </div>
+
+    <details v-if="advice" open class="keepsake-advice mt-8" aria-label="Chef advice">
+      <summary class="flex min-h-11 cursor-pointer select-none items-center justify-between gap-3 font-serif text-2xl [&::-webkit-details-marker]:hidden">
+        <span class="flex items-center gap-2"><UIcon name="i-lucide-chef-hat" class="flex-none text-terracotta-ink" aria-hidden="true" />Tonight, from your kitchen</span>
+        <UIcon name="i-lucide-chevron-down" class="size-5 flex-none" aria-hidden="true" />
+      </summary>
+      <p class="mt-2 text-sm text-muted">{{ advice.mode === 'live' ? 'Tips refined by your AI model — verify swaps before cooking.' : 'Suggestions from your cookbook and pantry. Add an AI key in Settings for friendlier, tailored swaps.' }}</p>
+      <p v-if="!advice.ready.length && !advice.swaps.length && !advice.useItUp.length" role="status" class="mt-4">Nothing to suggest yet. Save a few recipes and add what’s in your kitchen, and we’ll help you plan tonight.</p>
+
+      <section v-if="advice.ready.length" class="mt-6" aria-labelledby="advice-ready">
+        <h3 id="advice-ready" class="font-serif text-xl">Ready to cook now</h3>
+        <ul class="mt-3 space-y-2">
+          <li v-for="item in advice.ready" :key="item.id"><NuxtLink :to="'/recipes/' + item.id" class="text-action font-semibold">{{ item.title }}</NuxtLink> <span class="text-muted">— {{ item.note }}</span></li>
+        </ul>
+      </section>
+
+      <section v-if="advice.swaps.length" class="mt-6" aria-labelledby="advice-swaps">
+        <h3 id="advice-swaps" class="font-serif text-xl">Almost there — smart swaps</h3>
+        <article v-for="swap in advice.swaps" :key="swap.recipeId" class="mt-3 min-w-0 break-words">
+          <p><NuxtLink :to="'/recipes/' + swap.recipeId" class="text-action font-semibold">{{ swap.title }}</NuxtLink> needs <strong>{{ swap.missing }}</strong><span v-if="swap.stillNeeded.length"> (and {{ swap.stillNeeded.join(', ') }})</span>.</p>
+          <ul class="mt-1 space-y-1 pl-5">
+            <li v-for="option in swap.options" :key="option.name" class="list-disc"><strong>{{ option.name }}</strong> — {{ option.ratio }} {{ option.adjustment }}</li>
+          </ul>
+        </article>
+      </section>
+
+      <section v-if="advice.useItUp.length" class="mt-6" aria-labelledby="advice-use">
+        <h3 id="advice-use" class="font-serif text-xl">Use it up before it turns</h3>
+        <ul class="mt-3 space-y-2">
+          <li v-for="entry in advice.useItUp" :key="entry.itemId" class="break-words"><UIcon name="i-lucide-leaf" class="mr-1 text-sage-ink" aria-hidden="true" />{{ entry.tip }}</li>
+        </ul>
+      </section>
+    </details>
 
     <p v-if="!visible.length" class="empty-state mt-6">Nothing here yet. Add an ingredient above.</p>
 
@@ -254,3 +308,6 @@ function expiryLabel(item: PantryItem) {
     </details>
   </section>
 </template>
+<style scoped>
+.keepsake-advice { border: 1px solid color-mix(in oklch, var(--color-terracotta) 30%, transparent); border-radius: .75rem; background: var(--color-paper-2); padding: 1.25rem 1.5rem; }
+</style>

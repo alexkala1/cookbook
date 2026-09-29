@@ -6,6 +6,9 @@ const optionalText = z.string().trim().max(10000).nullable().optional()
 const number = z.number().finite().nonnegative().max(1000000)
 const minutes = number.int().max(100000)
 const webUrl = z.string().max(2000).url().refine(value => /^https?:\/\//i.test(value), 'Use an HTTP or HTTPS URL').nullable().optional()
+// A photographed recipe card is kept inline as a small JPEG/PNG/WebP data URL (the importer downsizes it first).
+const cardPhoto = z.string().max(1_500_000).regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/)
+const imageSource = z.union([webUrl, cardPhoto])
 export const recipeTypes = ['food', 'drink', 'cocktail', 'baking', 'dessert'] as const
 export const difficulties = ['easy', 'intermediate', 'advanced', 'master'] as const
 export const saltTypes = ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_fine_sea_salt'] as const
@@ -35,7 +38,7 @@ export const recipeCreateSchema = z.object({
   servings: z.number().int().min(1).max(1000).optional(),
   prepTimeMinutes: minutes.optional(), cookTimeMinutes: minutes.optional(), totalTimeMinutes: minutes.optional(),
   difficulty: z.enum(difficulties).optional(), cuisine: shortText.nullable().optional(),
-  imageUrl: webUrl, heirloomNotes: optionalText, storageReheating: optionalText,
+  imageUrl: imageSource, heirloomNotes: optionalText, storageReheating: optionalText,
   isFavorite: z.boolean().optional(), rating: z.number().finite().min(1).max(5).nullable().optional(),
   ingredients: z.array(ingredient).max(500).optional(),
   steps: orderedSteps.optional(), equipment: z.array(equipment).max(100).optional()
