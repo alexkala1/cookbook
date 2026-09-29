@@ -7,7 +7,35 @@ const list = ref<MarketShoppingList | null>(null)
 const checked = ref<string[]>([])
 const mode = ref<ShoppingMode>('market')
 const destinations = ref<Record<string, MarketSection>>({})
-const routedList = computed(() => list.value ? routeShoppingList(list.value, destinations.value, mode.value) : null)
+// The cook's own walking order through the shops, remembered on this device.
+const orderKey = 'heirloom-market-destination-order'
+const sectionOrder = ref<MarketSection[]>([...marketSections])
+const orderNote = ref('')
+onMounted(() => {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(orderKey) ?? 'null')
+    if (Array.isArray(saved)) {
+      const known = saved.filter((section): section is MarketSection => marketSections.includes(section)).filter((section, i, all) => all.indexOf(section) === i)
+      sectionOrder.value = [...known, ...marketSections.filter(section => !known.includes(section))]
+    }
+  } catch { /* Storage blocked or unreadable: keep the default order. */ }
+})
+watch(sectionOrder, value => { try { localStorage.setItem(orderKey, JSON.stringify(value)) } catch { /* Order simply won't persist. */ } })
+const routedList = computed(() => list.value ? routeShoppingList(list.value, destinations.value, mode.value, sectionOrder.value) : null)
+
+// Swap with the neighbouring stop that is actually on screen, so every click visibly moves the section.
+async function moveSection(section: MarketSection, direction: -1 | 1) {
+  const shown = routedList.value?.destinations.map(destination => destination.section) ?? []
+  const neighbour = shown[shown.indexOf(section) + direction]
+  if (!neighbour) return
+  const next = [...sectionOrder.value], a = next.indexOf(section), b = next.indexOf(neighbour)
+  next[a] = neighbour; next[b] = section
+  sectionOrder.value = next
+  orderNote.value = `${sectionInfo[section].name} moved to stop ${shown.indexOf(section) + direction + 1} of ${shown.length}.`
+  await nextTick()
+  const edge = (direction === -1 ? routedList.value?.destinations[0]?.section : routedList.value?.destinations.at(-1)?.section) === section
+  document.getElementById(`move-${edge ? (direction === -1 ? 'down' : 'up') : direction === -1 ? 'up' : 'down'}-${section}`)?.focus()
+}
 const busy = ref(false)
 const error = ref('')
 const { state, label } = useActionFeedback(busy, error)
@@ -108,8 +136,16 @@ async function copy() {
         </ul>
       </section>
       <p v-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
-      <section v-for="destination in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
-        <h3 :id="'market-' + destination.section" class="text-2xl">{{ destination.name }}</h3>
+      <p v-if="mode === 'market' && routedList.destinations.length > 1" class="text-sm print:hidden">Order the stops to match how you walk the shops; we’ll remember it on this device.</p>
+      <p role="status" class="sr-only">{{ orderNote }}</p>
+      <section v-for="(destination, stop) in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 :id="'market-' + destination.section" class="text-2xl">{{ destination.name }}</h3>
+          <div v-if="mode === 'market' && routedList.destinations.length > 1" class="market-reorder flex gap-2 print:hidden" role="group" :aria-label="'Reorder ' + destination.name">
+            <button :id="'move-up-' + destination.section" type="button" class="button-secondary min-h-11" :disabled="stop === 0" :aria-label="'Move ' + destination.name + ' up'" @click="moveSection(destination.section, -1)"><UIcon name="i-lucide-arrow-up" aria-hidden="true" />Move up</button>
+            <button :id="'move-down-' + destination.section" type="button" class="button-secondary min-h-11" :disabled="stop === routedList.destinations.length - 1" :aria-label="'Move ' + destination.name + ' down'" @click="moveSection(destination.section, 1)"><UIcon name="i-lucide-arrow-down" aria-hidden="true" />Move down</button>
+          </div>
+        </div>
         <p class="mt-2 inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border px-3 py-1 text-sm font-semibold" :class="vendorBadge[destination.section].tone">
           <UIcon :name="vendorBadge[destination.section].icon" class="flex-none" aria-hidden="true" /><span lang="el">{{ destination.localizedName }}</span><span class="font-normal">· {{ vendorBadge[destination.section].category }}</span>
         </p>
@@ -149,6 +185,6 @@ async function copy() {
 @media print {
   html[data-print='market'] body *:not(:has(.market-shopping), .market-shopping, .market-shopping *) { display: none !important; }
   html[data-print='market'] .market-shopping { border: 0; padding: 0; }
-  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-destination, [role='alert']) { display: none !important; }
+  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-reorder, .market-destination, [role='alert']) { display: none !important; }
 }
 </style>

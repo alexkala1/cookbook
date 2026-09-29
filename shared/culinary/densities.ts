@@ -7,6 +7,8 @@ export const culinaryDensities = {
   butter: 227, oil: 215, honey: 340, rolledOats: 90, rice: 185
 } as const
 
+export const flourBasis = 'Approx. 120 g per spooned cup (spoon lightly into cup; dipped/scooped cups can weigh 140g+)'
+
 export type MetricIngredient = { name: string; amount: number; unit: string; gramsEquivalent?: number | null; notes?: string | null }
 export type MetricSuggestion = { amount: number; unit: 'g' | 'ml'; gramsEquivalent: number; basis: string; originalMeasure: string }
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -21,7 +23,7 @@ function density(name: string, saltType?: SaltType | null): { gramsPerCup: numbe
     return type ? { gramsPerCup: saltDensities[type] * 48, basis: `${saltDensities[type]} g per tsp of ${type.replaceAll('_', ' ')}` } : null
   }
   const entry = (gramsPerCup: number, extra = {}) => ({ gramsPerCup, basis: `Approx. ${gramsPerCup} g per 240 ml cup`, ...extra })
-  if (/^(all purpose flour|plain flour|bread flour|pastry flour|wheat flour|flour)$/.test(name)) return entry(culinaryDensities.flour)
+  if (/^(all purpose flour|plain flour|bread flour|pastry flour|wheat flour|flour)$/.test(name)) return { ...entry(culinaryDensities.flour), basis: flourBasis }
   if (/^(sugar|granulated sugar|white sugar|white granulated sugar)$/.test(name)) return entry(culinaryDensities.granulatedSugar)
   if (/^(packed )?((light|dark) )?brown sugar$/.test(name)) return { ...entry(culinaryDensities.brownSugar), basis: 'Approx. 220 g per packed cup' }
   if (/^(powdered sugar|icing sugar|confectioners.? sugar)$/.test(name)) return entry(culinaryDensities.powderedSugar)

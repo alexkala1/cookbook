@@ -4,7 +4,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { db } from '../db'
 import { pantryItems, recipes, ingredients } from '../db/schema'
-import { matchPantry, normalizePantryName, pantryQuantity, storageLocations } from '../../shared/culinary/pantry'
+import { ingredientKey, matchPantry, normalizePantryName, pantryQuantity, storageLocations } from '../../shared/culinary/pantry'
 import { validate } from './validation'
 
 export const pantryInput = z.object({
@@ -42,4 +42,33 @@ export function savePantry(body: unknown) {
 export function pantryMatches() {
   const allIngredients = db.select().from(ingredients).orderBy(ingredients.sortOrder).all()
   return matchPantry(db.select().from(recipes).all().map(recipe => ({ ...recipe, ingredients: allIngredients.filter(item => item.recipeId === recipe.id) })), listPantry())
+}
+
+const round = (value: number) => Number(value.toFixed(3))
+/** Use up a cooked recipe's ingredients, soonest-expiring stock first. Expired stock and incompatible units are left alone. */
+export function deductForRecipe(recipeId: string) {
+  if (!db.select({ id: recipes.id }).from(recipes).where(eq(recipes.id, recipeId)).get()) throw createError({ statusCode: 404, statusMessage: 'Recipe not found' })
+  const needed = db.select().from(ingredients).where(eq(ingredients.recipeId, recipeId)).orderBy(ingredients.sortOrder).all()
+  return db.transaction(tx => {
+    const now = Date.now()
+    const stock = listPantry().filter(item => item.quantity > 0 && (item.expiresAt === null || item.expiresAt > now))
+    const deducted: { name: string, amount: string }[] = []
+    for (const ingredient of needed) {
+      if (!(ingredient.amount > 0)) continue
+      let required = ingredient.amount, total = 0
+      for (const item of stock.filter(row => ingredientKey(row.name) === ingredientKey(ingredient.name))) {
+        if (required <= 1e-8) break
+        const available = pantryQuantity(item.quantity, item.unit, ingredient.unit)
+        if (available === null || available <= 0) continue
+        const used = Math.min(required, available)
+        required -= used; total += used
+        const remaining = item.quantity - (pantryQuantity(used, ingredient.unit, item.unit) ?? 0)
+        item.quantity = remaining <= 1e-8 ? 0 : remaining
+        if (item.quantity === 0) tx.delete(pantryItems).where(eq(pantryItems.id, item.id)).run()
+        else tx.update(pantryItems).set({ quantity: item.quantity, updatedAt: Date.now() }).where(eq(pantryItems.id, item.id)).run()
+      }
+      if (total > 0) deducted.push({ name: ingredient.name, amount: `${round(total)} ${ingredient.unit}`.trim() })
+    }
+    return { deducted }
+  })
 }

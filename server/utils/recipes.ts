@@ -25,6 +25,8 @@ export function listRecipes(query: { search?: string, type?: string, difficulty?
   if (query.cuisine) conditions.push(sql`greek_lower(${recipes.cuisine}) = greek_lower(${query.cuisine})`)
   if (query.isFavorite !== undefined) conditions.push(eq(recipes.isFavorite, query.isFavorite))
   return db.select().from(recipes).where(and(...conditions)).orderBy(desc(recipes.createdAt), asc(recipes.id)).all()
+    // Inline card photos would bloat the list; point at the image endpoint (versioned so its immutable cache can't go stale).
+    .map(recipe => recipe.imageUrl?.startsWith('data:') ? { ...recipe, imageUrl: `/api/recipes/${recipe.id}/image?v=${encodeURIComponent(recipe.updatedAt ?? '')}` } : recipe)
 }
 
 export function saveRecipe(input: Partial<RecipeInput>, id?: string, connection: Pick<typeof db, 'transaction'> = db) {

@@ -3,7 +3,7 @@ import type { KitchenProfile, RecipeDetail } from '../../../../shared/types/reci
 import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../../utils/units'
 import type { SaltType } from '../../../utils/units'
 import { evaluateCocktail } from '#shared/culinary/cocktails'
-import { suggestMetric, applyMetric } from '#shared/culinary/densities'
+import { suggestMetric, applyMetric, flourBasis } from '#shared/culinary/densities'
 import { OFFLINE_DRAFT_DESCRIPTION, stripPromotional } from '#shared/culinary/structured-recipe'
 
 const route = useRoute()
@@ -149,7 +149,7 @@ function saved(value: RecipeDetail) {
         <h2 id="metric-heading" class="text-2xl">Suggest Metric Conversions (g/ml)</h2>
         <p class="mt-3">Review these estimates for the saved recipe’s original servings. Cups use a rounded 240 ml kitchen measure. Packing and ingredient brands vary; original measures will be kept in ingredient notes.</p>
         <ul class="my-4 space-y-3">
-          <li v-for="item in metricSuggestions" :key="item.id" class="break-words"><strong>{{ item.originalAmount }} {{ item.originalUnit }} {{ item.name }} → ~{{ item.amount }} {{ item.unit }}</strong><p class="text-sm">{{ item.basis }}</p></li>
+          <li v-for="item in metricSuggestions" :key="item.id" class="break-words"><strong>{{ item.originalAmount }} {{ item.originalUnit }} {{ item.name }} → ~{{ item.amount }} {{ item.unit }}</strong><p class="text-sm">{{ item.basis }}</p><p v-if="item.basis === flourBasis" class="mt-1 text-sm italic text-muted"><UIcon name="i-lucide-wheat" class="mr-1 align-text-bottom" aria-hidden="true" />Baking tip: fluff the flour, spoon it lightly into the cup and level it off. Scooping straight from the bag packs in 20 g or more, which makes bakes dry and dense.</p></li>
         </ul>
         <div class="flex flex-wrap gap-3">
           <button class="button-primary" :disabled="busy" v-stable-action="metricState" :data-state="metricState" :aria-busy="metricBusy" @click="applyConversions">{{ metricLabel('Apply to recipe', 'Applying…') }}</button>

@@ -180,6 +180,16 @@ async function journey(browser, viewport) {
     serviceWorkers: 'block',
     permissions: ['clipboard-read', 'clipboard-write']
   })
+  // Model a browser that refuses the first wake-lock request (no user gesture yet) and grants later ones.
+  await context.addInitScript(() => {
+    let calls = 0
+    Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
+      if (++calls === 1) throw new DOMException('A user gesture is required', 'NotAllowedError')
+      const sentinel = new EventTarget()
+      Object.assign(sentinel, { released: false, type: 'screen', release: async () => { sentinel.released = true; sentinel.dispatchEvent(new Event('release')) } })
+      return sentinel
+    } } })
+  })
   const page = await context.newPage()
   const verifyClean = watch(page, viewport)
   const dialogs = []
@@ -281,6 +291,17 @@ async function journey(browser, viewport) {
       await page.waitForURL(/\/recipes\/[0-9a-f-]{36}$/)
       const image = await page.evaluate(async () => (await (await fetch('/api' + location.pathname)).json()).imageUrl)
       assert(typeof image === 'string' && image.startsWith('data:image/jpeg;base64,'), 'Saved recipe should keep the card photo as imageUrl')
+      const listed = await page.evaluate(async () => {
+        const response = await fetch('/api/recipes'), text = await response.text()
+        const row = JSON.parse(text).find(item => item.imageUrl?.startsWith('/api/recipes/'))
+        const photo = row && await fetch(row.imageUrl)
+        return { bytes: text.length, url: row?.imageUrl, type: photo?.headers.get('content-type'), cache: photo?.headers.get('cache-control'), size: photo ? (await photo.arrayBuffer()).byteLength : 0 }
+      })
+      assert(listed.url && listed.type === 'image/jpeg' && listed.size > 0 && /immutable/.test(listed.cache), 'Recipe list should point at a cacheable image endpoint that serves the photo')
+      assert(!listed.bytes || listed.bytes < 100000, 'Recipe list payload should stay small, got ' + listed.bytes)
+      await go('/recipes')
+      const rendered = await page.locator('img[src*="/image?v="]').first().evaluate(img => img.complete ? img.naturalWidth : new Promise(resolve => { img.onload = () => resolve(img.naturalWidth); img.onerror = () => resolve(0) }))
+      assert(rendered > 0, 'Recipe card should render the photo from the image endpoint')
     })
     await step(page, viewport, 'Flow 2 · import a recipe from memory', async () => {
       await go('/recipes/import')
@@ -321,6 +342,18 @@ async function journey(browser, viewport) {
       const bar = await page.locator('.step-bar').boundingBox()
       assert(bar && Math.abs(bar.y + bar.height - viewport.height) <= 1, 'Step bar should be fixed to the bottom of the viewport')
       await shot(page, viewport, 'kitchen-step-1')
+    })
+    await step(page, viewport, 'Flow 3 · wake lock retried on the first tap', async () => {
+      await page.getByRole('button', { name: 'Keep screen awake' }).waitFor()
+      await page.locator('article').first().click()
+      await page.getByRole('button', { name: 'Allow screen sleep' }).waitFor()
+      await page.getByRole('button', { name: 'Allow screen sleep' }).click()
+      await page.getByRole('button', { name: 'Keep screen awake' }).waitFor()
+      await page.locator('article').first().click()
+      await page.waitForTimeout(300)
+      assert(await page.getByRole('button', { name: 'Keep screen awake' }).count() === 1, 'Choosing “Allow screen sleep” should not be overridden by later taps')
+      await page.getByRole('button', { name: 'Keep screen awake' }).click()
+      await page.getByRole('button', { name: 'Allow screen sleep' }).waitFor()
     })
     await step(page, viewport, 'Flow 3 · swipe between steps', async () => {
       const counter = page.locator('.step-bar .num')
@@ -365,6 +398,19 @@ async function journey(browser, viewport) {
       await page.waitForURL(url => url.pathname === arniUrl)
       assert(dialogs.some(message => message.includes('Timers are still running')), 'Leaving with a running timer should ask for confirmation')
     })
+    await step(page, viewport, 'Flow 3 · finish cooking and pantry prompt', async () => {
+      await tap(page.getByRole('link', { name: 'Start cooking' }))
+      await page.waitForURL('**/cook')
+      for (let guard = 0; guard < 40 && await page.locator('button.step-next', { hasText: 'Done' }).count() === 0; guard++) await tap(page.locator('button.step-next').first())
+      await tap(page.getByRole('button', { name: 'Done' }))
+      const finish = page.getByRole('dialog', { name: 'Finished cooking?' })
+      await finish.getByText('Deduct matching ingredients from your pantry?').waitFor()
+      await shot(page, viewport, 'kitchen-finish-prompt', finish)
+      await tap(finish.getByRole('button', { name: 'Deduct from pantry' }))
+      await finish.getByRole('status').waitFor()
+      await tap(finish.getByRole('button', { name: 'Back to recipe' }))
+      await page.waitForURL(url => url.pathname === arniUrl)
+    })
 
     // Flow 4 — Dinner Conductor → backward schedule → conflicts → market list
     await step(page, viewport, 'Flow 4 · build a three-course schedule', async () => {
@@ -398,6 +444,12 @@ async function journey(browser, viewport) {
       assert((await conflicts.count()) + (await clear.count()) === 1, 'Schedule should report either conflicts or an all-clear')
       await shot(page, viewport, 'conductor-schedule', page.getByRole('heading', { name: 'The timeline' }))
       if (await conflicts.count()) await shot(page, viewport, 'conductor-conflicts', conflicts)
+      await tap(briefing.getByRole('button', { name: '+10 min' }))
+      const later = page.getByRole('region', { name: 'Dinner at 20:10' })
+      await later.waitFor()
+      assert((await later.innerText()).includes('Guests sit down at 20:10.'), 'Adding 10 minutes should recalibrate the briefing')
+      await tap(later.getByRole('button', { name: '−10 min' }))
+      await page.getByRole('region', { name: 'Dinner at 20:00' }).waitFor()
       const firstStep = page.getByRole('checkbox', { name: /^Done: / }).first()
       await firstStep.check()
       await page.getByText(/^1 of \d+ steps done$/).waitFor()
@@ -407,6 +459,15 @@ async function journey(browser, viewport) {
       await tap(market.getByRole('button', { name: 'Generate Market Shopping List' }))
       for (const destination of ['Laiki market', 'Butcher', 'Supermarket']) await market.getByRole('heading', { name: destination, exact: true }).waitFor()
       await shot(page, viewport, 'market-route', market)
+      const stops = () => market.locator('h3[id^="market-"]').allInnerTexts()
+      const before = await stops()
+      await tap(market.getByRole('button', { name: `Move ${before[0]} down` }))
+      const after = await stops()
+      assert(after[0] === before[1] && after[1] === before[0], 'Move down should swap the first two shops')
+      const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('heirloom-market-destination-order')))
+      assert(Array.isArray(stored) && stored.length === 4, 'Custom shop order should persist in localStorage')
+      await tap(market.getByRole('button', { name: `Move ${before[0]} up` }))
+      assert((await stops()).join() === before.join(), 'Move up should restore the original order')
       const destination = market.getByRole('combobox', { name: /^Destination for / }).first()
       const itemName = (await destination.getAttribute('aria-label')).replace('Destination for ', '')
       await destination.selectOption('supermarket')

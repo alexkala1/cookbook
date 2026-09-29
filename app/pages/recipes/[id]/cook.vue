@@ -112,6 +112,7 @@ onBeforeUnmount(() => {
 })
 
 function navigate(direction: 'next' | 'previous') {
+  wakeOnGesture()
   if (!rescueOpen.value) {
     index.value = Math.max(0, Math.min(steps.value.length - 1, index.value + (direction === 'next' ? 1 : -1)))
     void nextTick(() => stepHeading.value?.focus({ preventScroll: true }))
@@ -156,6 +157,34 @@ async function keepAwake() {
     wakeBusy.value = false
   }
 }
+
+// Browsers grant a screen wake lock most reliably from a user gesture, so retry on the first tap or step change.
+// A cook who chose "Allow screen sleep" is never overridden.
+let wakeOptedOut = false
+function wakeOnGesture() {
+  if (isSupported.value && !isActive.value && !wakeOptedOut) void keepAwake()
+}
+function toggleWake() {
+  if (isActive.value) { wakeOptedOut = true; void release().catch(() => {}) } else { wakeOptedOut = false; void keepAwake() }
+}
+
+// Offer to use up the pantry stock this recipe called for once the cook says they're done.
+const finishDialog = ref<HTMLDialogElement>()
+const finishState = ref<'ask' | 'busy' | 'done'>('ask')
+const finishError = ref('')
+const deducted = ref<{ name: string, amount: string }[]>([])
+function finishCooking() {
+  finishState.value = 'ask'; finishError.value = ''; deducted.value = []
+  finishDialog.value?.showModal()
+}
+async function deductFromPantry() {
+  finishState.value = 'busy'; finishError.value = ''
+  try {
+    deducted.value = (await $fetch<{ deducted: { name: string, amount: string }[] }>('/api/pantry/deduct', { method: 'POST', body: { recipeId: id } })).deducted
+    finishState.value = 'done'
+  } catch { finishError.value = 'We couldn’t update your pantry. Try again, or skip for now.'; finishState.value = 'ask' }
+}
+function leaveKitchen() { finishDialog.value?.close(); void navigateTo('/recipes/' + id) }
 
 const fromOven = ref<Oven>('static_conventional')
 const toOven = ref<Oven>(kitchen.value?.ovenType || 'static_conventional')
@@ -271,12 +300,14 @@ function opened(value: boolean) {
 onMounted(() => {
   mounted.value = true
   document.addEventListener('keydown', keyboard)
+  document.addEventListener('pointerdown', wakeOnGesture, { passive: true })
   if (isSupported.value) void keepAwake()
 })
 
 onBeforeUnmount(() => {
   disposed = true
   document.removeEventListener('keydown', keyboard)
+  document.removeEventListener('pointerdown', wakeOnGesture)
   void release().catch(() => {})
 })
 
@@ -305,7 +336,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           v-if="mounted && isSupported"
           class="kitchen-button"
           :disabled="wakeBusy"
-          @click="isActive ? release() : keepAwake()"
+          @click="toggleWake"
         >{{ isActive ? 'Allow screen sleep' : 'Keep screen awake' }}</button>
         <p v-if="wakeError" role="status">{{ wakeError }}</p>
       </div>
@@ -366,8 +397,26 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <button class="kitchen-button" :disabled="index === 0" @click="navigate('previous')"><UIcon name="i-lucide-chevron-left" class="size-7" aria-hidden="true" />Prev</button>
           <span class="num text-base">{{ index + 1 }} / {{ steps.length }}</span>
           <button v-if="index < steps.length - 1" class="kitchen-button step-next" @click="navigate('next')">Next<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
-          <NuxtLink v-else :to="'/recipes/' + id" class="kitchen-button step-next">Done</NuxtLink>
+          <button v-else class="kitchen-button step-next" @click="finishCooking">Done</button>
         </nav>
+        <dialog ref="finishDialog" class="m-auto w-[min(92vw,32rem)] rounded-xl border border-k-accent bg-k-paper p-6 text-k-ink backdrop:bg-black/50" aria-labelledby="finish-title">
+          <h2 id="finish-title" class="text-3xl">Finished cooking?</h2>
+          <template v-if="finishState !== 'done'">
+            <p class="mt-3 text-xl">Deduct matching ingredients from your pantry?</p>
+            <p v-if="finishError" role="alert" class="mt-3 text-lg text-k-accent">{{ finishError }}</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+              <button class="kitchen-button" :disabled="finishState === 'busy'" :aria-busy="finishState === 'busy'" autofocus @click="deductFromPantry">{{ finishState === 'busy' ? 'Updating pantry…' : 'Deduct from pantry' }}</button>
+              <button class="kitchen-button" :disabled="finishState === 'busy'" @click="leaveKitchen">Skip</button>
+            </div>
+          </template>
+          <template v-else>
+            <div role="status">
+              <p class="mt-3 text-xl">{{ deducted.length ? 'Pantry updated. Used:' : 'Nothing in your pantry matched this recipe, so nothing changed.' }}</p>
+              <ul v-if="deducted.length" class="mt-3 list-disc space-y-1 pl-6 text-lg"><li v-for="item in deducted" :key="item.name">{{ item.name }} — {{ item.amount }}</li></ul>
+            </div>
+            <button class="kitchen-button mt-6" autofocus @click="leaveKitchen">Back to recipe</button>
+          </template>
+        </dialog>
         <p v-if="index === steps.length - 1" class="mt-4 text-xl">Final step. Check your active timers before
           leaving.</p>
         <section class="kitchen-panel">

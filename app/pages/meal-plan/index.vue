@@ -164,6 +164,15 @@ const dayNote = (offset: number) =>
           ? ' · next day'
           : ''
 
+// Shift dinner time (wrapping past midnight) and recalibrate every step offset and arrival time.
+async function adjustTarget(deltaMinutes: number) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(target.value)
+  if (!match || busy.value) return
+  const total = ((Number(match[1]) * 60 + Number(match[2]) + deltaMinutes) % 1440 + 1440) % 1440
+  target.value = String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0')
+  await conduct()
+}
+
 async function conduct() {
   if (!chosen.value.length) {
     error.value = 'Choose at least one recipe.'
@@ -378,6 +387,11 @@ async function conduct() {
       <section aria-labelledby="briefing-title" class="briefing-card">
         <p class="meta-label font-semibold">Chef’s briefing</p>
         <h3 id="briefing-title" class="mt-1 font-serif text-3xl">Dinner at <span class="num">{{ plan.serves.slice().sort((a, b) => a.offset - b.offset)[0]?.clock ?? target }}</span></h3>
+        <div class="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Adjust dinner time">
+          <span class="mr-1 text-sm text-muted">Running late or early?</span>
+          <button v-for="delta in [10, 15, -10]" :key="delta" type="button" class="filter-pill min-h-11" :disabled="busy" @click="adjustTarget(delta)">{{ delta > 0 ? '+' : '−' }}{{ Math.abs(delta) }} min</button>
+        </div>
+        <p v-if="error" role="alert" class="notice mt-3">{{ error }}</p>
         <p v-for="(line, i) in briefing" :key="i" class="mt-3 max-w-3xl text-lg leading-relaxed">{{ line }}</p>
         <h4 class="mt-6 text-sm font-semibold uppercase tracking-wide text-muted">Key times</h4>
         <ul class="mt-2 divide-y divide-espresso/10" aria-label="Key times">
