@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KitchenProfile, RecipeDetail } from '../../../../shared/types/recipe'
-import { convertSalt, convertUnit, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../../utils/units'
+import { convertSalt, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../../utils/units'
 import type { SaltType } from '../../../utils/units'
 import { evaluateCocktail } from '#shared/culinary/cocktails'
 import { suggestMetric, applyMetric, flourBasis } from '#shared/culinary/densities'
@@ -11,6 +11,7 @@ const id = String(route.params.id)
 const { data: recipe, error, refresh } = await useFetch<RecipeDetail>('/api/recipes/' + id)
 const { data: kitchen } = await useFetch<KitchenProfile>('/api/settings/kitchen')
 useSeoMeta({ title: () => recipe.value ? recipe.value.title + ' — Heirloom' : 'Recipe — Heirloom' })
+import { inSystem } from '../../../utils/display-units'
 const servings = ref(recipe.value?.servings ?? 4)
 const imperial = ref(false)
 const fromSalt = ref<SaltType | null>(recipe.value?.originalSaltType ?? null)
@@ -56,27 +57,23 @@ async function applyConversions() {
 }
 const thermodynamics = computed(() => recipe.value && ['drink', 'cocktail'].includes(recipe.value.recipeType) ? evaluateCocktail(recipe.value.ingredients, recipe.value.title + ' ' + recipe.value.steps.map(step => step.instruction).join(' ')) : null)
 const safeServings = computed(() => Number.isFinite(servings.value) && servings.value > 0 && servings.value <= 1000 ? servings.value : recipe.value?.servings ?? 4)
+const servingPresets = computed(() => [0.5, 1, 2, 3].map(factor => ({ label: factor === 0.5 ? '½×' : factor + '×', value: Number(((recipe.value?.servings ?? 4) * factor).toFixed(2)) })))
+function nudgeServings(delta: number) { servings.value = Math.min(1000, Math.max(1, Math.round(safeServings.value) + delta)) }
+const scaledQuery = computed(() => safeServings.value !== recipe.value?.servings ? { servings: safeServings.value } : {})
 const displayIngredients = computed(() => {
   if (!recipe.value) return []
   return scaleIngredients(recipe.value.ingredients, safeServings.value, recipe.value.servings).map(row => {
     let amount = row.amount
-    let unit = row.unit.trim().toLowerCase()
+    const from = row.unit.trim().toLowerCase()
     let note = ''
     if (isPlainSalt(row.name) && fromSalt.value && fromSalt.value !== toSalt.value) {
-      try { amount = convertSalt(amount, fromSalt.value, toSalt.value, unit) }
+      try { amount = convertSalt(amount, fromSalt.value, toSalt.value, from) }
       catch { note = 'Salt substitution unavailable for this unit.' }
     }
-    const targets: Record<string, string> = imperial.value
-      ? { g: 'oz', kg: 'lb', ml: 'fl oz', l: 'fl oz' }
-      : { oz: 'g', lb: 'g', 'fl oz': 'ml', cup: 'ml' }
-    const target = targets[unit]
-    if (target) {
-      amount = convertUnit(amount, unit, target)
-      unit = target
-    }
+    const shown = inSystem(amount, from, imperial.value)
     const inferred = row.notes?.startsWith(INFERRED_TAG) ?? false
     const inferredNote = inferred ? row.notes!.slice(INFERRED_TAG.length).trim() : ''
-    return { ...row, amount: Number(amount.toPrecision(4)), unit, conversionNote: note, inferred, notes: inferred ? null : row.notes, inferredNote }
+    return { ...row, amount: Number(shown.amount.toPrecision(4)), unit: shown.unit, conversionNote: note, inferred, notes: inferred ? null : row.notes, inferredNote }
   })
 })
 // AI-inferred quantities get a quiet chip per row; their (often repeated) explanations collapse into one footnote list.
@@ -128,12 +125,13 @@ function saved(value: RecipeDetail) {
         <p class="mt-6">{{ recipe.totalTimeMinutes }} min · {{ recipe.difficulty }} · {{ recipe.rating == null ? 'Not rated yet' : recipe.rating + ' / 5' }}</p>
         <div v-if="thermodynamics" class="notice mt-6"><p>{{ thermodynamics.technique }} · Dilution {{ thermodynamics.dilutionPercent.join('–') }}% · {{ thermodynamics.glassware }} · Estimated cooling {{ thermodynamics.temperatureDropC.join('–') }} °C</p><p class="mt-2 text-sm">{{ thermodynamics.note }}</p></div>
         <div class="mt-8 flex flex-wrap items-center gap-3">
-          <NuxtLink :to="'/recipes/' + id + '/cook'" class="button-primary start-cooking"><UIcon name="i-lucide-chef-hat" class="size-5" aria-hidden="true" />Start cooking</NuxtLink>
+          <NuxtLink :to="{ path: '/recipes/' + id + '/cook', query: scaledQuery }" class="button-primary start-cooking"><UIcon name="i-lucide-chef-hat" class="size-5" aria-hidden="true" />Start cooking</NuxtLink>
+          <NuxtLink :to="{ path: '/market', query: { recipeId: id, servings: Math.max(1, Math.round(safeServings)) } }" class="button-secondary"><UIcon name="i-lucide-shopping-basket" class="size-5" aria-hidden="true" />Shop ingredients</NuxtLink>
           <button class="button-secondary" :aria-pressed="recipe.isFavorite" :disabled="busy" :aria-busy="busy" v-stable-action="busy ? 'loading' : actionError ? 'error' : undefined" :data-state="busy ? 'loading' : actionError ? 'error' : undefined" @click="toggleFavorite"><UIcon name="i-lucide-heart" :class="{ 'fill-current': recipe.isFavorite }" aria-hidden="true" />{{ recipe.isFavorite ? 'Favorited' : 'Favorite' }}</button>
           <details ref="moreMenu" class="more-menu" @keydown.esc="closeMore(true)">
             <summary class="button-secondary">More<UIcon name="i-lucide-ellipsis" aria-hidden="true" /></summary>
             <div class="more-menu__panel">
-              <NuxtLink :to="'/recipes/' + id + '/print'" class="more-menu__item"><UIcon name="i-lucide-printer" aria-hidden="true" />Print heirloom card</NuxtLink>
+              <NuxtLink :to="{ path: '/recipes/' + id + '/print', query: { ...scaledQuery, ...(imperial ? { system: 'us' } : {}) } }" class="more-menu__item"><UIcon name="i-lucide-printer" aria-hidden="true" />Print heirloom card</NuxtLink>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); editing = true"><UIcon name="i-lucide-pencil" aria-hidden="true" />Edit recipe</button>
               <button type="button" class="more-menu__item more-menu__item--danger" :disabled="busy" @click="closeMore(); deleting = true"><UIcon name="i-lucide-trash" aria-hidden="true" />Delete recipe</button>
             </div>
@@ -169,8 +167,19 @@ function saved(value: RecipeDetail) {
         <aside class="min-w-0">
           <h2>Ingredients</h2>
           <div class="row-panel mt-6 space-y-4">
-            <label class="block">Servings<input v-model.number="servings" type="number" min="1" max="1000" class="field mt-2"></label>
+            <div>
+              <label for="servings-input" class="block">Servings</label>
+              <div class="mt-2 flex items-center gap-2">
+                <button type="button" class="filter-pill min-h-11 min-w-11" aria-label="Fewer servings" :disabled="safeServings <= 1" @click="nudgeServings(-1)">−</button>
+                <input id="servings-input" v-model.number="servings" type="number" min="0.5" max="1000" step="any" class="field min-w-0 flex-1 text-center" :aria-label="`${safeServings} servings`">
+                <button type="button" class="filter-pill min-h-11 min-w-11" aria-label="More servings" :disabled="safeServings >= 1000" @click="nudgeServings(1)">+</button>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-2" role="group" aria-label="Scale recipe">
+                <button v-for="preset in servingPresets" :key="preset.label" type="button" class="filter-pill min-h-11" :aria-pressed="safeServings === preset.value" @click="servings = preset.value">{{ preset.label }}</button>
+              </div>
+            </div>
             <p v-if="safeServings !== servings" role="status" class="text-sm">Enter 1–1000 servings. Showing the original quantities.</p>
+            <p v-else-if="recipe.servings !== safeServings" role="status" class="text-sm">Scaled from {{ recipe.servings }} servings. Kitchen Mode, the shopping list and the printed card will use {{ safeServings }}.</p>
             <details class="adjust-disclosure">
               <summary class="text-action">Adjust units &amp; salt<span v-if="adjustSummary" class="adjust-summary">· {{ adjustSummary }}</span></summary>
               <div class="mt-4 space-y-4">

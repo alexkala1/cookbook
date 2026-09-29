@@ -16,6 +16,7 @@ const route = useRoute()
           class="top-link"
           :aria-current="isTabActive(route.path, tab.to) ? 'page' : undefined"
           >{{ tab.label }}</NuxtLink>
+        <NuxtLink to="/market" class="top-link" :aria-current="isTabActive(route.path, '/market') ? 'page' : undefined">Market</NuxtLink>
       </nav>
     </div>
   </header>

@@ -46,8 +46,9 @@ export function pantryMatches() {
 
 const round = (value: number) => Number(value.toFixed(3))
 /** Use up a cooked recipe's ingredients, soonest-expiring stock first. Expired stock and incompatible units are left alone. */
-export function deductForRecipe(recipeId: string) {
-  if (!db.select({ id: recipes.id }).from(recipes).where(eq(recipes.id, recipeId)).get()) throw createError({ statusCode: 404, statusMessage: 'Recipe not found' })
+export function deductForRecipe(recipeId: string, servings?: number) {
+  const recipe = db.select({ servings: recipes.servings }).from(recipes).where(eq(recipes.id, recipeId)).get()
+  if (!recipe) throw createError({ statusCode: 404, statusMessage: 'Recipe not found' })
   const needed = db.select().from(ingredients).where(eq(ingredients.recipeId, recipeId)).orderBy(ingredients.sortOrder).all()
   return db.transaction(tx => {
     const now = Date.now()
@@ -55,7 +56,8 @@ export function deductForRecipe(recipeId: string) {
     const deducted: { name: string, amount: string }[] = []
     for (const ingredient of needed) {
       if (!(ingredient.amount > 0)) continue
-      let required = ingredient.amount, total = 0
+      // Scale to the servings actually cooked, not the recipe's saved yield.
+      let required = ingredient.amount * (servings ? servings / recipe.servings : 1), total = 0
       for (const item of stock.filter(row => ingredientKey(row.name) === ingredientKey(ingredient.name))) {
         if (required <= 1e-8) break
         const available = pantryQuantity(item.quantity, item.unit, ingredient.unit)

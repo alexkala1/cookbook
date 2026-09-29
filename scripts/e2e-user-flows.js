@@ -135,7 +135,7 @@ async function assertLayout(page, viewport, where) {
   assert(layout.small.length === 0, `${where}: touch targets under 44px: ${layout.small.join(', ')}`)
   if (!layout.kitchen) {
     if (viewport.width < 768) assert(layout.tabs === 5, `${where}: mobile tab bar should show 5 tabs, saw ${layout.tabs}`)
-    else assert(layout.topNav === 5 && layout.tabs === 0, `${where}: desktop should show 5 top-nav links and no tab bar`)
+    else assert(layout.topNav === 6 && layout.tabs === 0, `${where}: desktop should show 5 tabs plus Market in the top nav and no tab bar, saw ${layout.topNav}`)
   }
 }
 
@@ -336,8 +336,29 @@ async function journey(browser, viewport) {
 
     // Flow 3 — Kitchen Mode: swipe, timers, heat panel, rescue, exit guard
     await step(page, viewport, 'Flow 3 · enter Kitchen Mode', async () => {
+      // Scale on the recipe page; the choice follows the cook into Kitchen Mode.
+      const servingsInput = page.locator('#servings-input')
+      const original = Number(await servingsInput.inputValue())
+      const firstQuantity = async () => Number((await page.locator('.ingredient-row').first().innerText()).match(/[\d.]+/)[0])
+      const before = await firstQuantity()
+      await tap(page.getByRole('group', { name: 'Scale recipe' }).getByRole('button', { name: '2×' }))
+      assert(Number(await servingsInput.inputValue()) === original * 2, 'The 2× preset should double the servings')
+      assert(Math.abs(await firstQuantity() - before * 2) < 0.01 * before * 2, 'The first ingredient should double')
+      await tap(page.getByRole('button', { name: 'More servings' }))
+      assert(Number(await servingsInput.inputValue()) === original * 2 + 1, 'The stepper should add one serving')
+      await tap(page.getByRole('group', { name: 'Scale recipe' }).getByRole('button', { name: '2×' }))
+      const scaledLink = await page.getByRole('link', { name: 'Start cooking' }).getAttribute('href')
+      assert(scaledLink.includes(`servings=${original * 2}`), 'Start cooking should carry the servings, got ' + scaledLink)
+      const shopLink = await page.getByRole('link', { name: 'Shop ingredients' }).getAttribute('href')
+      assert(shopLink.startsWith('/market?recipeId=') && shopLink.includes(`servings=${original * 2}`), 'Shop ingredients should open the market page for this recipe, got ' + shopLink)
       await tap(page.getByRole('link', { name: 'Start cooking' }))
-      await page.waitForURL('**/cook')
+      await page.waitForURL('**/cook?servings=*')
+      await page.getByText(`Scaled from the recipe’s ${original} servings.`).first().waitFor()
+      assert(Math.abs(Number((await page.getByRole('checkbox', { name: /^Prepped: / }).first().locator('xpath=ancestor::label').innerText()).match(/[\d.]+/)[0]) - before * 2) < 0.01 * before * 2, 'Prep checklist should show the scaled quantity')
+      await tap(page.getByRole('group', { name: 'Servings' }).getByRole('button', { name: '1×' }))
+      await page.getByText(/Scaled from the recipe/).waitFor({ state: 'detached' })
+      await tap(page.getByRole('group', { name: 'Servings' }).getByRole('button', { name: '2×' }))
+      await page.waitForURL('**/cook?servings=*')
       await page.getByRole('heading', { name: 'Prep & Mise en Place' }).waitFor()
       assert(await page.getByText(/Oven preheating:/).count() === 1, 'Prep should remind the cook to preheat the oven')
       const prepBoxes = page.getByRole('checkbox', { name: /^Prepped: / })
@@ -405,6 +426,23 @@ async function journey(browser, viewport) {
       await tap(page.getByRole('link', { name: 'Exit kitchen' }))
       await page.waitForURL(url => url.pathname === arniUrl)
       assert(dialogs.some(message => message.includes('Timers are still running')), 'Leaving with a running timer should ask for confirmation')
+    })
+    await step(page, viewport, 'Flow 3 · scaled print card and single-recipe market list', async () => {
+      await go(arniUrl)
+      const original = Number(await page.locator('#servings-input').inputValue())
+      await go(`${arniUrl}/print?servings=${original * 2}&system=us`)
+      await page.getByText(`Serves ${original * 2} (scaled from original ${original})`).waitFor()
+      assert(await page.locator('.card-ingredients strong', { hasText: /\b(oz|lb|fl oz)\b/ }).count() >= 1, 'US print card should show US units')
+      await shot(page, viewport, 'print-scaled-card', page.locator('.card-heading'))
+      await go(arniUrl)
+      await tap(page.getByRole('link', { name: 'Shop ingredients' }))
+      await page.waitForURL('**/market?recipeId=*')
+      const market = page.getByRole('region', { name: 'Market shopping list' })
+      await market.getByRole('checkbox', { name: /^Bought: / }).first().waitFor()
+      assert(await market.locator('h3[id^="market-"]').count() >= 1, 'The market page should group items by shop')
+      assert(await page.getByLabel('Recipe').inputValue() !== '', 'The recipe should be preselected')
+      await shot(page, viewport, 'market-single-recipe', market)
+      await go(arniUrl)
     })
     await step(page, viewport, 'Flow 3 · finish cooking and pantry prompt', async () => {
       await tap(page.getByRole('link', { name: 'Start cooking' }))

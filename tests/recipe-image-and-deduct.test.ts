@@ -94,3 +94,14 @@ it('routes destinations in the cook’s custom shop order', () => {
   expect(routeShoppingList(list).destinations.map(d => d.section)).toEqual(['laiki', 'chasapis', 'supermarket'])
   expect(routeShoppingList(list, {}, 'market', ['supermarket', 'chasapis', 'fournos', 'laiki']).destinations.map(d => d.section)).toEqual(['supermarket', 'chasapis', 'laiki'])
 })
+
+it('deducts in proportion to the servings actually cooked', async () => {
+  const now = Date.now()
+  db.insert(recipes).values({ id: 's', title: 'Soup', description: '', servings: 4 }).run()
+  db.insert(ingredients).values({ id: 'sf', recipeId: 's', name: 'Flour', amount: 200, unit: 'g' }).run()
+  db.insert(pantryItems).values({ id: 'pf', name: 'Flour', normalizedName: 'flour', quantity: 1, unit: 'kg', storageLocation: 'pantry', expiresAt: null, createdAt: now, updatedAt: now }).run()
+  expect((await (await post('/api/pantry/deduct', { recipeId: 's', servings: 8 })).json()).deducted).toEqual([{ name: 'Flour', amount: '400 g' }])
+  expect((await (await post('/api/pantry/deduct', { recipeId: 's', servings: 2 })).json()).deducted).toEqual([{ name: 'Flour', amount: '100 g' }])
+  expect(db.select().from(pantryItems).all()[0]!.quantity).toBeCloseTo(0.5)
+  for (const servings of [0, -1, 1001, 'many']) expect((await post('/api/pantry/deduct', { recipeId: 's', servings })).status).toBe(400)
+})

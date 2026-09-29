@@ -2,7 +2,7 @@
 import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
 
-const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number }>()
+const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean }>()
 const list = ref<MarketShoppingList | null>(null)
 const checked = ref<string[]>([])
 const mode = ref<ShoppingMode>('market')
@@ -12,6 +12,7 @@ const orderKey = 'heirloom-market-destination-order'
 const sectionOrder = ref<MarketSection[]>([...marketSections])
 const orderNote = ref('')
 onMounted(() => {
+  if (props.autoGenerate) void generate()
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(orderKey) ?? 'null')
     if (Array.isArray(saved)) {
@@ -108,7 +109,7 @@ async function copy() {
       <h2 id="market-heading">Market shopping list</h2>
       <button type="button" class="button-primary market-action" :disabled="busy || copying" v-stable-action="state" :data-state="state" :aria-busy="busy" @click="generate">{{ label('Generate Market Shopping List', 'Generating…') }}</button>
     </div>
-    <p class="mt-4">Grouped for your chosen courses{{ servings ? ' and ' + servings + ' guests' : ', using each recipe’s servings' }}. Check your pantry before buying; stock is not subtracted.</p>
+    <p class="mt-4">Grouped for your chosen courses{{ servings ? ' and ' + servings + ' ' + (servingsNoun ?? 'guests') : ', using each recipe’s servings' }}. Check your pantry before buying; stock is not subtracted.</p>
     <p v-if="error" role="alert" class="mt-4 rounded-lg border border-error bg-paper p-4 text-error">{{ error }}</p>
     <div v-if="list && routedList" class="mt-6 space-y-6">
       <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2">

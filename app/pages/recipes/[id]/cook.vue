@@ -3,6 +3,8 @@ import { useEventListener, useWakeLock, useSwipe } from '@vueuse/core'
 import type { KitchenProfile, RecipeDetail } from '#shared/types/recipe'
 import { burnerAdvice, convertOven, ovenTemperature, type Oven } from '#shared/culinary/heat'
 import { parseDurations, timerLabel } from '../../../utils/timers'
+import { parseServings } from '../../../utils/display-units'
+import { scaleIngredients } from '../../../utils/units'
 import type { CookingTimer } from '../../../utils/timers'
 import { swipeIntent } from '../../../utils/swipe'
 import { isPlaceholderIngredients, parseStructuredRecipe, splitNotesUpdate, stepCountPhrase } from '#shared/culinary/structured-recipe'
@@ -15,6 +17,21 @@ const [{ data: recipe, error, refresh }, { data: kitchen }] = await Promise.all(
   useFetch<KitchenProfile>('/api/settings/kitchen')
 ])
 const index = ref(0)
+// Servings arrive from the recipe page (?servings=) and can be tweaked in prep; everything below scales from the saved recipe.
+const router = useRouter()
+const servings = ref<number>(parseServings(route.query.servings) ?? recipe.value?.servings ?? 4)
+const servingsScaled = computed(() => servings.value !== recipe.value?.servings)
+const servingPresets = computed(() => [0.5, 1, 2, 3].map(factor => ({ label: factor === 0.5 ? '½×' : factor + '×', value: Number(((recipe.value?.servings ?? 4) * factor).toFixed(2)) })))
+function setServings(value: number) {
+  servings.value = Math.min(1000, Math.max(0.5, value))
+  void router.replace({ query: { ...route.query, servings: servings.value === recipe.value?.servings ? undefined : servings.value } })
+}
+const scaledIngredients = computed(() => {
+  const current = recipe.value
+  if (!current) return []
+  const rows = servingsScaled.value ? scaleIngredients(current.ingredients, servings.value, current.servings) : current.ingredients
+  return rows.map(row => ({ ...row, amount: Number(row.amount.toPrecision(4)) }))
+})
 const rescueOpen = ref(false)
 const mounted = ref(false)
 const steps = computed(() => [...(recipe.value?.steps || [])].sort((a, b) => a.stepNumber - b.stepNumber))
@@ -184,7 +201,7 @@ function finishCooking() {
 async function deductFromPantry() {
   finishState.value = 'busy'; finishError.value = ''
   try {
-    deducted.value = (await $fetch<{ deducted: { name: string, amount: string }[] }>('/api/pantry/deduct', { method: 'POST', body: { recipeId: id } })).deducted
+    deducted.value = (await $fetch<{ deducted: { name: string, amount: string }[] }>('/api/pantry/deduct', { method: 'POST', body: { recipeId: id, ...(servingsScaled.value ? { servings: servings.value } : {}) } })).deducted
     finishState.value = 'done'
   } catch { finishError.value = 'We couldn’t update your pantry. Try again, or skip for now.'; finishState.value = 'ask' }
 }
@@ -219,7 +236,7 @@ const preheat = computed(() => {
   }
   return null
 })
-const prepIngredients = computed(() => (recipe.value?.ingredients ?? []).map(row => ({
+const prepIngredients = computed(() => scaledIngredients.value.map(row => ({
   id: row.id, name: row.name, notes: row.notes,
   measure: row.amount > 0 ? [Number(row.amount.toFixed(2)), row.unit].filter(Boolean).join(' ') : ''
 })))
@@ -278,7 +295,7 @@ const matchedIngredients = computed(() => {
       .match(/[\p{L}]+/gu) || []
   const instruction = new Set(words(step.value?.instruction || ''))
   return (
-    recipe.value?.ingredients.filter(row =>
+    scaledIngredients.value.filter(row =>
       words(row.name).some(
         word => word.length > 2 && !['fresh', 'dried', 'ground', 'finely'].includes(word) && instruction.has(word)
       )
@@ -332,14 +349,15 @@ onMounted(() => {
   mounted.value = true
   try { if (sessionStorage.getItem(prepKey) === '1') prep.value = false } catch { /* Storage blocked: start with prep. */ }
   document.addEventListener('keydown', keyboard)
-  document.addEventListener('pointerdown', wakeOnGesture, { passive: true })
+  // On click, not pointerdown: the header can change size when the lock is granted, and that must not move a control mid-tap.
+  document.addEventListener('click', wakeOnGesture, true)
   if (isSupported.value) void keepAwake()
 })
 
 onBeforeUnmount(() => {
   disposed = true
   document.removeEventListener('keydown', keyboard)
-  document.removeEventListener('pointerdown', wakeOnGesture)
+  document.removeEventListener('click', wakeOnGesture, true)
   void release().catch(() => {})
 })
 
@@ -378,6 +396,13 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <p class="text-xl num">Before step 1</p>
           <h2 id="prep-title" ref="prepHeading" tabindex="-1" class="kitchen-step font-sans font-normal">Prep &amp; Mise en Place</h2>
           <p class="mt-3 text-xl">Set everything out and prepped now, so you can cook without stopping.</p>
+          <div class="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Servings">
+            <button type="button" class="kitchen-button" aria-label="Fewer servings" :disabled="servings <= 1" @click="setServings(Math.max(1, Math.round(servings) - 1))">−</button>
+            <span class="num min-w-28 text-center text-xl font-semibold" role="status">{{ servings }} {{ servings === 1 ? 'serving' : 'servings' }}</span>
+            <button type="button" class="kitchen-button" aria-label="More servings" :disabled="servings >= 1000" @click="setServings(Math.round(servings) + 1)">+</button>
+            <button v-for="preset in servingPresets" :key="preset.label" type="button" class="kitchen-button" :aria-pressed="servings === preset.value" @click="setServings(preset.value)">{{ preset.label }}</button>
+          </div>
+          <p v-if="servingsScaled" class="mt-2 text-base text-k-muted">Scaled from the recipe’s {{ recipe.servings }} servings.</p>
           <p v-if="preheat" role="note" class="kitchen-panel mt-6 flex items-start gap-3 rounded-lg border border-k-accent p-5 text-xl">
             <UIcon name="i-lucide-flame" class="mt-1 size-7 flex-none text-k-accent" aria-hidden="true" />
             <span><strong>Oven preheating:</strong> step {{ preheat.step }} needs {{ preheat.temperature }} °{{ preheat.unit }}. Turn the oven on now so it’s ready when you are.</span>
@@ -484,9 +509,10 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
                 ? 'Ingredients mentioned in this step'
                 : 'Recipe ingredients · no explicit step match'
             }}</h2>
+          <p v-if="servingsScaled" class="mt-1 text-base text-k-muted">Scaled for {{ servings }} servings.</p>
           <ul class="mt-4 space-y-2 text-xl">
             <li
-              v-for="row in matchedIngredients.length ? matchedIngredients : recipe.ingredients"
+              v-for="row in matchedIngredients.length ? matchedIngredients : scaledIngredients"
               :key="row.id"
             >{{ row.unit === 'as needed' && !row.amount ? 'As needed ·' : row.amount + ' ' + row.unit }} {{ row.name }}</li>
           </ul>
