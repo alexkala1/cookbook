@@ -17,6 +17,9 @@ const [{ data: recipe, error, refresh }, { data: kitchen }] = await Promise.all(
   useFetch<KitchenProfile>('/api/settings/kitchen')
 ])
 const index = ref(0)
+// Guests whose allergies meet this recipe's ingredients: shown before anyone picks up a knife.
+type Safety = { allergens: string[], conflicts: { guestId: string, guestName: string, allergen: string, ingredient: string }[] }
+const { data: safety } = await useFetch<Safety>('/api/recipes/' + id + '/safety')
 // Servings arrive from the recipe page (?servings=) and can be tweaked in prep; everything below scales from the saved recipe.
 const router = useRouter()
 const servings = ref<number>(parseServings(route.query.servings) ?? recipe.value?.servings ?? 4)
@@ -195,15 +198,32 @@ const finishState = ref<'ask' | 'busy' | 'done'>('ask')
 const finishError = ref('')
 const deducted = ref<{ name: string, amount: string }[]>([])
 function finishCooking() {
-  finishState.value = 'ask'; finishError.value = ''; deducted.value = []
+  finishState.value = 'ask'; finishError.value = ''; deducted.value = []; rating.value = 0; journalNote.value = ''; journalSaved = false
   finishDialog.value?.showModal()
 }
-async function deductFromPantry() {
+// Journal entry for this cook: an optional star rating and note, saved once even if the pantry step needs a retry.
+const rating = ref(0)
+const journalNote = ref('')
+let journalSaved = false
+async function saveJournal() {
+  if (journalSaved) return
+  await $fetch('/api/recipes/' + id + '/cook-log', { method: 'POST', body: {
+    servings: Math.max(1, Math.round(servings.value)),
+    ...(rating.value ? { rating: rating.value } : {}),
+    ...(journalNote.value.trim() ? { notes: journalNote.value.trim() } : {})
+  } })
+  journalSaved = true
+}
+async function finishWith(updatePantry: boolean) {
   finishState.value = 'busy'; finishError.value = ''
+  try {
+    await saveJournal()
+  } catch { finishError.value = 'We couldn’t save your journal entry. Try again.'; finishState.value = 'ask'; return }
+  if (!updatePantry) { leaveKitchen(); return }
   try {
     deducted.value = (await $fetch<{ deducted: { name: string, amount: string }[] }>('/api/pantry/deduct', { method: 'POST', body: { recipeId: id, ...(servingsScaled.value ? { servings: servings.value } : {}) } })).deducted
     finishState.value = 'done'
-  } catch { finishError.value = 'We couldn’t update your pantry. Try again, or skip for now.'; finishState.value = 'ask' }
+  } catch { finishError.value = 'Your journal entry is saved, but we couldn’t update your pantry. Try again, or skip for now.'; finishState.value = 'ask' }
 }
 function leaveKitchen() { try { sessionStorage.removeItem(prepKey) } catch { /* Nothing stored to clear. */ } finishDialog.value?.close(); void navigateTo('/recipes/' + id) }
 
@@ -396,6 +416,13 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <p class="text-xl num">Before step 1</p>
           <h2 id="prep-title" ref="prepHeading" tabindex="-1" class="kitchen-step font-sans font-normal">Prep &amp; Mise en Place</h2>
           <p class="mt-3 text-xl">Set everything out and prepped now, so you can cook without stopping.</p>
+          <section v-if="safety?.conflicts?.length" class="allergen-alert mt-6" role="alert" aria-labelledby="allergen-title">
+            <h3 id="allergen-title" class="flex items-center gap-2 text-2xl"><UIcon name="i-lucide-shield-alert" class="size-7 flex-none" aria-hidden="true" />Allergen check before you start</h3>
+            <ul class="mt-3 space-y-1 text-xl">
+              <li v-for="conflict in safety.conflicts" :key="conflict.guestId + conflict.allergen + conflict.ingredient"><strong>{{ conflict.guestName }}:</strong> {{ conflict.allergen }} in {{ conflict.ingredient }}</li>
+            </ul>
+            <p class="mt-3 text-base">Screening goes by ingredient names only. Check labels and cross-contact, and talk to your guest.</p>
+          </section>
           <div class="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Servings">
             <button type="button" class="kitchen-button" aria-label="Fewer servings" :disabled="servings <= 1" @click="setServings(Math.max(1, Math.round(servings) - 1))">−</button>
             <span class="num min-w-28 text-center text-xl font-semibold" role="status">{{ servings }} {{ servings === 1 ? 'serving' : 'servings' }}</span>
@@ -419,7 +446,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
               </li>
             </ul>
           </section>
-          <button type="button" class="mt-6 text-lg underline" @click="startCooking">Skip prep</button>
+          <button type="button" class="mt-6 inline-flex min-h-12 items-center px-2 text-lg underline" @click="startCooking">Skip prep</button>
         </article>
         <nav class="step-bar step-bar--single" aria-label="Start cooking">
           <button class="kitchen-button kitchen-primary step-next w-full" @click="startCooking">All Prepped — Start Cooking<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
@@ -486,15 +513,29 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
         <dialog ref="finishDialog" class="m-auto w-[min(92vw,32rem)] rounded-xl border border-k-accent bg-k-paper p-6 text-k-ink backdrop:bg-black/50" aria-labelledby="finish-title">
           <h2 id="finish-title" class="text-3xl">Finished cooking?</h2>
           <template v-if="finishState !== 'done'">
-            <p class="mt-3 text-xl">Deduct matching ingredients from your pantry?</p>
+            <fieldset class="mt-4" :disabled="finishState === 'busy'">
+              <legend class="text-xl">How did this turn out?</legend>
+              <div class="mt-2 flex items-center gap-1" role="radiogroup" aria-label="Rating">
+                <label v-for="star in 5" :key="star" class="star-choice">
+                  <input v-model.number="rating" type="radio" name="cook-rating" :value="star" class="sr-only" :aria-label="star + (star === 1 ? ' star' : ' stars')">
+                  <UIcon name="i-lucide-star" class="size-8" :class="{ 'fill-current': star <= rating }" aria-hidden="true" />
+                </label>
+                <button v-if="rating" type="button" class="ml-2 inline-flex min-h-12 min-w-12 items-center justify-center text-base underline" @click="rating = 0">Clear</button>
+              </div>
+              <label class="mt-4 block text-lg">Add a note (optional)
+                <textarea v-model="journalNote" class="kitchen-input mt-2" rows="3" maxlength="2000" placeholder="How did this bake/cook turn out?" />
+              </label>
+            </fieldset>
+            <p class="mt-5 text-xl">Deduct matching ingredients from your pantry?</p>
             <p v-if="finishError" role="alert" class="mt-3 text-lg text-k-accent">{{ finishError }}</p>
-            <div class="mt-6 flex flex-wrap gap-3">
-              <button class="kitchen-button" :disabled="finishState === 'busy'" :aria-busy="finishState === 'busy'" autofocus @click="deductFromPantry">{{ finishState === 'busy' ? 'Updating pantry…' : 'Deduct from pantry' }}</button>
-              <button class="kitchen-button" :disabled="finishState === 'busy'" @click="leaveKitchen">Skip</button>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button class="kitchen-button" :disabled="finishState === 'busy'" :aria-busy="finishState === 'busy'" autofocus @click="finishWith(true)">{{ finishState === 'busy' ? 'Saving…' : 'Deduct from pantry' }}</button>
+              <button class="kitchen-button" :disabled="finishState === 'busy'" @click="finishWith(false)">Skip pantry</button>
             </div>
           </template>
           <template v-else>
             <div role="status">
+              <p class="mt-3 text-xl">Saved to your Cook’s Journal.</p>
               <p class="mt-3 text-xl">{{ deducted.length ? 'Pantry updated. Used:' : 'Nothing in your pantry matched this recipe, so nothing changed.' }}</p>
               <ul v-if="deducted.length" class="mt-3 list-disc space-y-1 pl-6 text-lg"><li v-for="item in deducted" :key="item.name">{{ item.name }} — {{ item.amount }}</li></ul>
             </div>
@@ -657,6 +698,9 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
   </section>
 </template>
 <style scoped>
+.allergen-alert { border: 2px solid var(--color-k-allergen); border-radius: .75rem; background: var(--color-k-allergen-wash); color: var(--color-k-allergen-ink); padding: 1.25rem; }
+.star-choice { display: inline-flex; min-height: 48px; min-width: 44px; align-items: center; justify-content: center; border-radius: .5rem; color: var(--color-k-accent); cursor: pointer; }
+.star-choice:has(:focus-visible) { outline: 3px solid var(--color-k-accent); outline-offset: 2px; }
 .step-bar {
   position: fixed;
   bottom: 0;

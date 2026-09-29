@@ -61,7 +61,7 @@ it('upgrades an existing Phase 0 database without cascading away recipe data', (
     }
     expect(sqlite.pragma('foreign_key_check')).toEqual([])
     expect(sqlite.pragma('foreign_keys', { simple: true })).toBe(1)
-    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%recipe_id_idx'").all()).toHaveLength(4)
+    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%recipe_id_idx'").all()).toHaveLength(5)
     sqlite.exec("INSERT INTO recipes (id, title, description) VALUES ('new', 'Soup', '')")
     expect(sqlite.prepare("SELECT rating FROM recipes WHERE id = 'new'").get()).toEqual({ rating: null })
   } finally { sqlite.close() }

@@ -112,3 +112,12 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
   sessionNotes: text('session_notes'),
   photoUrl: text('photo_url')
 })
+
+export const cookLogs = sqliteTable('cook_logs', {
+  id: text('id').primaryKey(),
+  recipeId: text('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+  cookedAt: text('cooked_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
+  servings: integer('servings').notNull().default(4),
+  notes: text('notes'),
+  rating: real('rating')
+}, table => [index('cook_logs_recipe_id_idx').on(table.recipeId)])

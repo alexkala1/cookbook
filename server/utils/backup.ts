@@ -2,7 +2,8 @@ import { asc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { z } from 'zod'
 import { db } from '../db'
-import { ingredients, pantryItems, recipeEquipment, recipes, steps } from '../db/schema'
+import { cookLogs, ingredients, pantryItems, recipeEquipment, recipes, steps } from '../db/schema'
+import { cookLogInputSchema } from './cook-logs'
 import { recipeCreateSchema, validate } from './validation'
 
 const id = z.string().min(1).max(200)
@@ -34,7 +35,11 @@ export const backupSchema = z.object({
   version: z.literal(1),
   exportedAt: z.iso.datetime({ offset: true }),
   recipes: z.array(recipeSchema),
-  pantry: z.array(pantrySchema)
+  pantry: z.array(pantrySchema),
+  cookLogs: z.array(cookLogInputSchema.required().extend({
+    id, recipeId: id, cookedAt: z.iso.datetime({ offset: true }).nullable(),
+    notes: z.string().max(10000).nullable(), rating: z.number().finite().min(1).max(5).nullable()
+  })).optional()
 }).strict().superRefine((backup, context) => {
   const seen = new Map<string, Set<string>>()
   const unique = (table: string, value: string) => {
@@ -56,6 +61,11 @@ export const backupSchema = z.object({
     }
   }
   for (const row of backup.pantry) unique('pantry', row.id)
+  const recipeIds = new Set(backup.recipes.map(recipe => recipe.id))
+  for (const row of backup.cookLogs ?? []) {
+    unique('cookLogs', row.id)
+    if (!recipeIds.has(row.recipeId)) context.addIssue({ code: 'custom', message: 'Cook log must reference a recipe in the backup', path: ['cookLogs', row.id, 'recipeId'] })
+  }
 })
 
 export type CookbookBackup = z.infer<typeof backupSchema>
@@ -85,7 +95,8 @@ export function exportBackup(): CookbookBackup {
         steps: stepRows.get(recipe.id) ?? [],
         equipment: equipmentRows.get(recipe.id) ?? []
       })),
-      pantry: tx.select().from(pantryItems).orderBy(asc(pantryItems.id)).all()
+      pantry: tx.select().from(pantryItems).orderBy(asc(pantryItems.id)).all(),
+      cookLogs: tx.select().from(cookLogs).orderBy(asc(cookLogs.id)).all()
     }
   })
 }
@@ -96,6 +107,11 @@ export function importBackup(input: unknown) {
   // Validation reuses editor constraints, but a restore must preserve original whitespace.
   const backup = input as CookbookBackup
   return db.transaction(tx => {
+    const logOwners = new Map(tx.select({ id: cookLogs.id, recipeId: cookLogs.recipeId }).from(cookLogs).all().map(row => [row.id, row.recipeId]))
+    for (const row of backup.cookLogs ?? []) {
+      const owner = logOwners.get(row.id)
+      if (owner !== undefined && owner !== row.recipeId) throw createError({ statusCode: 409, statusMessage: 'Cook log ID belongs to a different recipe' })
+    }
     for (const [key, table] of [['ingredients', ingredients], ['steps', steps], ['equipment', recipeEquipment]] as const) {
       const owners = new Map(tx.select({ id: table.id, recipeId: table.recipeId }).from(table).all().map(row => [row.id, row.recipeId]))
       for (const recipe of backup.recipes) {
@@ -122,6 +138,9 @@ export function importBackup(input: unknown) {
     }
     for (const row of backup.pantry) {
       tx.insert(pantryItems).values(row).onConflictDoUpdate({ target: pantryItems.id, set: row }).run()
+    }
+    for (const row of backup.cookLogs ?? []) {
+      tx.insert(cookLogs).values(row).onConflictDoUpdate({ target: cookLogs.id, set: row }).run()
     }
     return { imported: { recipes: backup.recipes.length, pantry: backup.pantry.length } }
   })

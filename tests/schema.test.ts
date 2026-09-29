@@ -28,10 +28,10 @@ describe('SQLite schema and initial migration', () => {
     connection.sqlite.close()
   })
 
-  it('creates exactly the eleven application tables', () => {
+  it('creates exactly the twelve application tables', () => {
     const tables = connection.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle_%' ORDER BY name").all()
     expect(tables).toEqual([
-      'cooking_sessions', 'grocery_items', 'grocery_lists', 'guests', 'ingredients',
+      'cook_logs', 'cooking_sessions', 'grocery_items', 'grocery_lists', 'guests', 'ingredients',
       'pantry_items', 'recipe_equipment', 'recipe_memories', 'recipes', 'steps', 'user_kitchen_profile'
     ].map(name => ({ name })))
   })

@@ -2,8 +2,9 @@
 
 `GET /api/backup/export` downloads formatted JSON as
 `heirloom-backup-YYYY-MM-DD.json` with `Cache-Control: no-store`.
-The envelope has exactly `version: 1`, an ISO `exportedAt`, `recipes`, and
-`pantry`. Recipes include complete stored parent rows plus `ingredients`,
+The envelope has `version: 1`, an ISO `exportedAt`, `recipes`, `pantry`, and
+`cookLogs`. Older v1 files without `cookLogs` remain importable and leave
+existing journals unchanged. Recipes include complete stored parent rows plus `ingredients`,
 `steps`, and `equipment`; IDs, timestamps, ordering, nulls, and inline card
 photos are preserved. Pantry contains complete stored pantry rows.
 
@@ -12,6 +13,10 @@ by ID: imported recipe fields and their child collections replace the same
 recipe's stored values; matching pantry rows are restored, not added to
 their current quantities. Entries absent from the backup remain unchanged.
 Repeated imports are idempotent. An empty backup is a no-op.
+
+Cooking logs are merged by ID after recipes are restored, preserving notes,
+ratings, servings and cooking timestamps. Log IDs cannot be transferred to
+a different recipe, and each log must reference a recipe in the file.
 
 Success is HTTP 200 with `{"imported":{"recipes":N,"pantry":N}}`.
 Invalid schemas, versions, duplicate IDs, duplicate step numbers, and

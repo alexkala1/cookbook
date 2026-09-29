@@ -52,7 +52,7 @@ describe('JSON cookbook backup', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     const text = await response.text()
     const backup = JSON.parse(text)
-    expect(backup).toEqual({ version: 1, exportedAt: expect.any(String), recipes: [], pantry: [] })
+    expect(backup).toEqual({ version: 1, exportedAt: expect.any(String), recipes: [], pantry: [], cookLogs: [] })
     expect(backupSchema.safeParse(backup).success).toBe(true)
     expect(text).toBe(JSON.stringify(backup, null, 2))
     expect(response.headers.get('content-disposition')).toBe(`attachment; filename="heirloom-backup-${backup.exportedAt.slice(0, 10)}.json"`)
@@ -65,7 +65,7 @@ describe('JSON cookbook backup', () => {
     const { parent: _parent, variations: _variations, ...storedRecipe } = getRecipe(recipe.id)
     expect(backup.recipes).toEqual([storedRecipe])
     expect(backup.pantry).toEqual(db.select().from(tables.pantryItems).orderBy(tables.pantryItems.id).all())
-    expect(Object.keys(backup).sort()).toEqual(['exportedAt', 'pantry', 'recipes', 'version'])
+    expect(Object.keys(backup).sort()).toEqual(['cookLogs', 'exportedAt', 'pantry', 'recipes', 'version'])
   })
 
   it('exports the full starter pack using transaction-scoped reads', () => {

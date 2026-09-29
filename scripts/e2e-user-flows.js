@@ -486,10 +486,16 @@ async function journey(browser, viewport) {
       const finish = page.getByRole('dialog', { name: 'Finished cooking?' })
       await finish.getByText('Deduct matching ingredients from your pantry?').waitFor()
       await shot(page, viewport, 'kitchen-finish-prompt', finish)
+      await finish.locator('label.star-choice').nth(3).click()
+      await finish.getByLabel('Add a note (optional)').fill('Crisp edges — a little less oregano next time.')
       await tap(finish.getByRole('button', { name: 'Deduct from pantry' }))
-      await finish.getByRole('status').waitFor()
+      await finish.getByRole('status').getByText('Saved to your Cook’s Journal.').waitFor()
       await tap(finish.getByRole('button', { name: 'Back to recipe' }))
       await page.waitForURL(url => url.pathname === arniUrl)
+      const journal = page.getByRole('region', { name: 'Cook’s Journal' })
+      await journal.getByText('Crisp edges — a little less oregano next time.').waitFor()
+      await journal.getByRole('img', { name: 'Rated 4 out of 5' }).waitFor()
+      await shot(page, viewport, 'recipe-cooks-journal', journal)
     })
 
     // Flow 4 — Dinner Conductor → backward schedule → conflicts → market list
@@ -625,6 +631,18 @@ async function journey(browser, viewport) {
       const text = await audit.innerText()
       assert(/critical allergen/i.test(text) && /feta/i.test(text), 'Spanakopita feta should be flagged for a dairy allergy')
       await shot(page, viewport, 'guests-audit', audit.getByText(/conflicts? to review/))
+    })
+    await step(page, viewport, 'Flow 6 · allergen shield on the recipe and in Kitchen Mode', async () => {
+      await go('/recipes')
+      await tap(page.getByRole('link', { name: 'Traditional Spanakopita' }))
+      await page.getByText(/^Contains: .*dairy/).waitFor()
+      await shot(page, viewport, 'recipe-allergen-tag', page.getByText(/^Contains: /))
+      await tap(page.getByRole('link', { name: 'Start cooking' }))
+      await page.waitForURL('**/cook')
+      const alert = page.getByRole('alert').filter({ hasText: 'Allergen check before you start' })
+      await alert.waitFor()
+      assert(/Maria:\s*dairy in .*feta/i.test(await alert.innerText()), 'The prep screen should name the guest, allergen and ingredient')
+      await shot(page, viewport, 'kitchen-allergen-alert', alert)
     })
 
     // Flow 7 — Settings: BYOK keys, kitchen hardware, Cook's Handbook

@@ -10,6 +10,13 @@ const route = useRoute()
 const id = String(route.params.id)
 const { data: recipe, error, refresh } = await useFetch<RecipeDetail>('/api/recipes/' + id)
 const { data: kitchen } = await useFetch<KitchenProfile>('/api/settings/kitchen')
+const { data: safety } = await useFetch<{ allergens: string[] }>('/api/recipes/' + id + '/safety')
+type CookLog = { id: string, cookedAt: string | null, servings: number, notes: string | null, rating: number | null }
+const { data: cookLogs } = await useFetch<CookLog[]>('/api/recipes/' + id + '/cook-logs')
+// Dates are shown in the cook's own time zone, which the server can't know: render UTC until mounted so hydration agrees.
+const mountedForDates = ref(false)
+onMounted(() => { mountedForDates.value = true })
+const cookedOn = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', ...(mountedForDates.value ? {} : { timeZone: 'UTC' }) }) : 'Date unknown'
 useSeoMeta({ title: () => recipe.value ? recipe.value.title + ' — Heirloom' : 'Recipe — Heirloom' })
 import { inSystem } from '../../../utils/display-units'
 const servings = ref(recipe.value?.servings ?? 4)
@@ -148,6 +155,7 @@ function saved(value: RecipeDetail) {
         <h1 class="mt-4 max-w-4xl break-words">{{ recipe.title }}</h1>
         <p v-if="isOfflineDraft" class="draft-badge mt-6"><UIcon name="i-lucide-info" aria-hidden="true" />Imported draft · review quantities before cooking</p>
         <p v-else-if="recipe.description" class="mt-6 max-w-2xl whitespace-pre-line break-words text-lg">{{ recipe.description }}</p>
+        <p v-if="safety?.allergens?.length" class="allergen-tag mt-4"><UIcon name="i-lucide-shield-alert" class="size-4 flex-none" aria-hidden="true" />Contains: {{ safety.allergens.join(', ') }}</p>
         <p class="mt-6">{{ recipe.totalTimeMinutes }} min · {{ recipe.difficulty }} · {{ recipe.rating == null ? 'Not rated yet' : recipe.rating + ' / 5' }}</p>
         <div v-if="thermodynamics" class="notice mt-6"><p>{{ thermodynamics.technique }} · Dilution {{ thermodynamics.dilutionPercent.join('–') }}% · {{ thermodynamics.glassware }} · Estimated cooling {{ thermodynamics.temperatureDropC.join('–') }} °C</p><p class="mt-2 text-sm">{{ thermodynamics.note }}</p></div>
         <div class="mt-8 flex flex-wrap items-center gap-3">
@@ -212,6 +220,20 @@ function saved(value: RecipeDetail) {
             <span v-if="twist.variationName" class="block text-sm text-muted">{{ twist.title }}</span>
           </li>
         </ul>
+      </section>
+      <section v-if="cookLogs?.length" class="keepsake-card mt-8" aria-labelledby="journal-title">
+        <span class="keepsake-badge"><UIcon name="i-lucide-notebook-pen" aria-hidden="true" />Kept in the kitchen</span>
+        <h2 id="journal-title" class="mt-3 font-serif">Cook’s Journal</h2>
+        <ol class="mt-3 divide-y divide-espresso/15">
+          <li v-for="log in cookLogs" :key="log.id" class="py-3">
+            <p class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <time :datetime="log.cookedAt ?? undefined" class="font-serif text-lg font-semibold">{{ cookedOn(log.cookedAt) }}</time>
+              <span v-if="log.rating" class="inline-flex items-center gap-0.5 text-terracotta-ink" role="img" :aria-label="'Rated ' + Math.round(log.rating) + ' out of 5'"><UIcon v-for="star in 5" :key="star" name="i-lucide-star" class="size-4" :class="{ 'fill-current': star <= Math.round(log.rating) }" aria-hidden="true" /></span>
+              <span class="text-sm text-muted">for {{ log.servings }}</span>
+            </p>
+            <p v-if="log.notes" class="mt-1 max-w-2xl whitespace-pre-line break-words font-serif text-lg leading-relaxed">{{ log.notes }}</p>
+          </li>
+        </ol>
       </section>
       <div class="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <aside class="min-w-0">
@@ -292,6 +314,7 @@ function saved(value: RecipeDetail) {
 </template>
 
 <style scoped>
+.allergen-tag { display: inline-flex; align-items: center; gap: .375rem; border: 1px solid var(--color-allergen); border-radius: 999px; background: var(--color-allergen-wash); padding: .125rem .75rem; font-size: .875rem; font-weight: 600; color: var(--color-allergen-ink); }
 .heritage-banner { display: flex; align-items: flex-start; gap: .5rem; margin-bottom: 1rem; border-left: 3px solid var(--color-terracotta); background: var(--color-paper-2); padding: .5rem .875rem; font-family: var(--font-serif); font-style: italic; overflow-wrap: anywhere; }
 .keepsake-card { border: 1px solid color-mix(in oklch, var(--color-terracotta) 30%, transparent); border-radius: .75rem; background: var(--color-paper-2); padding: 1.5rem; box-shadow: 0 1px 0 color-mix(in oklch, var(--color-ink) 6%, transparent), inset 0 0 0 4px color-mix(in oklch, var(--color-paper) 70%, transparent); }
 .keepsake-badge { display: inline-flex; align-items: center; gap: .375rem; border-radius: 999px; background: color-mix(in oklch, var(--color-terracotta) 12%, var(--color-paper)); padding: .25rem .75rem; font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-terracotta-ink); }

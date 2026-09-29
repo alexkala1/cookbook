@@ -24,6 +24,12 @@
   --color-k-accent: oklch(90% 0.11 90);
   --color-k-danger: oklch(45% 0.16 27);
   --color-k-danger-ink: oklch(97% 0.01 27);
+  --color-allergen: oklch(72% 0.15 72);
+  --color-allergen-wash: oklch(95.5% 0.055 85);
+  --color-allergen-ink: oklch(36% 0.08 62);
+  --color-k-allergen: oklch(82% 0.15 80);
+  --color-k-allergen-wash: oklch(27% 0.055 78);
+  --color-k-allergen-ink: oklch(95% 0.04 88);
   --color-cream: var(--color-paper);
   --color-espresso: var(--color-ink);
   --font-display: 'Literata', ui-serif, Georgia, serif;
