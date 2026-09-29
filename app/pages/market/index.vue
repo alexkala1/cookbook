@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { parseServings } from '../../utils/display-units'
+import { decodeMarketPayload } from '../../utils/market-share'
 
 type RecipeRow = { id: string, title: string, servings: number }
 useSeoMeta({ title: 'Market list — Heirloom' })
 const route = useRoute()
 const router = useRouter()
+// A list scanned from another device (?import=…) is shown as-is; a bad payload falls back to the normal picker.
+const importPayload = typeof route.query.import === 'string' ? route.query.import : undefined
+const importedList = importPayload ? decodeMarketPayload(importPayload) : null
+const importedFromDevice = importedList !== null
+const importFailed = importPayload !== undefined && importedList === null
 const { data: recipes, status, error: loadError, refresh } = await useFetch<RecipeRow[]>('/api/recipes')
 
 // Shopping for a single recipe: ?recipeId=&servings= arrive from the recipe page, or the cook picks one here.
@@ -37,7 +43,12 @@ const courses = computed(() => selected.value ? [{ recipeId: selected.value.id, 
     <h1 class="mt-3">Market list</h1>
     <p class="mt-4 max-w-2xl">Pick a recipe and we’ll sort what to buy by where to shop: the laiki, the butcher, the bakery and the supermarket. No dinner plan needed.</p>
 
-    <p v-if="status === 'pending'" role="status" class="py-10">Opening your cookbook…</p>
+    <p v-if="importFailed" role="alert" class="notice mt-6">We couldn’t read that shared list. Choose a recipe below instead.</p>
+    <template v-if="importedList">
+      <p v-if="importedFromDevice" role="status" class="mb-4 mt-6 inline-flex items-center gap-2 rounded-lg border border-olive bg-olive/15 px-3 py-2 text-sm font-semibold text-olive-ink"><UIcon name="i-lucide-smartphone" class="size-4" aria-hidden="true" /> Market list loaded from your other device.</p>
+      <MarketShoppingList class="mt-4" :courses="[]" :imported-list="importedList" />
+    </template>
+    <p v-else-if="status === 'pending'" role="status" class="py-10">Opening your cookbook…</p>
     <div v-else-if="loadError" role="alert" class="notice mt-8">
       <p>We couldn’t load your recipes.</p>
       <button class="button-secondary mt-4" @click="refresh()">Try again</button>

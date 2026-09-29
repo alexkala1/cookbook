@@ -2,9 +2,11 @@
 import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
 import { inferStorage, type PantryDraft } from '#shared/culinary/pantry'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
+import { formatWhatsAppMarketList, encodeMarketPayload, generateMarketQrSvg } from '../utils/market-share'
 
-const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean }>()
-const list = ref<MarketShoppingList | null>(null)
+const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean; importedList?: MarketShoppingList }>()
+// An imported list (scanned from another device) is shown as-is: there is nothing to generate.
+const list = ref<MarketShoppingList | null>(props.importedList ?? null)
 const checked = ref<string[]>([])
 const mode = ref<ShoppingMode>('market')
 const destinations = ref<Record<string, MarketSection>>({})
@@ -127,6 +129,45 @@ async function restockPantry() {
   } finally { if (!disposed) restocking.value = false }
 }
 
+// Share: the native share sheet where there is one (phones), otherwise WhatsApp's web link in a new tab.
+const shareNote = ref('')
+async function shareWhatsApp() {
+  if (!routedList.value || busy.value) return
+  const text = formatWhatsAppMarketList(routedList.value, checked.value)
+  shareNote.value = ''
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try { await navigator.share({ title: routedList.value.title, text }) } catch (cause) {
+      if ((cause as DOMException)?.name !== 'AbortError' && !disposed) shareNote.value = 'Sharing didn’t work. Use “Copy shopping list” instead.'
+    }
+    return
+  }
+  const opened = window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener')
+  if (!opened) {
+    try { await navigator.clipboard.writeText(text); shareNote.value = 'WhatsApp couldn’t open, so the list was copied. Paste it into a chat.' } catch { shareNote.value = 'WhatsApp couldn’t open. Use “Copy shopping list” instead.' }
+  }
+}
+
+// Send to phone: the whole list travels inside the link, so nothing is uploaded anywhere.
+const qrDialog = ref<HTMLDialogElement>()
+const qrSvg = ref('')
+const qrLink = ref('')
+const qrError = ref('')
+const qrCopied = ref(false)
+function openQrModal() {
+  if (!routedList.value) return
+  qrError.value = ''
+  qrCopied.value = false
+  qrSvg.value = ''
+  try {
+    qrLink.value = `${window.location.origin}/market?import=${encodeMarketPayload(routedList.value)}`
+    qrSvg.value = generateMarketQrSvg(qrLink.value)
+  } catch { qrError.value = 'This list is too long for a code. Use “Share on WhatsApp” or copy the list instead.' }
+  qrDialog.value?.showModal()
+}
+async function copyPhoneLink() {
+  try { await navigator.clipboard.writeText(qrLink.value); qrCopied.value = true; qrError.value = '' } catch { qrError.value = 'Clipboard unavailable. Scan the code instead.' }
+}
+
 async function copy() {
   if (!list.value || copying.value || busy.value) return
   copying.value = true
@@ -143,7 +184,7 @@ async function copy() {
   <section aria-labelledby="market-heading" class="market-shopping min-w-0 border-t border-rule pt-8 text-ink">
     <div class="section-heading">
       <h2 id="market-heading">Market shopping list</h2>
-      <button type="button" class="button-primary market-action" :disabled="busy || copying" v-stable-action="state" :data-state="state" :aria-busy="busy" @click="generate">{{ label('Generate Market Shopping List', 'Generating…') }}</button>
+      <button v-if="!importedList" type="button" class="button-primary market-action" :disabled="busy || copying" v-stable-action="state" :data-state="state" :aria-busy="busy" @click="generate">{{ label('Generate Market Shopping List', 'Generating…') }}</button>
     </div>
     <p class="mt-4">Grouped for your chosen courses{{ servings ? ' and ' + servings + ' ' + (servingsNoun ?? 'guests') : ', using each recipe’s servings' }}. Check your pantry before buying; stock is not subtracted.</p>
     <p v-if="error" role="alert" class="mt-4 rounded-lg border border-error bg-paper p-4 text-error">{{ error }}</p>
@@ -158,10 +199,24 @@ async function copy() {
         <div class="flex flex-wrap gap-3 print:hidden">
           <button v-if="pendingRestock.length" type="button" class="button-primary min-h-11 inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
           <button type="button" class="button-secondary" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
+          <button type="button" class="button-secondary min-h-11 min-w-11 inline-flex items-center gap-2" :disabled="busy" @click="shareWhatsApp"><UIcon name="i-lucide-share-2" aria-hidden="true" />Share on WhatsApp</button>
+          <button type="button" class="button-secondary min-h-11 min-w-11 inline-flex items-center gap-2" :disabled="busy" @click="openQrModal"><UIcon name="i-lucide-qr-code" aria-hidden="true" />Send to phone</button>
           <button type="button" class="button-secondary" :disabled="busy" @click="printList"><UIcon name="i-lucide-printer" aria-hidden="true" />Print or save PDF</button>
         </div>
       </div>
       <p v-if="copyState === 'success'" role="status">Shopping list copied.</p>
+      <p role="status" class="print:hidden">{{ shareNote }}</p>
+      <dialog ref="qrDialog" class="m-auto w-[min(92vw,28rem)] rounded-xl border border-rule bg-paper p-6 text-ink shadow-2xl backdrop:bg-black/50 print:hidden" aria-labelledby="qr-heading">
+        <h3 id="qr-heading" class="font-serif text-2xl">Scan with your phone</h3>
+        <p class="mt-2 text-sm text-muted">Point your phone camera at the code below to take this list with you. Interactive checkboxes work offline at the market.</p>
+        <div v-if="qrSvg" class="qr-code mt-4 flex justify-center rounded-lg border border-rule bg-white p-4" role="img" aria-label="QR code for this market list" v-html="qrSvg" />
+        <p role="status" class="mt-3 text-sm">{{ qrCopied ? 'Phone link copied.' : '' }}</p>
+        <p v-if="qrError" role="alert" class="mt-3 text-sm text-error">{{ qrError }}</p>
+        <form method="dialog" class="mt-4 flex flex-wrap justify-end gap-3">
+          <button type="button" class="button-secondary min-h-11" :disabled="!qrLink || !qrSvg" @click="copyPhoneLink">Copy phone link</button>
+          <button class="button-primary min-h-11" autofocus>Close</button>
+        </form>
+      </dialog>
       <div role="status" class="market-restock-notice print:hidden">
         <p v-if="restockSuccess" class="restock-notice">
           <UIcon name="i-lucide-circle-check" class="size-5 flex-none" aria-hidden="true" />
@@ -224,6 +279,7 @@ async function copy() {
 .market-shopping { overflow-wrap: anywhere; font-style: normal; }
 .market-action { max-width: 100%; white-space: normal; }
 .restock-notice { display: flex; align-items: flex-start; gap: .5rem; border-left: 3px solid var(--color-sage-ink); background: var(--color-paper-2); padding: .75rem 1rem; color: var(--color-ink); }
+.qr-code :deep(svg) { width: 100%; max-width: 16rem; height: auto; }
 .restock-notice a { display: inline-flex; min-height: 44px; align-items: center; }
 </style>
 

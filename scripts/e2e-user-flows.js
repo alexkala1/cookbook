@@ -742,6 +742,33 @@ async function journey(browser, viewport) {
       const stocked = await page.evaluate(async name => (await (await fetch('/api/pantry')).json()).some(row => row.name === name), itemName)
       assert(stocked, `${itemName} should now be in the pantry`)
     })
+    await step(page, viewport, 'Flow 4 · share on WhatsApp, send to phone, import on phone', async () => {
+      const market = page.getByRole('region', { name: 'Market shopping list' })
+      const whatsapp = market.getByRole('button', { name: 'Share on WhatsApp' })
+      const box = await whatsapp.boundingBox()
+      assert(box.width >= 44 && box.height >= 44, `Share on WhatsApp target should be at least 44×44, got ${Math.round(box.width)}×${Math.round(box.height)}`)
+      await tap(market.getByRole('button', { name: 'Send to phone' }))
+      const dialog = page.getByRole('dialog', { name: 'Scan with your phone' })
+      await dialog.waitFor()
+      assert(await dialog.locator('svg').count() >= 1, 'The QR dialog should render an SVG code')
+      await shot(page, viewport, 'market-send-to-phone', dialog)
+      await tap(dialog.getByRole('button', { name: 'Close' }))
+      await dialog.waitFor({ state: 'hidden' })
+      // The phone side: a scanned link carries the whole list, no server round trip.
+      const payload = Buffer.from(JSON.stringify({ t: 'Sunday feast', d: [
+        { s: 'laiki', n: 'Laiki market', l: 'Λαϊκή', i: [{ id: 'a', n: 'Tomatoes', a: 2, u: 'kg' }, { id: 'b', n: 'Cucumbers', a: 4, u: 'item' }] },
+        { s: 'chasapis', n: 'Butcher', l: 'Χασάπης', i: [{ id: 'c', n: 'Lamb shoulder', a: 1.5, u: 'kg', c: 'Ένα κιλό και μισό' }] }
+      ] })).toString('base64url')
+      await go('/market?import=' + payload)
+      await page.getByText('Market list loaded from your other device.').waitFor()
+      const phone = page.getByRole('region', { name: 'Market shopping list' })
+      for (const name of ['Laiki market', 'Butcher']) await phone.getByRole('heading', { name, exact: true }).waitFor()
+      await phone.getByRole('checkbox', { name: 'Bought: Tomatoes', exact: true }).check()
+      await phone.getByText('1 of 3 items checked').waitFor()
+      await shot(page, viewport, 'market-imported', phone)
+      await go('/market?import=not-a-list')
+      await page.getByText('We couldn’t read that shared list.').waitFor()
+    })
 
     // Flow 5 — Virtual pantry, receipt parsing, recipe matching
     await step(page, viewport, 'Flow 5 · add pantry items and parse a receipt', async () => {
