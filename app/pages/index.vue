@@ -27,6 +27,11 @@ const pillars = [
       <p class="mt-6 text-sm font-semibold text-sage-ink">Taking shape, one recipe at a time.</p>
     </aside>
   </section>
+  <section aria-labelledby="tonight-heading" class="border-b border-rule py-12 sm:py-16">
+    <h2 id="tonight-heading" class="font-serif text-3xl">What’s in your kitchen tonight?</h2>
+    <p class="mt-3 max-w-2xl leading-relaxed text-muted">Tap the ingredients you have. Heirloom shows the dinners you can cook right now, fastest first.</p>
+    <div class="mt-6"><TonightFridgePicker /></div>
+  </section>
   <section aria-labelledby="pillars-title" class="border-b border-rule py-12 sm:py-16">
     <h2 id="pillars-title" class="font-serif text-3xl">Three ways Heirloom helps</h2>
     <ul class="mt-8 grid gap-5 md:grid-cols-3">

@@ -8,6 +8,7 @@ function familyNote(notes?: string | null) {
   const first = notes?.split('.')[0]?.trim()
   return first ? '“' + first + '.”' : ''
 }
+const showTonight = ref(false)
 const search = ref('')
 const delayedSearch = refDebounced(search, 250)
 const type = ref('')
@@ -53,6 +54,13 @@ async function loadStarters() {
     <div class="section-heading">
       <h1>Your recipe collection</h1>
       <div class="flex flex-wrap gap-3"><NuxtLink to="/recipes/import" class="button-secondary">Import Recipe</NuxtLink><NuxtLink to="/recipes/new" class="button-primary">+ New Recipe</NuxtLink></div>
+    </div>
+    <div class="mt-8">
+      <button type="button" class="button-secondary" :aria-expanded="showTonight" aria-controls="tonight-panel" @click="showTonight = !showTonight">🍳 Cook with what you have tonight</button>
+      <section v-if="showTonight" id="tonight-panel" aria-labelledby="tonight-heading" class="mt-4 rounded-xl border border-rule bg-paper-2/60 p-5">
+        <h2 id="tonight-heading" class="font-serif text-2xl">What’s in your kitchen tonight?</h2>
+        <div class="mt-4"><TonightFridgePicker /></div>
+      </section>
     </div>
     <label class="mt-10 block max-w-xl">Search recipes
       <input v-model="search" type="search" class="field mt-2" placeholder="A dish, a drink, a family favourite…" maxlength="200">

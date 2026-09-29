@@ -244,6 +244,54 @@ async function journey(browser, viewport) {
       assert(await page.locator('article').count() >= STARTERS.length, 'Starter pack should show at least 5 recipe cards')
       await shot(page, viewport, 'starter-pack-loaded')
     })
+    await step(page, viewport, 'Flow 1 · tonight fridge picker', async () => {
+      // Deterministic fixture: needs only eggs + tomatoes (salt/olive oil are assumed staples).
+      await page.evaluate(async () => {
+        const existing = await (await fetch('/api/recipes/tonight')).json()
+        if (!existing.some(recipe => recipe.title === 'Tonight Fixture Shakshuka')) {
+          await fetch('/api/recipes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+            title: 'Tonight Fixture Shakshuka', description: 'Eggs in tomatoes.', servings: 2, totalTimeMinutes: 20, difficulty: 'easy',
+            ingredients: [{ name: 'eggs', amount: 4, unit: 'pcs' }, { name: 'tomatoes', amount: 3, unit: 'pcs' }, { name: 'olive oil', amount: 2, unit: 'tbsp' }]
+          }) })
+        }
+      })
+      await go('/')
+      const region = page.getByRole('region', { name: /What’s in your kitchen tonight/ })
+      await region.waitFor()
+      const chips = region.getByRole('group', { name: 'Ingredients in your kitchen' }).getByRole('button')
+      for (const name of ['Eggs', 'Tomatoes']) {
+        const chip = region.getByRole('button', { name: new RegExp(name) })
+        const box = await chip.boundingBox()
+        assert(box && box.width >= 44 && box.height >= 44, `${name} chip needs a 44×44px target, got ${JSON.stringify(box)}`)
+        await tap(chip)
+        assert(await chip.getAttribute('aria-pressed') === 'true', `${name} chip should be pressed`)
+      }
+      assert(await chips.count() >= 8, 'Picker should render the staple chips')
+      const results = region.getByTestId('tonight-match')
+      await results.first().waitFor()
+      const fixture = results.filter({ hasText: 'Tonight Fixture Shakshuka' })
+      await fixture.getByText('⚡ Ready to cook').waitFor()
+      assert(/ready to cook tonight|dinner.* ready/.test(await region.getByTestId('tonight-summary').innerText()), 'Live summary should count ready dinners')
+      const cook = fixture.getByRole('link', { name: /Cook tonight/ })
+      assert((await cook.getAttribute('href')).endsWith('/cook'), 'Cook tonight should link to the cook route')
+      for (const locator of [region.getByRole('button', { name: '+ Add' }), region.getByRole('button', { name: 'Clear' }), cook]) {
+        const box = await locator.boundingBox()
+        assert(box && box.width >= 44 && box.height >= 44, 'Picker controls need 44×44px targets, got ' + JSON.stringify(box))
+      }
+      await shot(page, viewport, 'tonight-picker-active', region)
+      await region.getByLabel('Something else in the fridge?').fill('spinach')
+      await tap(region.getByRole('button', { name: '+ Add' }))
+      await region.getByRole('button', { name: /spinach/i }).waitFor()
+      await tap(region.getByRole('button', { name: 'Clear' }))
+      assert(await results.count() === 0, 'Clear should empty the results')
+      // Recipes page: collapsible entry point.
+      await go('/recipes')
+      const toggle = page.getByRole('button', { name: /Cook with what you have tonight/ })
+      await tap(toggle)
+      assert(await toggle.getAttribute('aria-expanded') === 'true', 'Recipes toggle should expand the picker')
+      await tap(page.locator('#tonight-panel').getByRole('button', { name: /Eggs/ }))
+      await page.locator('#tonight-panel').getByTestId('tonight-match').first().waitFor()
+    })
 
     // Flow 2 — Import from every source: web URL, video link, scanned card (OCR) and memory → save → metric assistant.
     // Web and video sources are offline fixtures served by safeFetch because the server runs with E2E_TEST=true.
