@@ -5,6 +5,7 @@
   "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "nuxt dev",
+    "dev:lan": "NUXT_HOST=0.0.0.0 nuxt dev --host 0.0.0.0",
     "build": "nuxt build",
     "preview": "NITRO_HOST=127.0.0.1 nuxt preview",
     "start": "NITRO_HOST=127.0.0.1 node .output/server/index.mjs",

@@ -1,14 +1,23 @@
 import { createError, defineEventHandler, getRequestHeader, getRequestURL } from 'h3'
 
+// Canonical dotted-quad only (no leading zeros), so 127.1, 2130706433 and 0x7f000001 never match.
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+const PRIVATE_IPV4 = new RegExp(`^(?:10\\.${OCTET}\\.${OCTET}\\.${OCTET}|192\\.168\\.${OCTET}\\.${OCTET}|172\\.(?:1[6-9]|2\\d|3[01])\\.${OCTET}\\.${OCTET})$`)
+
 export default defineEventHandler(event => {
   // Check reads too: DNS rebinding can otherwise expose local data via GET.
   // Match literal hostnames, never URL-normalized IP aliases or forwarded headers.
   const host = getRequestHeader(event, 'host')
   const authority = host?.match(/^(\[[a-f0-9:]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/i)
   const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
-  const publicHost = process.env.HEIRLOOM_PUBLIC_HOST?.trim().toLowerCase()
-  if (publicHost) allowedHosts.add(publicHost)
-  if (!authority || !allowedHosts.has(authority[1]!.toLowerCase()) ||
+  for (const publicHost of (process.env.HEIRLOOM_PUBLIC_HOST ?? '').split(',')) {
+    const name = publicHost.trim().toLowerCase()
+    if (name) allowedHosts.add(name)
+  }
+  const hostname = authority?.[1]!.toLowerCase() ?? ''
+  // A literal LAN IP is not rebindable (DNS is not involved); HEIRLOOM_ALLOW_LAN=true also admits mDNS *.local names.
+  const lanHost = PRIVATE_IPV4.test(hostname) || (process.env.HEIRLOOM_ALLOW_LAN === 'true' && /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.local$/.test(hostname))
+  if (!authority || !(allowedHosts.has(hostname) || lanHost) ||
     (authority[2] !== undefined && (Number(authority[2]) < 1 || Number(authority[2]) > 65535))) {
     throw createError({ statusCode: 403, statusMessage: 'Host not allowed' })
   }

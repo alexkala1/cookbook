@@ -46,6 +46,37 @@ describe('CSRF mutation guard', () => {
     expect(app.mutations()).toBe(1)
   })
 
+  it('allows every host in a comma-separated HEIRLOOM_PUBLIC_HOST list', async () => {
+    vi.stubEnv('HEIRLOOM_PUBLIC_HOST', ' 203.0.113.9 , Cookbook.local ,,')
+    const app = harness()
+    for (const host of ['203.0.113.9:3000', 'cookbook.local:3000']) {
+      expect((await app.request('POST', { Host: host, Origin: 'http://' + host })).status, host).toBe(200)
+    }
+    expect((await app.request('GET', { Host: 'attacker.example' })).status).toBe(403)
+    expect((await app.request('GET', { Host: '203.0.113.10' })).status).toBe(403)
+  })
+
+  it.each(['192.168.1.17:3000', '10.0.0.5:3000', '10.255.255.255', '172.16.0.1:3000', '172.31.255.254'])('allows private LAN IPv4 Host %s', async host => {
+    vi.stubEnv('HEIRLOOM_PUBLIC_HOST', '')
+    const app = harness()
+    expect((await app.request('POST', { Host: host, Origin: 'http://' + host })).status).toBe(200)
+    expect((await app.request('POST', { Host: host, Origin: 'http://attacker.example' })).status).toBe(403)
+  })
+
+  it.each(['172.15.0.1', '172.32.0.1', '192.169.1.1', '11.0.0.1', '8.8.8.8', '192.168.1.256', '192.168.01.17', '192.168.1', '192.168.1.17.attacker.example', '0xc0a80111', '3232235793', '010.0.0.1', '10.1', '::ffff:192.168.1.17'])('blocks non-canonical or public address Host %s', async host => {
+    vi.stubEnv('HEIRLOOM_PUBLIC_HOST', '')
+    expect((await harness().request('GET', { Host: host })).status).toBe(403)
+  })
+
+  it('admits *.local names only with HEIRLOOM_ALLOW_LAN=true', async () => {
+    vi.stubEnv('HEIRLOOM_PUBLIC_HOST', '')
+    expect((await harness().request('GET', { Host: 'kitchen.local:3000' })).status).toBe(403)
+    vi.stubEnv('HEIRLOOM_ALLOW_LAN', 'true')
+    expect((await harness().request('GET', { Host: 'kitchen.local:3000' })).status).toBe(200)
+    expect((await harness().request('GET', { Host: 'kitchen.local.attacker.example' })).status).toBe(403)
+    expect((await harness().request('GET', { Host: 'attacker.example' })).status).toBe(403)
+  })
+
   it('does not trust forwarded headers or treat configured hosts as wildcards', async () => {
     vi.stubEnv('HEIRLOOM_PUBLIC_HOST', '*.example.com')
     const app = harness()
