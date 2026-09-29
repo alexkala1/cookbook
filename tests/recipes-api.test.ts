@@ -45,6 +45,36 @@ beforeEach(() => {
 afterAll(() => { db.$client.close(); vi.unstubAllEnvs() })
 
 describe('recipe HTTP endpoints', () => {
+  it('filters recipes by curated collection (quick, feast, easy) and rejects invalid collections', async () => {
+    const quick = await (await request('/api/recipes', 'POST', { ...sample(), title: 'Quick soup', totalTimeMinutes: 20, servings: 2, difficulty: 'easy' })).json()
+    const feast = await (await request('/api/recipes', 'POST', { ...sample(), title: 'Family feast', totalTimeMinutes: 90, servings: 8, difficulty: 'advanced' })).json()
+    expect(quick.id).toEqual(expect.any(String))
+    expect(feast.id).toEqual(expect.any(String))
+    for (const [collection, recipe] of [['quick', quick], ['feast', feast], ['easy', quick]] as const) {
+      const response = await request('/api/recipes?collection=' + collection)
+      expect(response.status).toBe(200)
+      expect((await response.json()).map((row: { id: string }) => row.id)).toEqual([recipe.id])
+    }
+    expect((await request('/api/recipes?collection=invalid')).status).toBe(400)
+  })
+
+  it('includes collection boundaries and combines collections with existing filters', async () => {
+    for (const recipe of [
+      { title: 'Boundary', totalTimeMinutes: 30, servings: 6, difficulty: 'easy' },
+      { title: 'Outside', totalTimeMinutes: 31, servings: 5, difficulty: 'advanced' }
+    ]) {
+      expect((await request('/api/recipes', 'POST', { ...sample(), ...recipe })).status).toBe(201)
+    }
+    for (const collection of ['quick', 'feast', 'easy']) {
+      const response = await request('/api/recipes?collection=' + collection)
+      expect(response.status).toBe(200)
+      expect((await response.json()).map((row: { title: string }) => row.title)).toEqual(['Boundary'])
+      expect(await (await request('/api/recipes?collection=' + collection + '&search=Outside')).json()).toEqual([])
+    }
+    expect(await (await request('/api/recipes?collection=easy&difficulty=advanced')).json()).toEqual([])
+    expect(await (await request('/api/recipes')).json()).toHaveLength(2)
+  })
+
   it('round-trips original salt and leaves unspecified originals unknown', async () => {
     const recipe = await (await request('/api/recipes', 'POST', sample())).json()
     expect(recipe.originalSaltType).toBeNull()

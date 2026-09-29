@@ -11,8 +11,15 @@ function familyNote(notes?: string | null) {
 const search = ref('')
 const delayedSearch = refDebounced(search, 250)
 const type = ref('')
+const collection = ref('')
 const favorites = ref(false)
 const filters = [{ label: 'All', value: '' }, { label: 'Food', value: 'food' }, { label: 'Drinks', value: 'drinks' }, { label: 'Baking', value: 'baking' }, { label: 'Desserts', value: 'dessert' }]
+const collections = [
+  { label: 'All Collections', value: '' },
+  { label: '⚡ Weeknight (≤ 30m)', value: 'quick' },
+  { label: '🍽️ Sunday Feasts (6+)', value: 'feast' },
+  { label: 'Simple & Easy', value: 'easy' }
+]
 // Editorial banner for cards without a photo, keyed to the recipe category.
 const banners = {
   food: { label: 'Food', icon: 'i-lucide-cooking-pot', line: 'From the family table', tone: 'food' },
@@ -21,7 +28,7 @@ const banners = {
   dessert: { label: 'Desserts', icon: 'i-lucide-cake-slice', line: 'Something sweet to finish', tone: 'dessert' }
 }
 const bannerFor = (recipeType: string) => recipeType === 'drink' || recipeType === 'cocktail' ? banners.drinks : banners[recipeType as keyof typeof banners] ?? banners.food
-const query = computed(() => ({ ...(delayedSearch.value ? { search: delayedSearch.value } : {}), ...(type.value ? { type: type.value } : {}), ...(favorites.value ? { isFavorite: 'true' } : {}) }))
+const query = computed(() => ({ ...(delayedSearch.value ? { search: delayedSearch.value } : {}), ...(type.value ? { type: type.value } : {}), ...(collection.value ? { collection: collection.value } : {}), ...(favorites.value ? { isFavorite: 'true' } : {}) }))
 const { data: recipes, status, error, refresh } = await useFetch<Recipe[]>('/api/recipes', { query })
 const seeding = ref(false)
 const seedError = ref('')
@@ -54,12 +61,15 @@ async function loadStarters() {
       <button v-for="filter in filters" :key="filter.value" type="button" class="filter-pill" :aria-pressed="type === filter.value" @click="type = filter.value">{{ filter.label }}</button>
       <button type="button" class="filter-pill" :aria-pressed="favorites" @click="favorites = !favorites"><UIcon name="i-lucide-heart" :class="{ 'fill-current': favorites }" aria-hidden="true" /> Favorites</button>
     </div>
+    <div class="-mt-2 mb-6 flex flex-wrap items-center gap-2" role="group" aria-label="Curated collections">
+      <button v-for="col in collections" :key="col.value" type="button" class="filter-pill min-h-11" :aria-pressed="collection === col.value" @click="collection = col.value">{{ col.label }}</button>
+    </div>
     <p v-if="status === 'pending'" role="status" class="py-10">Opening your cookbook…</p>
     <div v-else-if="error" role="alert" class="notice"><p>We couldn’t load your recipes.</p><button class="button-secondary mt-4" @click="refresh()">Try again</button></div>
     <div v-else-if="!recipes?.length" class="empty-state">
-      <h2>{{ search || type || favorites ? 'No recipes match just yet.' : 'Every collection starts with one recipe.' }}</h2>
-      <p class="mt-4">{{ search || type || favorites ? 'Try another search or clear your filters.' : 'Save a family favourite, a weekend bake, or your signature drink.' }}</p>
-      <button v-if="search || type || favorites" class="button-secondary mt-6" @click="search = ''; type = ''; favorites = false">Clear filters</button>
+      <h2>{{ search || type || collection || favorites ? 'No recipes match just yet.' : 'Every collection starts with one recipe.' }}</h2>
+      <p class="mt-4">{{ search || type || collection || favorites ? 'Try another search or clear your filters.' : 'Save a family favourite, a weekend bake, or your signature drink.' }}</p>
+      <button v-if="search || type || collection || favorites" class="button-secondary mt-6" @click="search = ''; type = ''; collection = ''; favorites = false">Clear filters</button>
       <div v-else class="mt-6 flex flex-wrap gap-3">
         <button v-stable-action type="button" class="button-primary starter-button inline-flex items-center" aria-label="Load Starter Heirloom Recipes — Fill your cookbook with family classics" :data-state="seedFeedback.state.value" :disabled="seeding" :aria-busy="seeding" @click="loadStarters">
           <UIcon name="i-lucide-book-heart" class="size-5" aria-hidden="true" />
@@ -84,6 +94,10 @@ async function loadStarters() {
         <p class="mt-3 line-clamp-2 break-words">{{ recipe.description }}</p>
         <p v-if="familyNote(recipe.heirloomNotes)" class="mt-2 line-clamp-1 break-words font-serif italic text-muted">{{ familyNote(recipe.heirloomNotes) }}</p>
         <p class="mt-5 text-sm">{{ recipe.totalTimeMinutes }} min · {{ recipe.servings }} servings · {{ recipe.difficulty }}</p>
+        <div v-if="recipe.totalTimeMinutes <= 30 || recipe.servings >= 6" class="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Recipe tags">
+          <span v-if="recipe.totalTimeMinutes <= 30" class="rounded bg-sage/15 px-2 py-0.5 text-xs font-semibold text-sage-ink">⚡ Quick ({{ recipe.totalTimeMinutes }}m)</span>
+          <span v-if="recipe.servings >= 6" class="rounded bg-terracotta/15 px-2 py-0.5 text-xs font-semibold text-terracotta-ink">🍽️ Feast ({{ recipe.servings }} servings)</span>
+        </div>
       </article>
     </div>
   </section>

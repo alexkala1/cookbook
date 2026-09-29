@@ -45,6 +45,7 @@ export const recipeCreateSchema = z.object({
 }).strict()
 export const recipeUpdateSchema = recipeCreateSchema.partial().refine(value => Object.keys(value).length > 0, 'Provide at least one field')
 export const recipeQuerySchema = z.object({
+  collection: z.enum(['quick', 'feast', 'easy']).optional(),
   search: z.string().trim().max(200).optional(),
   type: z.enum([...recipeTypes, 'drinks']).optional(),
   difficulty: z.enum(difficulties).optional(),

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { z } from 'zod'
 import { db } from '../db'
@@ -41,8 +41,11 @@ export function forkRecipe(id: string, options: { title?: string, variationName?
   })
 }
 
-export function listRecipes(query: { search?: string, type?: string, difficulty?: string, cuisine?: string, isFavorite?: boolean }) {
+export function listRecipes(query: { search?: string, type?: string, difficulty?: string, cuisine?: string, isFavorite?: boolean, collection?: string }) {
   const conditions = []
+  if (query.collection === 'quick') conditions.push(lte(recipes.totalTimeMinutes, 30))
+  if (query.collection === 'feast') conditions.push(gte(recipes.servings, 6))
+  if (query.collection === 'easy') conditions.push(eq(recipes.difficulty, 'easy'))
   if (query.search) conditions.push(sql`instr(greek_lower(${recipes.title} || ' ' || ${recipes.description}), greek_lower(${query.search})) > 0`)
   if (query.type === 'drinks') conditions.push(inArray(recipes.recipeType, ['drink', 'cocktail']))
   else if (query.type) conditions.push(eq(recipes.recipeType, query.type as typeof recipes.$inferSelect.recipeType))

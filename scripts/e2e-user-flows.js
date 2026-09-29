@@ -303,6 +303,30 @@ async function journey(browser, viewport) {
       const rendered = await page.locator('img[src*="/image?v="]').first().evaluate(img => img.complete ? img.naturalWidth : new Promise(resolve => { img.onload = () => resolve(img.naturalWidth); img.onerror = () => resolve(0) }))
       assert(rendered > 0, 'Recipe card should render the photo from the image endpoint')
     })
+    await step(page, viewport, 'Flow 1 · curated collection filter', async () => {
+      // Guarantee a ≤ 30 min recipe exists so the filter has something to include and something to exclude.
+      await page.evaluate(async () => {
+        const quick = (await (await fetch('/api/recipes?collection=quick')).json()).length
+        if (!quick) await fetch('/api/recipes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Ten-Minute Horiatiki', description: 'A weeknight salad.', servings: 2, totalTimeMinutes: 10, difficulty: 'easy' }) })
+      })
+      await go('/recipes')
+      const articles = page.locator('article')
+      await articles.first().waitFor()
+      const total = await articles.count()
+      const expected = await page.evaluate(async () => (await (await fetch('/api/recipes?collection=quick')).json()).length)
+      assert(expected > 0 && expected < total, `Weeknight collection should narrow the list (${expected} of ${total})`)
+      const pill = page.getByRole('group', { name: 'Curated collections' }).getByRole('button', { name: /Weeknight/ })
+      const box = await pill.boundingBox()
+      assert(box && box.height >= 44, 'Collection pills need a 44px touch target, got ' + box?.height)
+      await tap(pill)
+      assert(await pill.getAttribute('aria-pressed') === 'true', 'Weeknight pill should be pressed')
+      await page.waitForFunction(count => document.querySelectorAll('article').length === count, expected)
+      const badges = await articles.evaluateAll(cards => cards.filter(card => /⚡ Quick/.test(card.textContent)).length)
+      assert(badges === expected, `Every weeknight card should carry the Quick badge (${badges}/${expected})`)
+      await shot(page, viewport, 'recipes-collection-weeknight')
+      await tap(page.getByRole('group', { name: 'Curated collections' }).getByRole('button', { name: 'All Collections' }))
+      await page.waitForFunction(count => document.querySelectorAll('article').length === count, total)
+    })
     await step(page, viewport, 'Flow 2 · import a recipe from memory', async () => {
       await go('/recipes/import')
       await tap(page.getByRole('button', { name: 'Conversational Memory' }))
