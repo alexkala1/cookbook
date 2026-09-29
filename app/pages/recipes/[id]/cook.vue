@@ -762,6 +762,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
         </button>
       </div>
       <RescueDrawer
+        :ingredients="[...new Set(recipe.ingredients.map(row => row.name))]"
         :context="recipe.title + ': ' + (step?.instruction || '')"
         :current-step="step?.stepNumber"
         @open="opened"
