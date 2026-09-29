@@ -17,8 +17,12 @@ const { data: cookLogs } = await useFetch<CookLog[]>('/api/recipes/' + id + '/co
 const mountedForDates = ref(false)
 onMounted(() => { mountedForDates.value = true })
 const cookedOn = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', ...(mountedForDates.value ? {} : { timeZone: 'UTC' }) }) : 'Date unknown'
-useSeoMeta({ title: () => recipe.value ? recipe.value.title + ' — Heirloom' : 'Recipe — Heirloom' })
 import { inSystem } from '../../../utils/display-units'
+import { downloadRecipeMarkdown } from '../../../utils/recipe-markdown'
+function exportMarkdown() {
+  if (!recipe.value) return
+  downloadRecipeMarkdown(recipe.value)
+}
 const servings = ref(recipe.value?.servings ?? 4)
 const imperial = ref(false)
 const fromSalt = ref<SaltType | null>(recipe.value?.originalSaltType ?? null)
@@ -166,6 +170,7 @@ function saved(value: RecipeDetail) {
             <summary class="button-secondary">More<UIcon name="i-lucide-ellipsis" aria-hidden="true" /></summary>
             <div class="more-menu__panel">
               <NuxtLink :to="{ path: '/recipes/' + id + '/print', query: { ...scaledQuery, ...(imperial ? { system: 'us' } : {}) } }" class="more-menu__item"><UIcon name="i-lucide-printer" aria-hidden="true" />Print heirloom card</NuxtLink>
+              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); exportMarkdown()"><UIcon name="i-lucide-file-text" aria-hidden="true" />Export Markdown card</button>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); editing = true"><UIcon name="i-lucide-pencil" aria-hidden="true" />Edit recipe</button>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); twisting = true"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Make a twist</button>
               <button type="button" class="more-menu__item more-menu__item--danger" :disabled="busy" @click="closeMore(); deleting = true"><UIcon name="i-lucide-trash" aria-hidden="true" />Delete recipe</button>
