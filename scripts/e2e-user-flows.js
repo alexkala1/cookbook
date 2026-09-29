@@ -190,6 +190,19 @@ async function journey(browser, viewport) {
       return sentinel
     } } })
   })
+  // Speech stub: records what would be read aloud; the utterance "starts" at once and ends only when cancelled or finished by the test.
+  await context.addInitScript(() => {
+    const log = { spoken: [], cancels: 0 }
+    let active
+    window.__speech = log
+    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+      getVoices: () => [],
+      speak: utterance => { log.spoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate }); active = utterance; setTimeout(() => utterance.onstart?.(), 0) },
+      cancel: () => { log.cancels++; active = undefined }
+    } })
+    window.__finishSpeech = () => { const done = active; active = undefined; done?.onend?.() }
+  })
   const page = await context.newPage()
   const verifyClean = watch(page, viewport)
   const dialogs = []
@@ -417,6 +430,30 @@ async function journey(browser, viewport) {
       assert((await counter.innerText()) === first, 'Swipe right should go back')
       await swipe(page, page.locator('article').first(), -30)
       assert((await counter.innerText()) === first, 'A short swipe should be ignored')
+    })
+    await step(page, viewport, 'Flow 3 · read a step aloud', async () => {
+      const read = page.getByRole('button', { name: /^Read step \d+ aloud$/ })
+      await read.waitFor()
+      const box = await read.boundingBox()
+      assert(box && box.width >= 44 && box.height >= 44, 'Read step needs a 44×44px target, got ' + JSON.stringify(box))
+      assert(await page.evaluate(() => window.__speech.spoken.length) === 0, 'Narration must be off until the cook asks for it')
+      await tap(read)
+      const stop = page.getByRole('button', { name: 'Stop reading step aloud' })
+      await stop.waitFor()
+      const spoken = await page.evaluate(() => window.__speech.spoken)
+      assert(spoken.length === 1 && /^Step \d+\./.test(spoken[0].text) && spoken[0].lang === 'en-US' && spoken[0].rate === 0.95, 'Reading should speak the numbered step in English at 0.95: ' + JSON.stringify(spoken))
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await shot(page, viewport, 'kitchen-read-step-speaking')
+      await tap(stop)
+      await page.getByRole('button', { name: /^Read step \d+ aloud$/ }).waitFor()
+      // Changing step silences narration in flight.
+      await tap(page.getByRole('button', { name: /^Read step \d+ aloud$/ }))
+      await stop.waitFor()
+      const cancelsBefore = await page.evaluate(() => window.__speech.cancels)
+      await tap(page.getByRole('button', { name: 'Next' }))
+      await page.getByRole('button', { name: /^Read step \d+ aloud$/ }).waitFor()
+      assert(await page.evaluate(() => window.__speech.cancels) > cancelsBefore, 'Navigating should cancel speech')
+      await tap(page.getByRole('button', { name: 'Prev' }))
     })
     await step(page, viewport, 'Flow 3 · oven heat panel and timers', async () => {
       await page.getByRole('heading', { name: 'Oven adjustment' }).waitFor()

@@ -164,6 +164,7 @@ function navigate(direction: 'next' | 'previous') {
     return
   }
   wakeOnGesture()
+  stopSpeech()
   if (!rescueOpen.value) {
     index.value = Math.max(0, Math.min(steps.value.length - 1, index.value + (direction === 'next' ? 1 : -1)))
     void nextTick(() => stepHeading.value?.focus({ preventScroll: true }))
@@ -179,6 +180,7 @@ const {
   start: startCamera,
   stop: stopCamera
 } = useAirSwipe(navigate)
+const { isSpeaking, isSupported: speechSupported, toggle: toggleSpeech, stop: stopSpeech } = useKitchenSpeech()
 const { isSupported, isActive: wakeRequested, sentinel, request: requestWake, release } = useWakeLock()
 const wakeReleased = ref(false)
 
@@ -225,6 +227,7 @@ const finishState = ref<'ask' | 'busy' | 'done'>('ask')
 const finishError = ref('')
 const deducted = ref<{ name: string, amount: string }[]>([])
 function finishCooking() {
+  stopSpeech()
   finishState.value = 'ask'; finishError.value = ''; deducted.value = []; rating.value = 0; journalNote.value = ''; journalSaved = false
   finishDialog.value?.showModal()
 }
@@ -294,6 +297,7 @@ function startCooking() {
   void nextTick(() => stepHeading.value?.focus({ preventScroll: true }))
 }
 function backToPrep() {
+  stopSpeech()
   prep.value = true
   try { sessionStorage.removeItem(prepKey) } catch { /* Nothing stored to clear. */ }
   void nextTick(() => prepHeading.value?.focus({ preventScroll: true }))
@@ -480,7 +484,21 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
         </nav>
       </template>
       <template v-else-if="step">
-        <p class="mt-8 text-xl num">Step {{ index + 1 }} of {{ steps.length }}</p>
+        <div class="mt-8 flex min-h-11 flex-wrap items-center gap-x-4 gap-y-2">
+          <p class="text-xl num">Step {{ index + 1 }} of {{ steps.length }}</p>
+          <p v-if="step.durationMinutes" class="flex items-center gap-1.5 text-lg text-k-muted num"><UIcon name="i-lucide-timer" class="size-5" aria-hidden="true" />{{ step.durationMinutes }} min</p>
+          <button
+            v-if="speechSupported"
+            type="button"
+            class="kitchen-button speak-button scroll-mt-40 ml-auto inline-flex min-h-11 min-w-11 items-center gap-2"
+            :class="{ 'speak-button--active': isSpeaking }"
+            :aria-label="isSpeaking ? 'Stop reading step aloud' : `Read step ${index + 1} aloud`"
+            @click="toggleSpeech(step, index + 1)"
+          >
+            <UIcon :name="isSpeaking ? 'i-lucide-square' : 'i-lucide-volume-2'" class="size-5" aria-hidden="true" />
+            {{ isSpeaking ? 'Stop reading' : 'Read step' }}
+          </button>
+        </div>
         <section v-if="notesPlan" class="kitchen-panel !mt-4 rounded-lg border border-k-rule p-5" aria-labelledby="split-hint-title">
           <h2 id="split-hint-title" class="text-2xl">Only one step saved</h2>
           <p class="mt-3 text-lg">This recipe’s notes contain {{ stepCountPhrase(notesPlan.steps.length) }} method{{ notesPlan.steps.some(row => row.durationMinutes) ? ' with timings' : '' }}. Split it into steps to cook one stage at a time.</p>
@@ -771,6 +789,9 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
   </section>
 </template>
 <style scoped>
+.speak-button--active { border-color: var(--color-k-accent); color: var(--color-k-accent); animation: speak-pulse 1.6s ease-in-out infinite; }
+@keyframes speak-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-k-accent) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .speak-button--active { animation: none; } }
 .allergen-alert { border: 2px solid var(--color-k-allergen); border-radius: .75rem; background: var(--color-k-allergen-wash); color: var(--color-k-allergen-ink); padding: 1.25rem; }
 .star-choice { display: inline-flex; min-height: 48px; min-width: 44px; align-items: center; justify-content: center; border-radius: .5rem; color: var(--color-k-accent); cursor: pointer; }
 .star-choice:has(:focus-visible) { outline: 3px solid var(--color-k-accent); outline-offset: 2px; }
