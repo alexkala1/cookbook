@@ -20,6 +20,10 @@ onMounted(() => {
 const visible = computed(() =>
   (items.value ?? []).filter(item => location.value === 'all' || item.storageLocation === location.value)
 )
+const counts = computed<Record<string, number>>(() => {
+  const all = items.value ?? []
+  return { all: all.length, ...Object.fromEntries(storageLocations.map(place => [place, all.filter(item => item.storageLocation === place).length])) }
+})
 const form = reactive<PantryDraft>({ name: '', quantity: 1, unit: 'item', storageLocation: 'pantry' })
 const expiry = ref('')
 const drafts = ref<PantryDraft[]>([])
@@ -148,14 +152,14 @@ function expiryLabel(item: PantryItem) {
     </form>
 
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-wrap gap-2" aria-label="Filter by storage">
+      <div class="flex flex-wrap gap-2" role="group" aria-label="Filter by storage">
         <button
-          v-for="place in ['all', 'fridge', 'freezer', 'pantry']"
+          v-for="place in ['all', ...storageLocations]"
           :key="place"
-          class="filter-pill capitalize"
+          class="filter-pill min-h-11 capitalize"
           :aria-pressed="location === place"
           @click="location = place"
-        >{{ place }}</button>
+        >{{ place }} <span class="num">({{ counts[place] }})</span></button>
       </div>
       <div class="flex flex-wrap gap-3">
         <button
@@ -210,7 +214,7 @@ function expiryLabel(item: PantryItem) {
       </section>
     </details>
 
-    <p v-if="!visible.length" class="empty-state mt-6">Nothing here yet. Add an ingredient above.</p>
+    <p v-if="!visible.length" class="empty-state mt-6">{{ location === 'all' ? 'Nothing here yet. Add an ingredient above.' : 'Nothing in the ' + location + ' yet. Add an ingredient above, or pick another shelf.' }}</p>
 
     <ul class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Pantry inventory">
       <li v-for="item in visible" :key="item.id" class="row-panel min-w-0 break-words">

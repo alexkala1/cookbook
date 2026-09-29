@@ -112,6 +112,10 @@ onBeforeUnmount(() => {
 })
 
 function navigate(direction: 'next' | 'previous') {
+  if (prep.value && steps.value.length) {
+    if (direction === 'next') startCooking()
+    return
+  }
   wakeOnGesture()
   if (!rescueOpen.value) {
     index.value = Math.max(0, Math.min(steps.value.length - 1, index.value + (direction === 'next' ? 1 : -1)))
@@ -184,7 +188,7 @@ async function deductFromPantry() {
     finishState.value = 'done'
   } catch { finishError.value = 'We couldn’t update your pantry. Try again, or skip for now.'; finishState.value = 'ask' }
 }
-function leaveKitchen() { finishDialog.value?.close(); void navigateTo('/recipes/' + id) }
+function leaveKitchen() { try { sessionStorage.removeItem(prepKey) } catch { /* Nothing stored to clear. */ } finishDialog.value?.close(); void navigateTo('/recipes/' + id) }
 
 const fromOven = ref<Oven>('static_conventional')
 const toOven = ref<Oven>(kitchen.value?.ovenType || 'static_conventional')
@@ -203,6 +207,33 @@ watch(
   { immediate: true }
 )
 const ovenStep = (text: string) => /oven|bake|roast|preheat|φουρν|ψησ|ψην|προθερμ/i.test(text.normalize('NFD').replace(/\p{M}/gu, ''))
+// Mise en place comes first: gather and prep everything, and get the oven heating, before step 1. Skippable, and remembered per recipe for this tab.
+const prepKey = 'heirloom-prep-done-' + id
+const prep = ref(true)
+const prepped = ref<string[]>([])
+const prepHeading = ref<HTMLElement>()
+const preheat = computed(() => {
+  for (const item of steps.value) {
+    const reading = ovenStep(item.instruction) ? ovenTemperature(item.instruction) : null
+    if (reading) return { step: item.stepNumber, ...reading }
+  }
+  return null
+})
+const prepIngredients = computed(() => (recipe.value?.ingredients ?? []).map(row => ({
+  id: row.id, name: row.name, notes: row.notes,
+  measure: row.amount > 0 ? [Number(row.amount.toFixed(2)), row.unit].filter(Boolean).join(' ') : ''
+})))
+function startCooking() {
+  prep.value = false
+  try { sessionStorage.setItem(prepKey, '1') } catch { /* Prep just shows again next visit. */ }
+  wakeOnGesture()
+  void nextTick(() => stepHeading.value?.focus({ preventScroll: true }))
+}
+function backToPrep() {
+  prep.value = true
+  try { sessionStorage.removeItem(prepKey) } catch { /* Nothing stored to clear. */ }
+  void nextTick(() => prepHeading.value?.focus({ preventScroll: true }))
+}
 const temperature = computed(() => ovenStep(step.value?.instruction || '') ? ovenTemperature(step.value!.instruction) : null)
 const rawDurations = computed(() => {
   const parsed = parseDurations(step.value?.instruction || '')
@@ -299,6 +330,7 @@ function opened(value: boolean) {
 
 onMounted(() => {
   mounted.value = true
+  try { if (sessionStorage.getItem(prepKey) === '1') prep.value = false } catch { /* Storage blocked: start with prep. */ }
   document.addEventListener('keydown', keyboard)
   document.addEventListener('pointerdown', wakeOnGesture, { passive: true })
   if (isSupported.value) void keepAwake()
@@ -341,7 +373,34 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
         <p v-if="wakeError" role="status">{{ wakeError }}</p>
       </div>
       <p v-if="!steps.length" class="mt-8">No cooking steps yet. Add a method in the recipe editor.</p>
-      <template v-if="step">
+      <template v-if="prep && steps.length">
+        <article class="mt-8" aria-labelledby="prep-title">
+          <p class="text-xl num">Before step 1</p>
+          <h2 id="prep-title" ref="prepHeading" tabindex="-1" class="kitchen-step font-sans font-normal">Prep &amp; Mise en Place</h2>
+          <p class="mt-3 text-xl">Set everything out and prepped now, so you can cook without stopping.</p>
+          <p v-if="preheat" role="note" class="kitchen-panel mt-6 flex items-start gap-3 rounded-lg border border-k-accent p-5 text-xl">
+            <UIcon name="i-lucide-flame" class="mt-1 size-7 flex-none text-k-accent" aria-hidden="true" />
+            <span><strong>Oven preheating:</strong> step {{ preheat.step }} needs {{ preheat.temperature }} °{{ preheat.unit }}. Turn the oven on now so it’s ready when you are.</span>
+          </p>
+          <section class="kitchen-panel" aria-labelledby="prep-ingredients">
+            <h3 id="prep-ingredients" class="text-2xl">Ingredients</h3>
+            <p role="status" class="mt-2 text-lg num">{{ prepped.length }} of {{ prepIngredients.length }} prepped</p>
+            <ul class="mt-4 space-y-2">
+              <li v-for="row in prepIngredients" :key="row.id">
+                <label class="flex min-h-14 cursor-pointer items-start gap-4 py-2 text-xl">
+                  <input v-model="prepped" type="checkbox" :value="row.id" class="mt-1 size-7 flex-none" :aria-label="'Prepped: ' + row.name">
+                  <span class="min-w-0 break-words" :class="{ 'line-through opacity-60': prepped.includes(row.id) }"><span class="num font-semibold">{{ row.measure }}</span> {{ row.name }}<span v-if="row.notes" class="block text-base text-k-muted">{{ row.notes }}</span></span>
+                </label>
+              </li>
+            </ul>
+          </section>
+          <button type="button" class="mt-6 text-lg underline" @click="startCooking">Skip prep</button>
+        </article>
+        <nav class="step-bar step-bar--single" aria-label="Start cooking">
+          <button class="kitchen-button kitchen-primary step-next w-full" @click="startCooking">All Prepped — Start Cooking<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
+        </nav>
+      </template>
+      <template v-else-if="step">
         <p class="mt-8 text-xl num">Step {{ index + 1 }} of {{ steps.length }}</p>
         <section v-if="notesPlan" class="kitchen-panel !mt-4 rounded-lg border border-k-rule p-5" aria-labelledby="split-hint-title">
           <h2 id="split-hint-title" class="text-2xl">Only one step saved</h2>
@@ -394,7 +453,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <p v-if="step.failurePrevention" class="mt-4 text-xl text-k-accent">{{ step.failurePrevention }}</p>
         </article>
         <nav class="step-bar" aria-label="Cooking steps">
-          <button class="kitchen-button" :disabled="index === 0" @click="navigate('previous')"><UIcon name="i-lucide-chevron-left" class="size-7" aria-hidden="true" />Prev</button>
+          <button class="kitchen-button" @click="index === 0 ? backToPrep() : navigate('previous')"><UIcon name="i-lucide-chevron-left" class="size-7" aria-hidden="true" />{{ index === 0 ? 'Prep' : 'Prev' }}</button>
           <span class="num text-base">{{ index + 1 }} / {{ steps.length }}</span>
           <button v-if="index < steps.length - 1" class="kitchen-button step-next" @click="navigate('next')">Next<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
           <button v-else class="kitchen-button step-next" @click="finishCooking">Done</button>
@@ -586,6 +645,9 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
   background: var(--color-k-paper);
   border-top: 1px solid var(--color-k-rule);
 }
+/* Prep has one action, so it gets the whole bar. */
+.step-bar--single { grid-template-columns: minmax(0, 1fr); }
+.step-bar--single .kitchen-button { justify-content: center; white-space: normal; }
 /* Fitts: primary kitchen actions are ≥64px tall so a wet or floured hand cannot miss them. */
 .step-bar .kitchen-button,
 .kitchen-primary {

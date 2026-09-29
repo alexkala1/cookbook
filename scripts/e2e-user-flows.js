@@ -7,7 +7,7 @@
 // already running app instead (starter recipes are then seeded through the idempotent API).
 // Chromium: CHROMIUM_PATH, else Playwright's own browser, else the newest cached ms-playwright build.
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -338,14 +338,22 @@ async function journey(browser, viewport) {
     await step(page, viewport, 'Flow 3 · enter Kitchen Mode', async () => {
       await tap(page.getByRole('link', { name: 'Start cooking' }))
       await page.waitForURL('**/cook')
+      await page.getByRole('heading', { name: 'Prep & Mise en Place' }).waitFor()
+      assert(await page.getByText(/Oven preheating:/).count() === 1, 'Prep should remind the cook to preheat the oven')
+      const prepBoxes = page.getByRole('checkbox', { name: /^Prepped: / })
+      assert(await prepBoxes.count() >= 3, 'Prep should list every ingredient with a checkbox')
+      await prepBoxes.first().check()
+      await page.getByText(new RegExp(`^1 of ${await prepBoxes.count()} prepped$`)).waitFor()
+      await shot(page, viewport, 'kitchen-prep')
+      await tap(page.getByRole('button', { name: /All Prepped/ }))
+      await page.getByText(/^Step 1 of /).waitFor()
       await page.locator('.step-bar').waitFor()
       const bar = await page.locator('.step-bar').boundingBox()
       assert(bar && Math.abs(bar.y + bar.height - viewport.height) <= 1, 'Step bar should be fixed to the bottom of the viewport')
       await shot(page, viewport, 'kitchen-step-1')
     })
     await step(page, viewport, 'Flow 3 · wake lock retried on the first tap', async () => {
-      await page.getByRole('button', { name: 'Keep screen awake' }).waitFor()
-      await page.locator('article').first().click()
+      // The stub refuses the request made on load; the first tap (“All Prepped — Start Cooking”) retries and is granted.
       await page.getByRole('button', { name: 'Allow screen sleep' }).waitFor()
       await page.getByRole('button', { name: 'Allow screen sleep' }).click()
       await page.getByRole('button', { name: 'Keep screen awake' }).waitFor()
@@ -500,6 +508,20 @@ async function journey(browser, viewport) {
       await tap(page.getByRole('button', { name: 'Save reviewed items' }))
       await page.getByText('Receipt items saved.').waitFor()
     })
+    await step(page, viewport, 'Flow 5 · pantry storage tabs', async () => {
+      const group = page.getByRole('group', { name: 'Filter by storage' })
+      const total = Number((await group.getByRole('button', { name: /^all \(\d+\)$/ }).innerText()).match(/\d+/)[0])
+      assert(total >= 3, 'All tab should count every pantry item')
+      const fridge = group.getByRole('button', { name: /^fridge \(\d+\)$/ })
+      const fridgeCount = Number((await fridge.innerText()).match(/\d+/)[0])
+      assert(fridgeCount >= 1 && fridgeCount < total, 'Fridge tab should count only fridge items')
+      await tap(fridge)
+      assert(await page.getByRole('list', { name: 'Pantry inventory' }).getByRole('listitem').count() === fridgeCount, 'Fridge tab should list only fridge items')
+      assert(await fridge.getAttribute('aria-pressed') === 'true', 'Active tab should be pressed')
+      await shot(page, viewport, 'pantry-storage-tabs', group)
+      await tap(group.getByRole('button', { name: /^all / }))
+      assert(await page.getByRole('list', { name: 'Pantry inventory' }).getByRole('listitem').count() === total, 'All tab should restore the full list')
+    })
     await step(page, viewport, 'Flow 5 · cook with what I have', async () => {
       await tap(page.getByRole('button', { name: 'Cook With What I Have' }))
       const matches = page.getByRole('region', { name: 'Recipe matches' })
@@ -556,6 +578,19 @@ async function journey(browser, viewport) {
       await page.waitForLoadState('networkidle')
       assert(await page.getByLabel('Stove type').inputValue() === 'induction', 'Kitchen profile should persist on the server')
       await shot(page, viewport, 'settings', page.getByRole('heading', { name: 'Your kitchen hardware' }))
+    })
+    await step(page, viewport, 'Flow 7 · backup and restore', async () => {
+      const [download] = await Promise.all([page.waitForEvent('download'), tap(page.getByRole('button', { name: /Download Backup/ }))])
+      assert(/^heirloom-backup-\d{4}-\d{2}-\d{2}\.json$/.test(download.suggestedFilename()), 'Backup should download as a dated .json file')
+      const path = await download.path()
+      const backup = JSON.parse(readFileSync(path, 'utf8'))
+      assert(Array.isArray(backup.recipes) && backup.recipes.length >= 5, 'Backup should contain the cookbook recipes')
+      await page.getByLabel('Restore Backup file').setInputFiles(path)
+      await page.getByText(/backup has been restored/).waitFor()
+      await shot(page, viewport, 'settings-backup', page.getByRole('heading', { name: 'Cookbook Backup & Portability' }))
+      // Unreadable files are rejected in the browser; the server's rejection of malformed backups is covered by unit tests.
+      await page.getByLabel('Restore Backup file').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('not json') })
+      await page.getByRole('alert').filter({ hasText: /isn’t a readable Heirloom backup/ }).waitFor()
     })
     await step(page, viewport, "Flow 7 · Cook's Handbook", async () => {
       await tap(page.getByRole('link', { name: "Cook's Handbook" }))
