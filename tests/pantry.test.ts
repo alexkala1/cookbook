@@ -7,19 +7,29 @@ import { pantryItems, recipes, ingredients } from '../server/db/schema'
 import list from '../server/api/pantry/index.get'
 import create from '../server/api/pantry/index.post'
 import remove from '../server/api/pantry/[id].delete'
+import update from '../server/api/pantry/[id].patch'
 import match from '../server/api/pantry/match.post'
 import receipt from '../server/api/pantry/receipt.post'
 import csrf from '../server/middleware/csrf'
-import { inferStorage, matchPantry, normalizePantryName, parseReceipt, type PantryItem } from '../shared/culinary/pantry'
+import { inferStorage, matchPantry, normalizePantryName, parseReceipt, pantryStepForUnit, PANTRY_STAPLES, type PantryItem } from '../shared/culinary/pantry'
+import { pantryInput } from '../server/utils/pantry'
 
 vi.mock('../server/db', async () => { vi.stubEnv('DATABASE_URL', ':memory:'); return vi.importActual('../server/db') })
 migrate(db, { migrationsFolder: fileURLToPath(new URL('../server/db/migrations', import.meta.url)) })
-const handle = toWebHandler(createApp().use(csrf).use(createRouter().get('/api/pantry', list).post('/api/pantry', create).delete('/api/pantry/:id', remove).post('/api/pantry/match', match).post('/api/pantry/receipt', receipt)))
+const handle = toWebHandler(createApp().use(csrf).use(createRouter().get('/api/pantry', list).post('/api/pantry', create).patch('/api/pantry/:id', update).delete('/api/pantry/:id', remove).post('/api/pantry/match', match).post('/api/pantry/receipt', receipt)))
 function request(path = '', method = 'GET', body?: unknown, origin = 'http://localhost') {
   return handle(new Request('http://localhost/api/pantry' + path, { method, headers: { Host: 'localhost', Origin: origin, 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }))
 }
 beforeEach(() => { db.delete(pantryItems).run(); db.delete(recipes).run() })
+it.each([['g', 50], ['ml', 50], ['item', 1], ['kg', 1], ['tbsp', 1], [' ML ', 50], [' G ', 50]])('steps %s by %s', (unit, expected) => {
+  expect(pantryStepForUnit(unit)).toBe(expected)
+})
 afterAll(() => { db.$client.close(); vi.unstubAllEnvs() })
+it('provides eight valid Mediterranean pantry staples', () => {
+  expect(PANTRY_STAPLES).toHaveLength(8)
+  expect(PANTRY_STAPLES.map(item => item.name)).toEqual(['Olive oil', 'Onions', 'Garlic', 'Tomatoes', 'Oregano', 'Lemons', 'Feta', 'Eggs'])
+  for (const item of PANTRY_STAPLES) expect(pantryInput.safeParse(item).success).toBe(true)
+})
 it('adds, lists, merges compatible quantities, separates locations and deletes', async () => {
   const first = await (await request('', 'POST', { name: 'Αλάτι', quantity: 1, unit: 'kg' })).json()
   expect(first[0]).toMatchObject({ normalizedName: 'αλατι', createdAt: expect.any(Number), updatedAt: expect.any(Number), storageLocation: 'pantry' })
@@ -36,6 +46,34 @@ it('sorts soonest expiry first, unknown dates last, then location', async () => 
   expect((await (await request()).json()).map((row: PantryItem) => row.name)).toEqual(['Frozen', 'Soon', 'Later', 'Unknown'])
   await request('', 'POST', { name: 'Soon', expiresAt: 3000 })
   expect(db.select().from(pantryItems).all().find(row => row.name === 'Soon')?.expiresAt).toBe(1000)
+})
+it('adjusts pantry quantity and persists the updated item without changing its metadata', async () => {
+  const [item] = await (await request('', 'POST', { name: 'Feta', quantity: 200, unit: 'g', storageLocation: 'fridge', expiresAt: 2000 })).json()
+  const response = await request('/' + item.id, 'PATCH', { delta: 50 })
+  expect(response.status).toBe(200)
+  const updated = await response.json()
+  expect(updated).toEqual({ ...item, quantity: 250, updatedAt: expect.any(Number) })
+  expect(updated.updatedAt).toBeGreaterThanOrEqual(item.updatedAt)
+  expect(await (await request()).json()).toEqual([updated])
+  expect(await (await request('/' + item.id, 'PATCH', { delta: -50 })).json()).toMatchObject({ quantity: 200 })
+})
+it.each([
+  [1, 0.23456, 1.235], [0.3, -0.1, 0.2], [1, -1000000, 0], [999999, 1000000, 1000000], [1, 0, 1]
+])('clamps and rounds %s plus %s to %s', async (quantity, delta, expected) => {
+  const [item] = await (await request('', 'POST', { name: 'Olive oil', quantity, unit: 'l' })).json()
+  const response = await request('/' + item.id, 'PATCH', { delta })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ id: item.id, quantity: expected })
+  expect(await (await request()).json()).toEqual([expect.objectContaining({ id: item.id, quantity: expected })])
+})
+it('rejects invalid quantity updates and cross-origin requests without changing stock', async () => {
+  const [item] = await (await request('', 'POST', { name: 'Eggs', quantity: 6 })).json()
+  for (const body of [{}, { delta: '1' }, { delta: null }, { delta: 1000001 }, { delta: -1000001 }, { delta: 1, quantity: 99 }, [], null]) {
+    expect((await request('/' + item.id, 'PATCH', body)).status).toBe(400)
+  }
+  expect((await request('/' + item.id, 'PATCH', { delta: 1 }, 'https://evil.example')).status).toBe(403)
+  expect(await (await request()).json()).toEqual([item])
+  expect((await request('/missing', 'PATCH', { delta: 1 })).status).toBe(404)
 })
 it('rolls back the whole batch on incompatible units and validates all input', async () => {
   await request('', 'POST', { name: 'Flour', unit: 'g' })

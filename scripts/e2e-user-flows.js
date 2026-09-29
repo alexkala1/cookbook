@@ -644,6 +644,37 @@ async function journey(browser, viewport) {
       await tap(group.getByRole('button', { name: /^all / }))
       assert(await page.getByRole('list', { name: 'Pantry inventory' }).getByRole('listitem').count() === total, 'All tab should restore the full list')
     })
+    await step(page, viewport, 'Flow 5 · quick-add staples and quantity steppers', async () => {
+      const card = name => page.getByRole('list', { name: 'Pantry inventory' }).getByRole('listitem').filter({ has: page.getByRole('heading', { name, exact: true }) })
+      const quantity = async name => Number((await card(name).locator('.tabular-nums').innerText()).replace(',', '.'))
+      await tap(page.getByRole('button', { name: 'Add 200 g of Feta to pantry' }))
+      await page.getByRole('status').filter({ hasText: 'Restocked Feta (+200 g) in your fridge.' }).waitFor()
+      await card('Feta').waitFor()
+      assert(await quantity('Feta') === 200, 'Quick-add should stock 200 g of feta')
+      await tap(card('Feta').getByRole('button', { name: 'Increase Feta quantity' }))
+      await page.waitForFunction(() => [...document.querySelectorAll('.tabular-nums')].some(el => el.textContent.trim() === '250'))
+      assert(await quantity('Feta') === 250, 'The + stepper should add 50 g for grams')
+      await tap(card('Feta').getByRole('button', { name: 'Decrease Feta quantity' }))
+      await page.waitForFunction(() => [...document.querySelectorAll('.tabular-nums')].some(el => el.textContent.trim() === '200'))
+      const saved = await page.evaluate(async () => (await (await fetch('/api/pantry')).json()).find(row => row.name === 'Feta')?.quantity)
+      assert(saved === 200, 'The stepper should persist to the server, got ' + saved)
+      // Counted items step by one, and running out is shown rather than deleting the item.
+      // Earlier flows may already have stocked some staples in other units, so pick one that is not in the pantry yet.
+      const counted = [['Garlic', 1], ['Lemons', 4], ['Eggs', 6]]
+      let pick
+      for (const [name, amount] of counted) if (await card(name).count() === 0) { pick = [name, amount]; break }
+      assert(pick, 'One counted staple should still be unstocked')
+      const [name, amount] = pick
+      await tap(page.getByRole('button', { name: `Add ${amount} item of ${name} to pantry` }))
+      await card(name).waitFor()
+      for (let left = amount; left > 0; left--) {
+        await tap(card(name).getByRole('button', { name: `Decrease ${name} quantity` }))
+        await page.waitForFunction(([label, expected]) => [...document.querySelectorAll('li')].some(li => li.querySelector('h2')?.textContent.trim() === label && li.querySelector('.tabular-nums')?.textContent.trim() === String(expected)), [name, left - 1])
+      }
+      await card(name).getByText('Out of stock').waitFor()
+      assert(await card(name).getByRole('button', { name: `Decrease ${name} quantity` }).isDisabled(), 'Decrease should be disabled at zero')
+      await shot(page, viewport, 'pantry-quickstock', page.getByRole('region', { name: 'Quick-add kitchen staples' }))
+    })
     await step(page, viewport, 'Flow 5 · cook with what I have', async () => {
       await tap(page.getByRole('button', { name: 'Cook With What I Have' }))
       const matches = page.getByRole('region', { name: 'Recipe matches' })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { storageLocations, type PantryItem, type PantryDraft, type PantryMatch } from '#shared/culinary/pantry'
+import { PANTRY_STAPLES, pantryStepForUnit, storageLocations, type PantryItem, type PantryDraft, type PantryMatch } from '#shared/culinary/pantry'
 import type { ChefAdvice } from '#shared/culinary/chef-advice'
 
 const { requestHeaders, ready: byokReady } = useByokSettings()
@@ -64,6 +64,26 @@ function add() {
     form.name = ''
     expiry.value = ''
     message.value = 'Added to your pantry.'
+  })
+}
+
+function quickAddStaple(staple: PantryDraft) {
+  void act(async () => {
+    await save([staple])
+    message.value = `Restocked ${staple.name} (+${staple.quantity} ${staple.unit}) in your ${staple.storageLocation}.`
+  })
+}
+
+function adjustQuantity(item: PantryItem, delta: number) {
+  void act(async () => {
+    const updated = await $fetch<PantryItem>('/api/pantry/' + item.id, {
+      method: 'PATCH',
+      body: { delta }
+    })
+    item.quantity = updated.quantity
+    item.updatedAt = updated.updatedAt
+    matches.value = null
+    advice.value = null
   })
 }
 
@@ -181,6 +201,28 @@ function expiryLabel(item: PantryItem) {
       </div>
     </div>
 
+    <section class="mt-6" aria-labelledby="staples-heading">
+      <div class="flex items-center gap-2">
+        <UIcon name="i-lucide-sparkles" class="size-4 text-terracotta-ink" aria-hidden="true" />
+        <h2 id="staples-heading" class="meta-label">Quick-add kitchen staples</h2>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-2" role="group" aria-label="Kitchen staples quick-add">
+        <button
+          v-for="staple in PANTRY_STAPLES"
+          :key="staple.name"
+          type="button"
+          class="filter-pill min-h-11 inline-flex items-center gap-1.5"
+          :disabled="busy"
+          :aria-label="'Add ' + staple.quantity + ' ' + staple.unit + ' of ' + staple.name + ' to pantry'"
+          @click="quickAddStaple(staple)"
+        >
+          <UIcon name="i-lucide-plus" class="size-3.5" aria-hidden="true" />
+          <span>{{ staple.name }}</span>
+          <span class="text-xs text-muted">({{ staple.quantity }} {{ staple.unit }})</span>
+        </button>
+      </div>
+    </section>
+
     <details v-if="advice" open class="keepsake-advice mt-8" aria-label="Chef advice">
       <summary class="flex min-h-11 cursor-pointer select-none items-center justify-between gap-3 font-serif text-2xl [&::-webkit-details-marker]:hidden">
         <span class="flex items-center gap-2"><UIcon name="i-lucide-chef-hat" class="flex-none text-terracotta-ink" aria-hidden="true" />Tonight, from your kitchen</span>
@@ -220,7 +262,33 @@ function expiryLabel(item: PantryItem) {
       <li v-for="item in visible" :key="item.id" class="row-panel min-w-0 break-words">
         <p class="meta-label">{{ item.storageLocation }}</p>
         <h2 class="mt-2 font-serif text-2xl">{{ item.name }}</h2>
-        <p>{{ Number(item.quantity.toFixed(3)) }} {{ item.unit }}</p>
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <div>
+            <span class="font-serif text-2xl font-bold tabular-nums">{{ Number(item.quantity.toFixed(3)) }}</span>
+            <span class="ml-1 text-muted">{{ item.unit }}</span>
+            <span v-if="item.quantity <= 0" class="ml-2 rounded bg-terracotta/10 px-1.5 py-0.5 text-xs font-semibold text-terracotta-ink">Out of stock</span>
+          </div>
+          <div class="inline-flex items-center gap-1 rounded-lg border border-rule bg-paper p-0.5 shadow-sm" role="group" :aria-label="'Adjust quantity for ' + item.name">
+            <button
+              type="button"
+              class="min-h-11 min-w-11 inline-flex items-center justify-center rounded text-muted hover:bg-paper-2 hover:text-ink disabled:opacity-30 disabled:pointer-events-none"
+              :disabled="busy || item.quantity <= 0"
+              :aria-label="'Decrease ' + item.name + ' quantity'"
+              @click="adjustQuantity(item, -pantryStepForUnit(item.unit))"
+            >
+              <UIcon name="i-lucide-minus" class="size-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="min-h-11 min-w-11 inline-flex items-center justify-center rounded text-muted hover:bg-paper-2 hover:text-ink disabled:opacity-30 disabled:pointer-events-none"
+              :disabled="busy"
+              :aria-label="'Increase ' + item.name + ' quantity'"
+              @click="adjustQuantity(item, pantryStepForUnit(item.unit))"
+            >
+              <UIcon name="i-lucide-plus" class="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         <p
           class="mt-3 text-sm"
           :class="

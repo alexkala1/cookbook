@@ -2,6 +2,20 @@ export const storageLocations = ['pantry', 'fridge', 'freezer'] as const
 export type StorageLocation = typeof storageLocations[number]
 export interface PantryDraft { name: string, quantity: number, unit: string, storageLocation: StorageLocation, expiresAt?: number | null }
 export interface PantryItem extends PantryDraft { id: string, normalizedName: string, expiresAt: number | null, createdAt: number, updatedAt: number }
+export const PANTRY_STAPLES: readonly PantryDraft[] = [
+  { name: 'Olive oil', quantity: 1, unit: 'l', storageLocation: 'pantry' },
+  { name: 'Onions', quantity: 1, unit: 'kg', storageLocation: 'pantry' },
+  { name: 'Garlic', quantity: 1, unit: 'item', storageLocation: 'pantry' },
+  { name: 'Tomatoes', quantity: 1, unit: 'kg', storageLocation: 'fridge' },
+  { name: 'Oregano', quantity: 50, unit: 'g', storageLocation: 'pantry' },
+  { name: 'Lemons', quantity: 4, unit: 'item', storageLocation: 'fridge' },
+  { name: 'Feta', quantity: 200, unit: 'g', storageLocation: 'fridge' },
+  { name: 'Eggs', quantity: 6, unit: 'item', storageLocation: 'fridge' }
+] as const
+export function pantryStepForUnit(unit: string): number {
+  const normalized = unit.trim().toLowerCase()
+  return (normalized === 'g' || normalized === 'ml') ? 50 : 1
+}
 export function normalizePantryName(value: string) {
   return value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('el-GR').replace(/ς/g, 'σ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
