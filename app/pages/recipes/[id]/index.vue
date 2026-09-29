@@ -17,7 +17,29 @@ const imperial = ref(false)
 const fromSalt = ref<SaltType | null>(recipe.value?.originalSaltType ?? null)
 watch(() => recipe.value?.originalSaltType, value => { fromSalt.value = value ?? null })
 const toSalt = ref<SaltType>(kitchen.value?.preferredSaltType ?? 'table_salt')
-const editing = ref(false)
+// A freshly made twist opens straight into the editor (?edit=true) so the cook can tweak it right away.
+const editing = ref(route.query.edit === 'true' || route.query.edit === '1')
+function closeEditor() {
+  editing.value = false
+  if (route.query.edit !== undefined) void navigateTo({ path: route.path, query: { ...route.query, edit: undefined } }, { replace: true })
+}
+// “Make a family twist”: an independent copy that remembers where it came from.
+const twisting = ref(false)
+const twistName = ref('')
+watch(twisting, open => { if (open) void nextTick(() => document.getElementById('twist-name')?.focus()) })
+const twistBusy = ref(false)
+const twistError = ref('')
+const { state: twistState, label: twistLabel } = useActionFeedback(twistBusy, twistError)
+async function makeTwist() {
+  if (twistBusy.value) return
+  twistBusy.value = true
+  twistError.value = ''
+  try {
+    const twist = await $fetch<{ id: string }>('/api/recipes/' + id + '/fork', { method: 'POST', body: twistName.value.trim() ? { variationName: twistName.value.trim() } : {} })
+    await navigateTo('/recipes/' + twist.id + '?edit=true')
+  } catch { twistError.value = 'We couldn’t make a twist just now. Your recipe is untouched — please try again.' }
+  finally { twistBusy.value = false }
+}
 const deleting = ref(false)
 // Book-view simplification: long notes collapse, secondary actions live in a More menu.
 const notesText = computed(() => stripPromotional(recipe.value?.heirloomNotes ?? ''))
@@ -101,7 +123,7 @@ function saved(value: RecipeDetail) {
   recipe.value = value
   servings.value = value.servings
   fromSalt.value = value.originalSaltType
-  editing.value = false
+  closeEditor()
 }
 </script>
 
@@ -114,10 +136,14 @@ function saved(value: RecipeDetail) {
     </div>
     <template v-else-if="editing">
       <h1 class="mt-8">Edit {{ recipe.title }}</h1>
-      <RecipeForm :recipe="recipe" @saved="saved" @cancel="editing = false" />
+      <RecipeForm :recipe="recipe" @saved="saved" @cancel="closeEditor" />
     </template>
     <template v-else>
       <header class="mt-8 border-b border-espresso/20 pb-10">
+        <p v-if="recipe.parent" class="heritage-banner">
+          <UIcon name="i-lucide-git-branch" class="size-5 flex-none" aria-hidden="true" />
+          <span>A family twist on <NuxtLink :to="'/recipes/' + recipe.parent.id" class="text-action font-semibold">{{ recipe.parent.title }}</NuxtLink><span v-if="recipe.variationName" class="text-muted"> · {{ recipe.variationName }}</span></span>
+        </p>
         <p class="meta-label">{{ recipe.recipeType }} · {{ recipe.cuisine || 'From your kitchen' }}</p>
         <h1 class="mt-4 max-w-4xl break-words">{{ recipe.title }}</h1>
         <p v-if="isOfflineDraft" class="draft-badge mt-6"><UIcon name="i-lucide-info" aria-hidden="true" />Imported draft · review quantities before cooking</p>
@@ -133,10 +159,24 @@ function saved(value: RecipeDetail) {
             <div class="more-menu__panel">
               <NuxtLink :to="{ path: '/recipes/' + id + '/print', query: { ...scaledQuery, ...(imperial ? { system: 'us' } : {}) } }" class="more-menu__item"><UIcon name="i-lucide-printer" aria-hidden="true" />Print heirloom card</NuxtLink>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); editing = true"><UIcon name="i-lucide-pencil" aria-hidden="true" />Edit recipe</button>
+              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); twisting = true"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Make a twist</button>
               <button type="button" class="more-menu__item more-menu__item--danger" :disabled="busy" @click="closeMore(); deleting = true"><UIcon name="i-lucide-trash" aria-hidden="true" />Delete recipe</button>
             </div>
           </details>
         </div>
+        <form v-if="twisting" class="keepsake-card mt-6" aria-labelledby="twist-title" @submit.prevent="makeTwist">
+          <span class="keepsake-badge"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Family lineage</span>
+          <h2 id="twist-title" class="mt-3 font-serif">Make a family twist</h2>
+          <p class="mt-2 max-w-xl">Create an independent copy of this recipe to record your own variations, seasoning tweaks, or family notes.</p>
+          <label class="mt-4 block max-w-md">Name your twist (optional)
+            <input id="twist-name" v-model="twistName" class="field mt-2" maxlength="200" placeholder="Aunt Maria’s twist, or Less cinnamon, more lemon" autocomplete="off">
+          </label>
+          <p v-if="twistError" role="alert" class="notice mt-4">{{ twistError }}</p>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <button class="button-primary" :disabled="twistBusy" v-stable-action="twistState" :data-state="twistState" :aria-busy="twistBusy">{{ twistLabel('Create twist', 'Creating…') }}</button>
+            <button type="button" class="button-secondary" :disabled="twistBusy" @click="twisting = false; twistError = ''">Not now</button>
+          </div>
+        </form>
         <div v-if="deleting" class="notice mt-6" role="alert">
           <p>Delete “{{ recipe.title }}” and its cooking history? This cannot be undone.</p>
           <div class="mt-4 flex gap-3"><button class="button-primary" :disabled="busy" @click="removeRecipe">{{ busy ? 'Deleting…' : 'Confirm delete' }}</button><button class="button-secondary" :disabled="busy" @click="deleting = false">Keep recipe</button></div>
@@ -162,6 +202,16 @@ function saved(value: RecipeDetail) {
         <h2 id="heirloom-notes-title" class="mt-3 font-serif">Heirloom notes</h2>
         <p id="heirloom-notes" class="mt-3 whitespace-pre-line break-words font-serif text-lg leading-relaxed" :class="{ 'line-clamp-4': notesLong && !notesOpen }">{{ notesText }}</p>
         <button v-if="notesLong" type="button" class="text-action mt-2" :aria-expanded="notesOpen" aria-controls="heirloom-notes" @click="notesOpen = !notesOpen">{{ notesOpen ? 'Show less' : 'Read full notes' }}</button>
+      </section>
+      <section v-if="recipe.variations.length" class="keepsake-card mt-8" aria-labelledby="variations-title">
+        <span class="keepsake-badge"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Family lineage</span>
+        <h2 id="variations-title" class="mt-3 font-serif">Family Variations</h2>
+        <ul class="mt-3 divide-y divide-espresso/15">
+          <li v-for="twist in recipe.variations" :key="twist.id" class="py-2">
+            <NuxtLink :to="'/recipes/' + twist.id" class="text-action inline-flex min-h-11 items-center break-words font-serif text-lg">{{ twist.variationName || twist.title }}</NuxtLink>
+            <span v-if="twist.variationName" class="block text-sm text-muted">{{ twist.title }}</span>
+          </li>
+        </ul>
       </section>
       <div class="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <aside class="min-w-0">
@@ -242,6 +292,7 @@ function saved(value: RecipeDetail) {
 </template>
 
 <style scoped>
+.heritage-banner { display: flex; align-items: flex-start; gap: .5rem; margin-bottom: 1rem; border-left: 3px solid var(--color-terracotta); background: var(--color-paper-2); padding: .5rem .875rem; font-family: var(--font-serif); font-style: italic; overflow-wrap: anywhere; }
 .keepsake-card { border: 1px solid color-mix(in oklch, var(--color-terracotta) 30%, transparent); border-radius: .75rem; background: var(--color-paper-2); padding: 1.5rem; box-shadow: 0 1px 0 color-mix(in oklch, var(--color-ink) 6%, transparent), inset 0 0 0 4px color-mix(in oklch, var(--color-paper) 70%, transparent); }
 .keepsake-badge { display: inline-flex; align-items: center; gap: .375rem; border-radius: 999px; background: color-mix(in oklch, var(--color-terracotta) 12%, var(--color-paper)); padding: .25rem .75rem; font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-terracotta-ink); }
 /* One clear primary action; everything else is quieter or tucked into More. */

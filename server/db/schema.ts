@@ -22,7 +22,9 @@ export const recipes = sqliteTable('recipes', {
   isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
   rating: real('rating'),
   createdAt: text('created_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
-  updatedAt: text('updated_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`).$onUpdate(() => new Date().toISOString())
+  updatedAt: text('updated_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`).$onUpdate(() => new Date().toISOString()),
+  parentRecipeId: text('parent_recipe_id'),
+  variationName: text('variation_name')
 })
 
 export const ingredients = sqliteTable('ingredients', {

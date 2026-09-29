@@ -9,6 +9,10 @@ const id = z.string().min(1).max(200)
 const childIdentity = { id, recipeId: id }
 const recipeSchema = recipeCreateSchema.required().extend({
   id,
+  // Repeated forks append their variation names to the original title.
+  title: z.string().trim().min(1),
+  parentRecipeId: id.nullable().optional(),
+  variationName: z.string().max(200).nullable().optional(),
   // saveRecipe can derive this sum from two individually valid 100000-minute fields.
   totalTimeMinutes: z.number().int().nonnegative().max(200000),
   createdAt: z.iso.datetime({ offset: true }).nullable(),
@@ -106,7 +110,8 @@ export function importBackup(input: unknown) {
     for (const recipe of backup.recipes) {
       const { ingredients: ingredientRows, steps: stepRows, equipment: equipmentRows, ...parent } = recipe
       // Upsert, not SQLite REPLACE: deleting the parent would cascade into other data.
-      tx.insert(recipes).values(parent).onConflictDoUpdate({ target: recipes.id, set: parent }).run()
+      const fields = { ...parent, parentRecipeId: parent.parentRecipeId ?? null, variationName: parent.variationName ?? null }
+      tx.insert(recipes).values(fields).onConflictDoUpdate({ target: recipes.id, set: fields }).run()
       tx.delete(ingredients).where(eq(ingredients.recipeId, parent.id)).run()
       tx.delete(steps).where(eq(steps.recipeId, parent.id)).run()
       tx.delete(recipeEquipment).where(eq(recipeEquipment.recipeId, parent.id)).run()

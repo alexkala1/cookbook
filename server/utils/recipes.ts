@@ -1,19 +1,44 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { createError } from 'h3'
+import { z } from 'zod'
 import { db } from '../db'
 import { recipes, ingredients, steps, recipeEquipment } from '../db/schema'
-import type { RecipeInput } from './validation'
+import { validate, type RecipeInput } from './validation'
 
 export function getRecipe(id: string, connection: Pick<typeof db, 'select'> = db) {
   const recipe = connection.select().from(recipes).where(eq(recipes.id, id)).get()
   if (!recipe) throw createError({ statusCode: 404, statusMessage: 'Recipe not found' })
   return {
     ...recipe,
+    parent: recipe.parentRecipeId ? connection.select({ id: recipes.id, title: recipes.title }).from(recipes).where(eq(recipes.id, recipe.parentRecipeId)).get() ?? null : null,
+    variations: connection.select({ id: recipes.id, title: recipes.title, variationName: recipes.variationName }).from(recipes).where(eq(recipes.parentRecipeId, id)).orderBy(asc(recipes.title), asc(recipes.id)).all(),
     ingredients: connection.select().from(ingredients).where(eq(ingredients.recipeId, id)).orderBy(asc(ingredients.sortOrder), asc(ingredients.id)).all(),
     steps: connection.select().from(steps).where(eq(steps.recipeId, id)).orderBy(asc(steps.stepNumber)).all(),
     equipment: connection.select().from(recipeEquipment).where(eq(recipeEquipment.recipeId, id)).orderBy(asc(recipeEquipment.id)).all()
   }
+}
+
+const forkOptionsSchema = z.object({
+  title: z.string().trim().max(200).optional(),
+  variationName: z.string().trim().max(200).optional()
+}).strict()
+
+export function forkRecipe(id: string, options: { title?: string, variationName?: string } = {}) {
+  const input = validate(forkOptionsSchema, options)
+  return db.transaction(tx => {
+    const { ingredients: ingredientRows, steps: stepRows, equipment: equipmentRows, parent: _parent, variations: _variations, ...original } = getRecipe(id, tx)
+    const forkedId = randomUUID()
+    const variationName = input.variationName || 'My Twist'
+    tx.insert(recipes).values({
+      ...original, id: forkedId, parentRecipeId: original.id, variationName,
+      title: input.title || `${original.title} (${variationName})`
+    }).run()
+    for (const row of ingredientRows) tx.insert(ingredients).values({ ...row, id: randomUUID(), recipeId: forkedId }).run()
+    for (const row of stepRows) tx.insert(steps).values({ ...row, id: randomUUID(), recipeId: forkedId }).run()
+    for (const row of equipmentRows) tx.insert(recipeEquipment).values({ ...row, id: randomUUID(), recipeId: forkedId }).run()
+    return getRecipe(forkedId, tx)
+  })
 }
 
 export function listRecipes(query: { search?: string, type?: string, difficulty?: string, cuisine?: string, isFavorite?: boolean }) {
