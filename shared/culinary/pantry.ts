@@ -42,7 +42,8 @@ export function matchPantry(recipes: MatchRecipe[], stock: PantryItem[], now = D
     return { id: recipe.id, title: recipe.title, completeness: recipe.ingredients.length ? Math.round(in_stock.length / recipe.ingredients.length * 100) : 0, in_stock, missing }
   }).sort((a, b) => b.completeness - a.completeness || a.title.localeCompare(b.title))
 }
-export function inferStorage(name: string): StorageLocation {
+export function inferStorage(name: string, section?: string): StorageLocation {
+  if (section === 'chasapis') return 'fridge'
   const words = normalizePantryName(name).split(' ')
   if (words.some(word => ['frozen', 'κατεψυγμενο', 'κατεψυγμενα'].includes(word)) || /ice cream/i.test(name)) return 'freezer'
   if (words.some(word => ['milk', 'yogurt', 'yoghurt', 'cheese', 'butter', 'chicken', 'beef', 'fish', 'salmon', 'γαλα', 'τυρι', 'γιαουρτι', 'κοτοπουλο', 'βουτυρο'].includes(word))) return 'fridge'

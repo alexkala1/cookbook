@@ -65,6 +65,14 @@ it('normalizes Greek accents and plural aliases without substring matches', () =
   expect(normalizePantryName('Σάλτσα')).toBe('σαλτσα')
 })
 it.each([['milk', 'fridge'], ['frozen peas', 'freezer'], ['rice', 'pantry'], ['ΓΑΛΑ', 'fridge'], ['ice cream', 'freezer']])('infers %s storage as %s', (name, expected) => expect(inferStorage(name)).toBe(expected))
+it.each(['lamb chops', 'ground beef', 'frozen lamb'])('infers fridge for %s from chasapis regardless of name', name => {
+  expect(inferStorage(name, 'chasapis')).toBe('fridge')
+})
+it.each([['lamb chops', 'pantry'], ['ground beef', 'fridge'], ['frozen lamb', 'freezer']])('keeps name-based storage for %s outside chasapis', (name, expected) => {
+  expect(inferStorage(name)).toBe(expected)
+  expect(inferStorage(name, 'other')).toBe(expected)
+  expect(inferStorage(name, '')).toBe(expected)
+})
 it('parses receipt text with counts, weights, Greek names and excludes payment lines', async () => {
   const text = '2 x Milk 1.50\nRice 500 g 2.49\nFrozen peas 3.20\nΓάλα 1,80\nTOTAL 9.00\nVAT 1.00\nΣΥΝΟΛΟ 9,00\n26/09/2026\nCARD 9.00'
   expect(parseReceipt(text)).toEqual([

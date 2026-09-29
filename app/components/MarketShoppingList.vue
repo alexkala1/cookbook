@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
+import { inferStorage, type PantryDraft } from '#shared/culinary/pantry'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
 
 const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean }>()
@@ -69,6 +70,9 @@ async function generate() {
     if (disposed) return
     list.value = result
     checked.value = []
+    restockedIds.value = []
+    restockSuccess.value = null
+    restockError.value = ''
     destinations.value = {}
     mode.value = 'market'
   } catch {
@@ -89,6 +93,38 @@ function printList() {
   root.dataset.print = 'market'
   window.addEventListener('afterprint', () => { delete root.dataset.print }, { once: true })
   window.print()
+}
+
+// Restock: bought items go into the pantry once. Items already restocked aren't added twice if the cook re-ticks them.
+const restocking = ref(false)
+const restockError = ref('')
+const restockSuccess = ref<string | null>(null)
+const { state: restockState, label: restockLabel } = useActionFeedback(restocking, restockError)
+const restockedIds = ref<string[]>([])
+const pendingRestock = computed(() => (routedList.value?.destinations ?? []).flatMap(destination => destination.items.map(item => ({ item, destination }))).filter(({ item }) => checked.value.includes(item.id) && !restockedIds.value.includes(item.id)))
+async function restockPantry() {
+  if (restocking.value || busy.value || !list.value) return
+  // Use the shop the item belongs to (the cook's own choice in Market Route), not One-Stop's single aisle group.
+  const originalSection = new Map(list.value.destinations.flatMap(destination => destination.items.map(item => [item.id, destination.section] as const)))
+  const rows = pendingRestock.value.map(({ item }) => ({
+    id: item.id,
+    draft: {
+      name: item.name,
+      quantity: item.amount > 0 ? item.amount : 1,
+      unit: item.unit || 'item',
+      storageLocation: inferStorage(item.name, destinations.value[item.id] ?? originalSection.get(item.id))
+    } satisfies PantryDraft
+  }))
+  if (!rows.length) return
+  restocking.value = true
+  restockError.value = ''
+  try {
+    await $fetch('/api/pantry', { method: 'POST', body: rows.map(row => row.draft) })
+    restockedIds.value = [...restockedIds.value, ...rows.map(row => row.id)]
+    restockSuccess.value = `Restocked ${rows.length} item${rows.length === 1 ? '' : 's'} into your pantry.`
+  } catch (cause) {
+    if (!disposed) restockError.value = (cause as { data?: { statusMessage?: string } }).data?.statusMessage || 'We couldn’t update your pantry. Your list is unchanged — please try again.'
+  } finally { if (!disposed) restocking.value = false }
 }
 
 async function copy() {
@@ -120,11 +156,19 @@ async function copy() {
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p role="status" class="num">{{ checked.length }} of {{ itemCount }} items checked</p>
         <div class="flex flex-wrap gap-3 print:hidden">
+          <button v-if="pendingRestock.length" type="button" class="button-primary min-h-11 inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
           <button type="button" class="button-secondary" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
           <button type="button" class="button-secondary" :disabled="busy" @click="printList"><UIcon name="i-lucide-printer" aria-hidden="true" />Print or save PDF</button>
         </div>
       </div>
       <p v-if="copyState === 'success'" role="status">Shopping list copied.</p>
+      <div role="status" class="market-restock-notice print:hidden">
+        <p v-if="restockSuccess" class="restock-notice">
+          <UIcon name="i-lucide-circle-check" class="size-5 flex-none" aria-hidden="true" />
+          <span class="flex min-w-0 flex-col items-start"><span>{{ restockSuccess }} Storage places are our best guess; adjust them in your pantry.</span><NuxtLink to="/pantry" class="text-action font-semibold">View Pantry →</NuxtLink></span>
+        </p>
+      </div>
+      <p v-if="restockError" role="alert" class="rounded-lg border border-error bg-paper p-4 text-error print:hidden">{{ restockError }}</p>
       <div v-if="copyError" class="space-y-3">
         <p role="alert" class="text-error">{{ copyError }}</p>
         <label class="block">Shopping list text<textarea :value="summary" readonly rows="8" class="field mt-2" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
@@ -179,6 +223,8 @@ async function copy() {
 <style scoped>
 .market-shopping { overflow-wrap: anywhere; font-style: normal; }
 .market-action { max-width: 100%; white-space: normal; }
+.restock-notice { display: flex; align-items: flex-start; gap: .5rem; border-left: 3px solid var(--color-sage-ink); background: var(--color-paper-2); padding: .75rem 1rem; color: var(--color-ink); }
+.restock-notice a { display: inline-flex; min-height: 44px; align-items: center; }
 </style>
 
 <style>
@@ -186,6 +232,6 @@ async function copy() {
 @media print {
   html[data-print='market'] body *:not(:has(.market-shopping), .market-shopping, .market-shopping *) { display: none !important; }
   html[data-print='market'] .market-shopping { border: 0; padding: 0; }
-  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-reorder, .market-destination, [role='alert']) { display: none !important; }
+  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-restock-notice, .market-reorder, .market-destination, [role='alert']) { display: none !important; }
 }
 </style>

@@ -602,6 +602,15 @@ async function journey(browser, viewport) {
       await shot(page, viewport, 'market-one-stop', market)
       await tap(market.getByRole('button', { name: 'Market Route' }))
       assert(await market.getByRole('combobox', { name: `Destination for ${itemName}`, exact: true }).inputValue() === 'supermarket', 'Custom route should survive a mode switch')
+      // Restock: the ticked item goes to the pantry once.
+      await tap(market.getByRole('button', { name: 'Restock pantry (1)' }))
+      const notice = market.getByRole('status').filter({ hasText: 'Restocked 1 item into your pantry.' })
+      await notice.waitFor()
+      assert(await notice.getByRole('link', { name: 'View Pantry →' }).getAttribute('href') === '/pantry', 'The restock notice should link to the pantry')
+      assert(await market.getByRole('button', { name: /^Restock pantry/ }).count() === 0, 'A restocked item should not be offered for restocking again')
+      await shot(page, viewport, 'market-restocked', notice)
+      const stocked = await page.evaluate(async name => (await (await fetch('/api/pantry')).json()).some(row => row.name === name), itemName)
+      assert(stocked, `${itemName} should now be in the pantry`)
     })
 
     // Flow 5 — Virtual pantry, receipt parsing, recipe matching
