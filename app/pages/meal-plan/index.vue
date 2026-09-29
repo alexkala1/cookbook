@@ -367,7 +367,7 @@ async function conduct() {
           v-stable-action="state"
           :data-state="state"
           :aria-busy="busy"
-        >{{ label('Build the schedule', 'Conducting…') }}</button>
+        >{{ label('Plan our dinner', 'Planning our dinner…') }}</button>
       </div>
     </form>
     </template>
@@ -387,14 +387,18 @@ async function conduct() {
           </li>
         </ul>
       </section>
-      <section v-if="plan.bottlenecks.length" aria-label="Equipment conflicts" class="space-y-4">
-        <h2 class="text-2xl">Conductor insights &amp; workarounds</h2>
-        <article v-for="item in plan.bottlenecks" :key="item.type + item.start" role="alert" class="overflow-hidden rounded-xl border border-terracotta/40 bg-paper">
-          <header class="flex items-start gap-3 bg-terracotta/10 px-5 py-4">
-            <span class="inline-flex size-10 flex-none items-center justify-center rounded-full bg-paper text-terracotta-ink" aria-hidden="true"><UIcon :name="item.type === 'oven_temperature' ? 'i-lucide-heater' : 'i-lucide-flame'" class="size-5" /></span>
+      <details v-if="plan.bottlenecks.length" aria-label="Kitchen timing and equipment advisory" class="advisory group rounded-xl border border-sage/40 bg-paper-2 p-5">
+        <summary class="flex cursor-pointer select-none items-center justify-between gap-3 font-serif text-xl">
+          <span class="flex min-w-0 items-center gap-3"><UIcon name="i-lucide-lightbulb" class="size-5 flex-none text-sage-ink" aria-hidden="true" /><span>Kitchen timing &amp; equipment advisory<span class="block font-sans text-sm font-normal text-muted">{{ plan.bottlenecks.length }} friendly {{ plan.bottlenecks.length === 1 ? 'tip' : 'tips' }} to keep things calm — tap to read</span></span></span>
+          <UIcon name="i-lucide-chevron-down" class="size-5 flex-none transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+        </summary>
+        <div class="mt-5 space-y-4">
+        <article v-for="item in plan.bottlenecks" :key="item.type + item.start" class="overflow-hidden rounded-xl border border-sage/30 bg-paper">
+          <header class="flex items-start gap-3 bg-sage/10 px-5 py-4">
+            <span class="inline-flex size-10 flex-none items-center justify-center rounded-full bg-paper text-sage-ink" aria-hidden="true"><UIcon :name="item.type === 'oven_temperature' ? 'i-lucide-heater' : 'i-lucide-flame'" class="size-5" /></span>
             <div class="min-w-0">
-              <p class="meta-label font-semibold">Conductor insight</p>
-              <p class="font-semibold">{{ item.type === 'oven_temperature' ? 'Oven clash' : 'Burner overload' }} ·
+              <p class="meta-label font-semibold">Good to know</p>
+              <p class="font-semibold">{{ item.type === 'oven_temperature' ? 'Oven timing' : 'Burner timing' }} ·
                 <span class="num">{{ item.clock }}</span> ({{ item.label }})</p>
             </div>
           </header>
@@ -408,7 +412,8 @@ async function conduct() {
             </template>
           </div>
         </article>
-      </section>
+        </div>
+      </details>
       <p v-else role="status" class="row-panel">No oven or burner clashes with {{ ovens }}
         oven{{ ovens > 1 ? 's' : '' }} and {{ burners }} burners.</p>
       <ul v-if="plan.warnings.length" class="space-y-2">

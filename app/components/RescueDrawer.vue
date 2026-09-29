@@ -70,12 +70,14 @@ onBeforeUnmount(() => controller?.abort())
   <ClientOnly>
     <Teleport to="#kitchen-rescue-dock">
       <button class="rescue-trigger" aria-label="Rescue My Dish" @click="show">
-        <UIcon name="i-lucide-siren" aria-hidden="true" />Rescue</button></Teleport>
+        <UIcon name="i-lucide-life-buoy" aria-hidden="true" />Rescue</button></Teleport>
     </ClientOnly>
   <dialog ref="dialog" class="rescue-drawer" aria-label="Rescue My Dish" @close="close">
     <form method="dialog"><button class="kitchen-button float-right" autofocus>Close</button></form>
 
     <h2 class="clear-both pt-5 text-3xl">Rescue My Dish</h2>
+
+    <p class="mt-3 font-serif text-lg italic">Don’t worry — almost every kitchen mishap can be saved. We’re right here with you.</p>
 
     <p class="mt-3 text-base">Quick guides work instantly, without a key or network request.</p>
 

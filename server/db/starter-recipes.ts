@@ -6,7 +6,7 @@ export const starterRecipes: RecipeInput[] = [
     title: 'Arni me Patates', recipeType: 'food', cuisine: 'Greek', sourceType: 'manual',
     description: 'Main · Sunday lamb shoulder with lemon, oregano and potatoes roasted in the pan juices.',
     servings: 6, prepTimeMinutes: 25, cookTimeMinutes: 180, difficulty: 'easy', originalSaltType: 'greek_fine_sea_salt',
-    heirloomNotes: 'A shared Sunday roast. Bring the roasting pan to the table and pass bread for the lemony juices.',
+    heirloomNotes: 'Passed down from Yiayia Eleni (Chios, Sunday family ritual since 1968). Bring the heavy roasting pan straight to the wooden table with crusty sourdough to soak up the lemony olive oil juices.',
     storageReheating: 'Refrigerate leftovers promptly in shallow containers; reheat covered with a splash of water.',
     ingredients: [
       { name: 'Lamb shoulder', amount: 1800, unit: 'g', category: 'meat' },
@@ -27,7 +27,7 @@ export const starterRecipes: RecipeInput[] = [
     title: 'Traditional Spanakopita', recipeType: 'baking', cuisine: 'Greek', sourceType: 'manual',
     description: 'Appetizer · Hand-rolled phyllo filled with spinach, leeks, dill and barrel-aged feta.',
     servings: 8, prepTimeMinutes: 75, cookTimeMinutes: 50, difficulty: 'advanced', originalSaltType: 'greek_fine_sea_salt',
-    heirloomNotes: 'Advance prep: cook and cool the greens a day ahead, then refrigerate. Make the dough ahead and keep covered; assemble just before baking for a crisp base.',
+    heirloomNotes: 'Handwritten on a flour-dusted index card in 1974. The secret is rolling the phyllo paper-thin with olive oil and wild mountain greens. Squeeze the greens completely dry so the bottom stays crisp as glass.',
     storageReheating: 'Refrigerate cooled slices and reheat uncovered in an oven to restore crispness.',
     ingredients: [
       { name: 'Spinach', amount: 1000, unit: 'g', category: 'produce' }, { name: 'Barrel-aged feta', amount: 300, unit: 'g', category: 'dairy' },
@@ -48,7 +48,7 @@ export const starterRecipes: RecipeInput[] = [
     title: 'Santorini Fava', recipeType: 'food', cuisine: 'Greek', sourceType: 'manual',
     description: 'Side · Silky yellow split-pea purée with red onion, capers and a generous finish of olive oil.',
     servings: 6, prepTimeMinutes: 10, cookTimeMinutes: 50, difficulty: 'easy', originalSaltType: 'greek_fine_sea_salt',
-    heirloomNotes: 'Use Santorini yellow split peas when available. Greek fava names the purée, not broad beans. Serve warm or at room temperature as part of a meze table.',
+    heirloomNotes: 'From the volcanic terraces of Santorini. Not broad beans, but yellow split peas simmered until they collapse into velvety silk. Serve lukewarm with sweet red onion and capers on a warm summer evening.',
     storageReheating: 'Refrigerate promptly. Loosen with hot water when reheating; the purée thickens as it cools.',
     ingredients: [
       { name: 'Yellow split peas', amount: 300, unit: 'g' }, { name: 'Red onions', amount: 200, unit: 'g', notes: 'Half for cooking, half finely sliced for serving' },
@@ -67,7 +67,7 @@ export const starterRecipes: RecipeInput[] = [
     title: 'Classic Fasolada', recipeType: 'food', cuisine: 'Greek', sourceType: 'manual',
     description: 'Main · White bean soup with celery, carrots, tomato passata and olive oil. Start the beans the night before.',
     servings: 6, prepTimeMinutes: 20, cookTimeMinutes: 100, totalTimeMinutes: 840, difficulty: 'easy', originalSaltType: 'greek_fine_sea_salt',
-    heirloomNotes: 'Overnight schedule: soak beans in plenty of cold water in the refrigerator for 12 hours. The following day allow about two hours for preparation and cooking; older beans may take longer.',
+    heirloomNotes: 'The national comfort dish of Greece, cooked every winter Monday in our family home. The beans must soak slowly overnight; take your time simmering until the olive oil emulsions form a rich, golden-rust broth.',
     storageReheating: 'Cool in shallow containers and refrigerate promptly. Reheat with extra water as the beans absorb broth.',
     ingredients: [
       { name: 'Dried white beans', amount: 500, unit: 'g' }, { name: 'Celery', amount: 150, unit: 'g' },
@@ -87,7 +87,7 @@ export const starterRecipes: RecipeInput[] = [
     title: 'Revani with Citrus Syrup', recipeType: 'dessert', cuisine: 'Greek', sourceType: 'manual',
     description: 'Dessert · Golden semolina and yogurt cake scented with orange, soaked with cooled citrus syrup.',
     servings: 12, prepTimeMinutes: 25, cookTimeMinutes: 40, difficulty: 'intermediate', originalSaltType: 'greek_fine_sea_salt',
-    heirloomNotes: 'Make the syrup first so it can cool while the cake bakes. Allow the soaked cake to rest for at least two hours before serving small squares.',
+    heirloomNotes: 'A celebration cake from Veroia, baked for name days and Sunday afternoons. Ladle the cool orange syrup slowly over the piping hot semolina cake and let it rest until every grain glistens.',
     storageReheating: 'Cover and refrigerate after cooling. Bring individual portions toward room temperature before serving.',
     ingredients: [
       { name: 'Fine semolina', amount: 200, unit: 'g', notes: 'Wheat semolina' }, { name: 'Wheat flour', amount: 100, unit: 'g' },

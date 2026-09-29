@@ -159,6 +159,12 @@ function saved(value: RecipeDetail) {
       </section>
       <p v-if="metricState === 'success'" role="status" class="mt-4">Metric conversions saved. Original measures are preserved in ingredient notes.</p>
       <img v-if="recipe.imageUrl" :src="recipe.imageUrl" :alt="recipe.title" class="mt-8 max-h-96 w-full object-cover">
+      <section v-if="notesText" class="keepsake-card mt-8" aria-labelledby="heirloom-notes-title">
+        <span class="keepsake-badge"><UIcon name="i-lucide-scroll" aria-hidden="true" />From the family kitchen</span>
+        <h2 id="heirloom-notes-title" class="mt-3 font-serif">Heirloom notes</h2>
+        <p id="heirloom-notes" class="mt-3 whitespace-pre-line break-words font-serif text-lg leading-relaxed" :class="{ 'line-clamp-4': notesLong && !notesOpen }">{{ notesText }}</p>
+        <button v-if="notesLong" type="button" class="text-action mt-2" :aria-expanded="notesOpen" aria-controls="heirloom-notes" @click="notesOpen = !notesOpen">{{ notesOpen ? 'Show less' : 'Read full notes' }}</button>
+      </section>
       <div class="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <aside class="min-w-0">
           <h2>Ingredients</h2>
@@ -219,11 +225,6 @@ function saved(value: RecipeDetail) {
             </li>
           </ol>
           <p v-else class="mt-6">No steps recorded yet. Add your method with “Edit recipe”.</p>
-          <section v-if="notesText" class="mt-12 border-t-2 border-terracotta pt-6">
-            <h2 class="mt-3">Heirloom notes</h2>
-            <p id="heirloom-notes" class="mt-4 whitespace-pre-line break-words leading-relaxed" :class="{ 'line-clamp-4': notesLong && !notesOpen }">{{ notesText }}</p>
-            <button v-if="notesLong" type="button" class="text-action mt-2" :aria-expanded="notesOpen" aria-controls="heirloom-notes" @click="notesOpen = !notesOpen">{{ notesOpen ? 'Show less' : 'Read full notes' }}</button>
-          </section>
         </div>
       </div>
       <RecipeKeepsakes :recipe-id="id" />
@@ -232,6 +233,8 @@ function saved(value: RecipeDetail) {
 </template>
 
 <style scoped>
+.keepsake-card { border: 1px solid color-mix(in oklch, var(--color-terracotta) 30%, transparent); border-radius: .75rem; background: var(--color-paper-2); padding: 1.5rem; box-shadow: 0 1px 0 color-mix(in oklch, var(--color-ink) 6%, transparent), inset 0 0 0 4px color-mix(in oklch, var(--color-paper) 70%, transparent); }
+.keepsake-badge { display: inline-flex; align-items: center; gap: .375rem; border-radius: 999px; background: color-mix(in oklch, var(--color-terracotta) 12%, var(--color-paper)); padding: .25rem .75rem; font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-terracotta-ink); }
 /* One clear primary action; everything else is quieter or tucked into More. */
 .start-cooking { min-height: 52px; padding-inline: 1.75rem; font-size: 1rem; }
 

@@ -3,6 +3,11 @@ import { refDebounced } from '@vueuse/core'
 import type { Recipe } from '../../../shared/types/recipe'
 
 useSeoMeta({ title: 'Your recipes — Heirloom' })
+
+function familyNote(notes?: string | null) {
+  const first = notes?.split('.')[0]?.trim()
+  return first ? '“' + first + '.”' : ''
+}
 const search = ref('')
 const delayedSearch = refDebounced(search, 250)
 const type = ref('')
@@ -56,9 +61,9 @@ async function loadStarters() {
       <p class="mt-4">{{ search || type || favorites ? 'Try another search or clear your filters.' : 'Save a family favourite, a weekend bake, or your signature drink.' }}</p>
       <button v-if="search || type || favorites" class="button-secondary mt-6" @click="search = ''; type = ''; favorites = false">Clear filters</button>
       <div v-else class="mt-6 flex flex-wrap gap-3">
-        <button v-stable-action type="button" class="button-primary starter-button inline-flex items-center" :data-state="seedFeedback.state.value" :disabled="seeding" :aria-busy="seeding" @click="loadStarters">
-          <UIcon name="i-lucide-sprout" class="size-5" aria-hidden="true" />
-          {{ seedFeedback.label('Load Starter Heirloom Recipes', 'Loading recipes…') }}
+        <button v-stable-action type="button" class="button-primary starter-button inline-flex items-center" aria-label="Load Starter Heirloom Recipes — Fill your cookbook with family classics" :data-state="seedFeedback.state.value" :disabled="seeding" :aria-busy="seeding" @click="loadStarters">
+          <UIcon name="i-lucide-book-heart" class="size-5" aria-hidden="true" />
+          {{ seedFeedback.label('Fill your cookbook with family classics', 'Loading family classics…') }}
         </button>
         <NuxtLink to="/recipes/new" class="button-secondary">Write your first recipe</NuxtLink>
       </div>
@@ -77,6 +82,7 @@ async function loadStarters() {
           <p class="meta-label">{{ recipe.recipeType }} <UIcon v-if="recipe.isFavorite" name="i-lucide-heart" class="fill-current" aria-label="Favorite" /></p>
           <h2 class="mt-3 min-w-0 text-3xl"><NuxtLink :to="'/recipes/' + recipe.id" class="recipe-title-link" :title="recipe.title">{{ recipe.title }}</NuxtLink></h2>
         <p class="mt-3 line-clamp-2 break-words">{{ recipe.description }}</p>
+        <p v-if="familyNote(recipe.heirloomNotes)" class="mt-2 line-clamp-1 break-words font-serif italic text-muted">{{ familyNote(recipe.heirloomNotes) }}</p>
         <p class="mt-5 text-sm">{{ recipe.totalTimeMinutes }} min · {{ recipe.servings }} servings · {{ recipe.difficulty }}</p>
       </article>
     </div>

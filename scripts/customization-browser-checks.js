@@ -61,7 +61,7 @@ async (page) => {
 
       await view.goto('http://127.0.0.1:3115/meal-plan')
       await view.getByLabel('Recipe for course 2', { exact: true }).selectOption(recipe.id)
-      await view.getByRole('button', { name: 'Build the schedule', exact: true }).click()
+      await view.getByRole('button', { name: 'Plan our dinner', exact: true }).click()
       const market = view.getByRole('region', { name: 'Market shopping list', exact: true })
       await market.getByRole('button', { name: 'Generate Market Shopping List', exact: true }).click()
       const select = market.getByLabel('Destination for Feta', { exact: true })

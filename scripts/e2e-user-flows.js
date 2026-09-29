@@ -362,7 +362,7 @@ async function journey(browser, viewport) {
       await page.getByLabel('Guests sit down').fill('20:00')
       await page.getByLabel('Guests (optional)').fill('6')
       await page.getByLabel('Month').selectOption('1')
-      await tap(page.getByRole('button', { name: 'Build the schedule' }))
+      await tap(page.getByRole('button', { name: 'Plan our dinner' }))
       await page.getByRole('heading', { name: 'The timeline' }).waitFor()
       const briefing = page.getByRole('region', { name: 'Dinner at 20:00' })
       assert((await briefing.innerText()).includes('Guests sit down at 20:00.'), "Step 3 should open with the Chef's Briefing")
@@ -371,7 +371,7 @@ async function journey(browser, viewport) {
       const serves = await page.locator('ol li p.font-serif').allInnerTexts()
       assert(serves.some(text => text.includes('20:00')) && serves.some(text => text.includes('20:25')) && serves.some(text => text.includes('21:00')),
         'Courses should be served at 20:00, 20:25 and 21:00')
-      const conflicts = page.getByRole('region', { name: 'Equipment conflicts' })
+      const conflicts = page.locator('details.advisory', { hasText: 'Kitchen timing & equipment advisory' })
       const clear = page.getByText(/No oven or burner clashes/)
       assert((await conflicts.count()) + (await clear.count()) === 1, 'Schedule should report either conflicts or an all-clear')
       await shot(page, viewport, 'conductor-schedule', page.getByRole('heading', { name: 'The timeline' }))
