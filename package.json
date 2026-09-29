@@ -11,6 +11,7 @@
     "postinstall": "nuxt prepare",
     "test": "vitest run",
     "test:e2e": "node scripts/e2e-user-flows.js",
+    "test:pwa": "node scripts/e2e-offline-flight.js",
     "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
