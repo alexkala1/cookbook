@@ -180,7 +180,7 @@ const {
   start: startCamera,
   stop: stopCamera
 } = useAirSwipe(navigate)
-const { isSpeaking, isSupported: speechSupported, toggle: toggleSpeech, stop: stopSpeech } = useKitchenSpeech()
+const { isSpeaking, isSupported: speechSupported, currentNarrative, toggle: toggleSpeech, stop: stopSpeech } = useKitchenSpeech()
 const { isSupported, isActive: wakeRequested, sentinel, request: requestWake, release } = useWakeLock()
 const wakeReleased = ref(false)
 
@@ -490,15 +490,38 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <button
             v-if="speechSupported"
             type="button"
-            class="kitchen-button speak-button scroll-mt-40 ml-auto inline-flex min-h-11 min-w-11 items-center gap-2"
+            class="kitchen-button speak-button scroll-mt-40 ml-auto inline-flex min-h-14 min-w-14 items-center gap-2"
             :class="{ 'speak-button--active': isSpeaking }"
             :aria-label="isSpeaking ? 'Stop reading step aloud' : `Read step ${index + 1} aloud`"
             @click="toggleSpeech(step, index + 1)"
           >
-            <UIcon :name="isSpeaking ? 'i-lucide-square' : 'i-lucide-volume-2'" class="size-5" aria-hidden="true" />
+            <UIcon :name="isSpeaking ? 'i-lucide-square' : 'i-lucide-volume-2'" class="size-6" aria-hidden="true" />
             {{ isSpeaking ? 'Stop reading' : 'Read step' }}
           </button>
         </div>
+        <aside
+          v-if="isSpeaking && currentNarrative"
+          role="status"
+          aria-live="polite"
+          class="kitchen-caption-hud fixed bottom-24 inset-x-4 z-40 mx-auto max-w-3xl rounded-xl border-2 border-k-accent bg-k-paper/95 p-4 shadow-2xl backdrop-blur-md"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-2 text-k-accent font-semibold text-sm uppercase tracking-wider">
+              <UIcon name="i-lucide-volume-2" class="size-5 animate-pulse" aria-hidden="true" />
+              <span>Reading Step {{ index + 1 }}</span>
+            </div>
+            <button
+              type="button"
+              class="kitchen-button min-h-11 min-w-11 p-2 text-sm"
+              aria-label="Dismiss spoken captions"
+              @click="stopSpeech"
+            >
+              <UIcon name="i-lucide-square" class="size-4" aria-hidden="true" />
+              Stop
+            </button>
+          </div>
+          <p class="mt-2 text-xl font-medium leading-relaxed text-k-ink sm:text-2xl">{{ currentNarrative }}</p>
+        </aside>
         <section v-if="notesPlan" class="kitchen-panel !mt-4 rounded-lg border border-k-rule p-5" aria-labelledby="split-hint-title">
           <h2 id="split-hint-title" class="text-2xl">Only one step saved</h2>
           <p class="mt-3 text-lg">This recipe’s notes contain {{ stepCountPhrase(notesPlan.steps.length) }} method{{ notesPlan.steps.some(row => row.durationMinutes) ? ' with timings' : '' }}. Split it into steps to cook one stage at a time.</p>
