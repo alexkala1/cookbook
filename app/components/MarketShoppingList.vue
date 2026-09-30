@@ -94,12 +94,14 @@ function pumpPrices() {
   }
 }
 watch(routedList, value => {
-  if (!value || !import.meta.client || navigator.onLine === false) return
+  if (!value || !import.meta.client) return
+  const offline = navigator.onLine === false
   for (const destination of value.destinations) {
     if (destination.section !== 'supermarket') continue
     for (const item of destination.items) {
+      if (priceAsked.has(item.id)) continue
       const name = item.name.trim()
-      if (priceAsked.has(item.id) || priceAsked.size >= MAX_PRICE_LOOKUPS || !name || name.length > 80) continue
+      if (offline || priceAsked.size >= MAX_PRICE_LOOKUPS || !name || name.length > 80) continue
       priceAsked.add(item.id)
       priceQueue.push({ id: item.id, name })
     }
@@ -152,6 +154,7 @@ async function generate() {
     restockError.value = ''
     destinations.value = {}
     resetPrices()
+    detailsOpen.value = {}
     mode.value = 'market'
   } catch {
     if (!disposed) error.value = 'Could not generate the shopping list. Your schedule is still available. Please try again.'
@@ -182,8 +185,6 @@ onClickOutside(shareMenu, () => closeShare())
 
 // Secondary advice sits behind a per-item Details toggle so the list stays scannable.
 const detailsOpen = ref<Record<string, boolean>>({})
-type RowItem = NonNullable<typeof routedList.value>['destinations'][number]['items'][number]
-const hasDetails = (item: RowItem) => !!(item.counterPhrase || item.packageSizeToBuy || item.surplusLeftoverTip || item.note || item.prepNotes.length)
 
 // Print only this list (see the unscoped print styles below), then restore the page.
 function printList() {
@@ -280,28 +281,24 @@ async function copy() {
 </script>
 
 <template>
-  <section aria-labelledby="market-heading" class="market-shopping min-w-0 border-t border-rule pt-8 text-ink">
-    <div class="section-heading">
-      <h2 id="market-heading">Market shopping list</h2>
-      <button v-if="!importedList" type="button" class="button-primary market-action" :disabled="busy || copying" v-stable-action="state" :data-state="state" :aria-busy="busy" @click="generate">{{ label('Generate Market Shopping List', 'Generating…') }}</button>
+  <section aria-labelledby="market-heading" class="market-shopping min-w-0 border-t border-rule pt-4 text-ink">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="market-heading" class="text-xl">Market shopping list</h2>
+      <button v-if="!importedList && (!autoGenerate || error)" type="button" class="button-primary market-action" :disabled="busy || copying" v-stable-action="state" :data-state="state" :aria-busy="busy" @click="generate">{{ label('Generate Market Shopping List', 'Generating…') }}</button>
     </div>
     <p v-if="error" role="alert" class="mt-4 rounded-lg border border-error bg-paper p-4 text-error">{{ error }}</p>
-    <div v-if="list && routedList" class="mt-4 space-y-4">
-      <p class="text-sm text-muted print:hidden">{{ servings ? 'For ' + servings + ' ' + (servingsNoun ?? 'guests') + '. ' : '' }}{{ deductPantry ? 'Pantry stock is subtracted.' : 'Pantry stock isn’t subtracted.' }} Checkmarks reset if you regenerate.</p>
-      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 print:hidden">
+    <div v-if="list && routedList" class="mt-3 space-y-3">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 print:hidden">
         <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2">
-          <button class="filter-pill" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
-          <button class="filter-pill" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
+          <button class="filter-pill market-mini" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
+          <button class="filter-pill market-mini" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
         </div>
-        <label class="inline-flex min-h-11 items-center gap-2 font-semibold"><input type="checkbox" :checked="deductPantry" :disabled="pantryLoading || busy" @change="setDeduct(($event.target as HTMLInputElement).checked, $event.target as HTMLInputElement)">Deduct pantry stock</label>
-      </div>
-      <p v-if="pantryMessage" role="status" class="text-sm print:hidden">{{ pantryMessage }}</p>
-      <div class="flex flex-wrap items-center gap-3 print:hidden">
-        <p v-if="!phone" role="status" class="num">{{ checkedCount }} of {{ itemCount }} items checked</p>
-        <button v-if="pendingRestock.length" type="button" class="button-primary min-h-11 inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
-        <button v-if="!phone" type="button" class="button-secondary min-h-11" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
+        <label class="market-row inline-flex items-center gap-2 font-semibold"><input type="checkbox" :checked="deductPantry" :disabled="pantryLoading || busy" @change="setDeduct(($event.target as HTMLInputElement).checked, $event.target as HTMLInputElement)">Deduct pantry stock</label>
+        <p v-if="!phone" role="status" class="num" title="Checkmarks reset if you regenerate the list.">{{ checkedCount }} of {{ itemCount }} items checked</p>
+        <button v-if="pendingRestock.length" type="button" class="button-primary market-mini inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
+        <button v-if="!phone" type="button" class="button-secondary market-mini" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
         <details ref="shareMenu" class="market-share" @keydown.esc="closeShare(true)">
-          <summary class="button-secondary min-h-11 inline-flex items-center gap-2"><UIcon name="i-lucide-share-2" aria-hidden="true" />Share<UIcon name="i-lucide-chevron-down" aria-hidden="true" /></summary>
+          <summary class="button-secondary market-mini inline-flex items-center gap-2"><UIcon name="i-lucide-share-2" aria-hidden="true" />Share<UIcon name="i-lucide-chevron-down" aria-hidden="true" /></summary>
           <div class="market-share__panel">
             <button type="button" class="market-share__item" :disabled="busy" @click="closeShare(); shareWhatsApp()"><UIcon name="i-lucide-message-circle" aria-hidden="true" />Share on WhatsApp</button>
             <button type="button" class="market-share__item" :disabled="busy" @click="closeShare(); openQrModal()"><UIcon name="i-lucide-qr-code" aria-hidden="true" />Send to phone</button>
@@ -309,6 +306,7 @@ async function copy() {
           </div>
         </details>
       </div>
+      <p v-if="pantryMessage" role="status" class="text-sm print:hidden">{{ pantryMessage }}</p>
       <p v-if="copyState === 'success'" role="status">Shopping list copied.</p>
       <p v-if="shareNote" role="status" class="print:hidden">{{ shareNote }}</p>
       <dialog ref="qrDialog" class="m-auto w-[min(92vw,28rem)] rounded-xl border border-rule bg-paper p-6 text-ink shadow-2xl backdrop:bg-black/50 print:hidden" aria-labelledby="qr-heading">
@@ -333,9 +331,9 @@ async function copy() {
         <p role="alert" class="text-error">{{ copyError }}</p>
         <label class="block">Shopping list text<textarea :value="summary" readonly rows="8" class="field mt-2" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
       </div>
-      <details v-if="list.prepAlerts.length" class="market-prepare rounded-lg border border-rule bg-paper-2 px-4">
-        <summary class="flex min-h-11 cursor-pointer items-center font-semibold">Prepare ahead ({{ list.prepAlerts.length }})</summary>
-        <ul class="list-disc space-y-3 pb-4 pl-5 pt-1">
+      <details v-if="list.prepAlerts.length" class="market-prepare rounded-lg border border-rule bg-paper-2 px-3">
+        <summary class="market-row flex cursor-pointer items-center font-semibold">Prepare ahead ({{ list.prepAlerts.length }})</summary>
+        <ul class="list-disc space-y-2 pb-3 pl-5">
           <li v-for="(alert, index) in list.prepAlerts" :key="index"><strong>{{ alert.recipeTitle }}:</strong> {{ alert.text }}</li>
         </ul>
       </details>
@@ -344,47 +342,47 @@ async function copy() {
       <p role="status" class="sr-only">{{ orderNote }}</p>
       <section v-for="(destination, stop) in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
         <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <div class="flex min-w-0 items-center gap-3">
-            <component :is="vendorIcon[destination.section]" class="size-8 flex-none" />
-            <div class="min-w-0">
-              <h3 :id="'market-' + destination.section" class="text-xl leading-tight">{{ destination.name }}</h3>
-              <p class="text-sm text-muted"><span lang="el">{{ destination.localizedName }}</span> · <span>{{ destination.items.length }} item{{ destination.items.length === 1 ? '' : 's' }}</span></p>
-            </div>
+          <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0">
+            <component :is="vendorIcon[destination.section]" class="size-7 flex-none" />
+            <h3 :id="'market-' + destination.section" class="text-lg leading-tight">{{ destination.name }}</h3>
+            <p class="text-sm text-muted"><span lang="el">{{ destination.localizedName }}</span> · <span>{{ destination.items.length }} item{{ destination.items.length === 1 ? '' : 's' }}</span></p>
           </div>
           <div v-if="mode === 'market' && routedList.destinations.length > 1" class="market-reorder flex gap-1 print:hidden" role="group" :aria-label="'Reorder ' + destination.name">
-            <button :id="'move-up-' + destination.section" type="button" class="button-secondary min-h-11 min-w-11" :disabled="stop === 0" :aria-label="'Move ' + destination.name + ' up'" @click="moveSection(destination.section, -1)"><UIcon name="i-lucide-arrow-up" aria-hidden="true" /></button>
-            <button :id="'move-down-' + destination.section" type="button" class="button-secondary min-h-11 min-w-11" :disabled="stop === routedList.destinations.length - 1" :aria-label="'Move ' + destination.name + ' down'" @click="moveSection(destination.section, 1)"><UIcon name="i-lucide-arrow-down" aria-hidden="true" /></button>
+            <button :id="'move-up-' + destination.section" type="button" class="button-secondary market-mini" :disabled="stop === 0" :aria-label="'Move ' + destination.name + ' up'" @click="moveSection(destination.section, -1)"><UIcon name="i-lucide-arrow-up" aria-hidden="true" /></button>
+            <button :id="'move-down-' + destination.section" type="button" class="button-secondary market-mini" :disabled="stop === routedList.destinations.length - 1" :aria-label="'Move ' + destination.name + ' down'" @click="moveSection(destination.section, 1)"><UIcon name="i-lucide-arrow-down" aria-hidden="true" /></button>
           </div>
         </div>
-        <ul class="mt-2 divide-y divide-rule border-y border-rule">
-          <li v-for="(item, index) in destination.items" :key="item.id" class="market-item py-1">
-            <h4 v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="mb-1 mt-3 text-sm font-semibold text-muted">{{ item.aisle }}</h4>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-0">
-              <label class="flex min-h-11 min-w-0 flex-1 basis-52 items-center gap-3">
-                <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
-                <span class="min-w-0 font-semibold" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
-              </label>
-              <span v-if="destination.section === 'supermarket'" class="market-price min-h-6 print:hidden" data-testid="market-price-slot">
-                <span v-if="priceBadges[item.id]" data-testid="market-price" class="market-price__badge inline-flex max-w-full items-center gap-1 rounded-full border border-sage/50 bg-sage/10 px-2.5 py-0.5 text-xs font-semibold text-sage-ink" :title="priceBadges[item.id]!.label" :aria-label="priceBadges[item.id]!.label"><UIcon name="i-lucide-tag" class="size-3.5 flex-none" aria-hidden="true" /><span lang="el" class="truncate">{{ priceBadges[item.id]!.text }}</span></span>
-              </span>
-              <span v-if="item.pantryNote" class="text-sm text-muted print:hidden">{{ item.pantryNote }}</span>
-              <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field market-destination !mt-0 min-h-11 !w-auto max-w-40 py-1 text-sm" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
-                <option v-for="section in marketSections" :key="section" :value="section">{{ sectionInfo[section].name }}</option>
-              </select>
-              <button v-if="hasDetails(item)" type="button" class="market-details-toggle button-secondary min-h-11 print:hidden" :aria-expanded="!!detailsOpen[item.id]" :aria-controls="'details-' + item.id" :aria-label="'Details for ' + item.name" @click="detailsOpen[item.id] = !detailsOpen[item.id]">Details<UIcon :name="detailsOpen[item.id] ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" aria-hidden="true" /></button>
-            </div>
-            <div v-if="hasDetails(item)" v-show="detailsOpen[item.id]" :id="'details-' + item.id" class="market-item__details mb-3 ml-8 space-y-2 text-sm">
-              <p v-if="item.counterPhrase"><strong>At the counter:</strong> <span lang="el">{{ item.counterPhrase }}</span></p>
-              <p v-if="item.packageSizeToBuy"><strong>Buy:</strong> {{ item.packageSizeToBuy }}</p>
-              <p v-if="item.surplusLeftoverTip"><strong>Surplus:</strong> {{ item.surplusLeftoverTip }}</p>
-              <p v-if="item.note">{{ item.note }}</p>
-              <p v-for="(note, noteIndex) in item.prepNotes" :key="noteIndex"><strong>Prep:</strong> {{ note }}</p>
-            </div>
-          </li>
+        <ul class="market-grid mt-1 border-t border-rule/60">
+          <template v-for="(item, index) in destination.items" :key="item.id">
+            <li v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="col-span-full mt-2 text-sm font-semibold text-muted"><h4>{{ item.aisle }}</h4></li>
+            <li class="market-item border-b border-rule/60">
+              <div class="flex items-center gap-2">
+                <label class="market-row flex min-w-0 flex-1 items-center gap-2">
+                  <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
+                  <span class="min-w-0 font-semibold leading-snug" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
+                </label>
+                <span v-if="item.pantryNote" class="flex-none text-xs text-muted print:hidden">{{ item.pantryNote }}</span>
+                <button type="button" class="market-details-toggle button-secondary market-mini relative flex-none print:hidden" :aria-expanded="!!detailsOpen[item.id]" :aria-controls="'details-' + item.id" :aria-label="'Details for ' + item.name" :title="priceBadges[item.id]?.label" @click="detailsOpen[item.id] = !detailsOpen[item.id]"><UIcon :name="detailsOpen[item.id] ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" aria-hidden="true" /><span v-if="priceBadges[item.id]" data-testid="market-price-dot" class="absolute right-0.5 top-0.5 size-2 rounded-full bg-sage-ink" aria-hidden="true" /></button>
+              </div>
+              <div v-show="detailsOpen[item.id]" :id="'details-' + item.id" class="market-item__details mb-2 ml-9 space-y-2 text-sm">
+                <p v-if="priceBadges[item.id]" data-testid="market-price" class="market-price__badge inline-flex max-w-full items-center gap-1 rounded-full border border-sage/50 bg-sage/10 px-2.5 py-0.5 text-xs font-semibold text-sage-ink print:hidden" :title="priceBadges[item.id]!.label" :aria-label="priceBadges[item.id]!.label"><UIcon name="i-lucide-tag" class="size-3.5 flex-none" aria-hidden="true" /><span lang="el" class="truncate">{{ priceBadges[item.id]!.text }}</span></p>
+                <label class="market-destination flex flex-wrap items-center gap-2 print:hidden">Move to
+                  <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field market-mini !mt-0 !w-auto max-w-44 py-1 text-sm" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
+                    <option v-for="section in marketSections" :key="section" :value="section">{{ sectionInfo[section].name }}</option>
+                  </select>
+                </label>
+                <p v-if="item.counterPhrase"><strong>At the counter:</strong> <span lang="el">{{ item.counterPhrase }}</span></p>
+                <p v-if="item.packageSizeToBuy"><strong>Buy:</strong> {{ item.packageSizeToBuy }}</p>
+                <p v-if="item.surplusLeftoverTip"><strong>Surplus:</strong> {{ item.surplusLeftoverTip }}</p>
+                <p v-if="item.note">{{ item.note }}</p>
+                <p v-for="(note, noteIndex) in item.prepNotes" :key="noteIndex"><strong>Prep:</strong> {{ note }}</p>
+              </div>
+            </li>
+          </template>
         </ul>
       </section>
-      <details v-if="covered.length" class="market-covered rounded-lg border border-rule bg-paper-2 px-4 print:hidden">
-        <summary class="flex min-h-11 cursor-pointer items-center font-semibold">Already in your pantry ({{ covered.length }})</summary>
+      <details v-if="covered.length" class="market-covered rounded-lg border border-rule bg-paper-2 px-3 print:hidden">
+        <summary class="market-row flex cursor-pointer items-center font-semibold">Already in your pantry ({{ covered.length }})</summary>
         <ul class="divide-y divide-rule pb-2">
           <li v-for="row in covered" :key="row.id" class="flex flex-wrap items-baseline justify-between gap-x-3 py-2">
             <span class="font-semibold">{{ row.name }}</span>
@@ -405,6 +403,15 @@ async function copy() {
 .market-action { max-width: 100%; white-space: normal; }
 .restock-notice { display: flex; align-items: flex-start; gap: .5rem; border-left: 3px solid var(--color-sage-ink); background: var(--color-paper-2); padding: .75rem 1rem; color: var(--color-ink); }
 .qr-code :deep(svg) { width: 100%; max-width: 16rem; height: auto; }
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); column-gap: 1.5rem; align-items: start; }
+/* Touch screens keep 44px targets; a mouse gets a denser, scannable list. */
+.market-row { min-height: 44px; }
+.market-mini { min-height: 44px; min-width: 44px; padding-inline: .75rem; }
+@media (pointer: fine) {
+  .market-row { min-height: 36px; }
+  .market-mini { min-height: 32px; min-width: 32px; padding-block: 0; padding-inline: .625rem; }
+  .market-item input[type='checkbox'], .market-shopping label > input[type='checkbox'] { width: 32px; height: 32px; border-width: 6px; }
+}
 .market-price__badge { animation: market-price-in .2s ease-out; }
 @keyframes market-price-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .market-price__badge { animation: none; } }

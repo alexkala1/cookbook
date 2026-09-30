@@ -4,6 +4,7 @@ import { decodeMarketPayload } from '../../utils/market-share'
 
 type RecipeRow = { id: string, title: string, servings: number }
 useSeoMeta({ title: 'Market list — Heirloom' })
+definePageMeta({ wide: true })
 const route = useRoute()
 const router = useRouter()
 // A list scanned from another device (?import=…) is shown as-is; a bad payload falls back to the normal picker.
@@ -39,9 +40,9 @@ const courses = computed(() => selected.value ? [{ recipeId: selected.value.id, 
 </script>
 
 <template>
-  <section class="page-section">
-    <h1 class="mt-3">Market list</h1>
-    <p class="mt-4 max-w-2xl">Pick a recipe and we’ll sort what to buy by where to shop: the laiki, the butcher, the bakery and the supermarket. No dinner plan needed.</p>
+  <section class="page-section !py-6 sm:!py-8">
+    <h1 class="text-4xl">Market list</h1>
+    <p v-if="!selected && !importedList" class="mt-2 max-w-2xl">Pick a recipe and we’ll sort what to buy by where to shop: the laiki, the butcher, the bakery and the supermarket. No dinner plan needed.</p>
 
     <p v-if="importFailed" role="alert" class="notice mt-6">We couldn’t read that shared list. Choose a recipe below instead.</p>
     <template v-if="importedList">
@@ -60,20 +61,20 @@ const courses = computed(() => selected.value ? [{ recipeId: selected.value.id, 
     </div>
     <template v-else>
       <p v-if="unknownRecipe" role="alert" class="notice mt-6">We couldn’t find that recipe. Choose another below.</p>
-      <div class="row-panel mt-8 grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-        <label class="block min-w-0">Recipe
+      <div class="row-panel mt-3 grid grid-cols-[minmax(0,1fr)_5.5rem] items-end gap-3 !p-3 sm:grid-cols-[minmax(0,1fr)_10rem] sm:gap-4">
+        <label class="block min-w-0 text-sm font-semibold">Recipe
           <select class="field mt-2" :value="selectedId" @change="choose(($event.target as HTMLSelectElement).value)">
             <option value="" disabled>Choose a recipe…</option>
             <option v-for="recipe in recipes" :key="recipe.id" :value="recipe.id">{{ recipe.title }}</option>
           </select>
         </label>
-        <label class="block">Servings
+        <label class="block text-sm font-semibold">Servings
           <input class="field mt-2" type="number" min="1" max="1000" step="1" :value="servings" :disabled="!selected" @change="commitServings">
         </label>
       </div>
       <p v-if="selected && servings !== selected.servings" class="mt-3 text-sm text-muted">Quantities are scaled from the recipe’s {{ selected.servings }} servings.</p>
       <p v-if="!selected" class="empty-state mt-8">Choose a recipe to see where to shop for it.</p>
-      <MarketShoppingList v-else :key="selected.id + ':' + servings" class="mt-10" :courses="courses" :servings="servings" servings-noun="servings" auto-generate />
+      <MarketShoppingList v-else :key="selected.id + ':' + servings" class="mt-5" :courses="courses" :servings="servings" servings-noun="servings" auto-generate />
     </template>
   </section>
 </template>
