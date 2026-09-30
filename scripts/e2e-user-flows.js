@@ -311,6 +311,9 @@ async function journey(browser, viewport) {
       assert(await draft.getByLabel('Recipe title').inputValue() === 'Fasolakia Ladera', 'Web import should keep the JSON-LD recipe name')
       assert((await draft.innerText()).includes('500 g green beans'), 'Web import should keep source measurements')
       assert(await draft.getByText('40 min timer', { exact: true }).count() === 1 && await draft.getByText('low heat', { exact: true }).count() === 1, 'Web import should time the simmer step and show its heat')
+      await page.getByRole('heading', { name: /not saved yet/ }).waitFor()
+      assert(await page.getByRole('heading', { name: /not saved yet/ }).evaluate(el => el === document.activeElement), 'Finished draft should take focus so the cook sees it is unsaved')
+      await page.waitForFunction(() => { const r = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Save to Cookbook'))?.getBoundingClientRect(); if (!r || r.bottom > window.innerHeight + 1 || r.top < 0) return false; const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!hit && [...document.querySelectorAll('button')].some(b => b.contains(hit) && b.textContent.includes('Save to Cookbook')) }, null, { timeout: 5000 }).catch(() => assert(false, 'Save must stay reachable inside the viewport'))
       await shot(page, viewport, 'import-web-url', page.getByRole('button', { name: 'Save to Cookbook' }))
     })
     await step(page, viewport, 'Flow 2 · import from a video link', async () => {

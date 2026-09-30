@@ -1,5 +1,5 @@
 import type { RecipeInput } from '../../server/utils/validation'
-import { timedStep } from './method-steps'
+import { EXTERNAL_URL, timedStep } from './method-steps'
 import { ovenTemperature } from './heat'
 import { parseIngredientLine, type IngredientDraft } from './ingredient-line'
 import { enrichScience } from './science'
@@ -20,15 +20,21 @@ const PROMOTIONAL = new RegExp([
   'memberships? (?:are|is) here', 'hit the join button', 'join (?:the|my|our) (?:community|channel|membership)',
   '\\bsubscribe\\b', 'turn on (?:the )?notifications', 'patreon', 'buy me a coffee', '\\bmerch\\b', '\\baffiliate\\b',
   'use (?:my )?code', '\\bsponsored\\b', 'business (?:enquiries|inquiries)', 'follow (?:me|us) on', 'link in (?:bio|description)',
+  'get my cookbook', 'kitchen products i own', 'discount code', '^follow me\\s*:',
   '^https?://', '^(?:www\\.|instagram|tiktok|facebook|twitter|x\\.com)', '^#\\w+(?:\\s+#\\w+)+$', '^\\d{1,2}:\\d{2}(?::\\d{2})?\\s'
 ].join('|'), 'i')
 
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 const heading = (line: string) => fold(line.replace(/^[#*\s]+|[*:\s]+$/g, ''))
-const isIngredientsHeading = (line: string) => /^(?:ingredients?|what you(?:'|’)?ll need|you will need|shopping list|υλικα)$/.test(heading(line))
+const isIngredientsHeading = (line: string) => {
+  const h = heading(line)
+  if (/^(?:ingredients?|what you(?:'|’)?ll need|you will need|shopping list|υλικα)$/.test(h)) return true
+  if (h.length <= 35 && !/^(?:it|this|that|how|why|i|you|we|there|when|what)\b/.test(h) && /(?:^|\s)(?:recipe|ingredients|shopping list)$/.test(h)) return true
+  return false
+}
 const isMethodHeading = (line: string) => /^(?:method|instructions?|directions?|preparation|steps|how to make(?: it)?|εκτελεση|οδηγιες|παρασκευη|μεθοδος)$/.test(heading(line))
 const isServeHeading = (line: string) => /^(?:to serve|serving|serve|to finish|plating|σερβιρισμα)$/.test(heading(line))
-const isStopHeading = (line: string) => /^(?:notes?|tips?|equipment|nutrition|chapters|timestamps|music|credits|σημειωσεις|συμβουλες)$/.test(heading(line))
+const isStopHeading = (line: string) => /^(?:notes?|tips?|equipment|nutrition|chapters?|timestamps?|breakdown|video breakdown|video chapters?|music|credits|thanks|enjoy|find |follow |σημειωσεις|συμβουλες)/.test(heading(line))
 const groupHeading = (line: string) => {
   const match = line.replace(/[:\s]+$/, '').match(/^(?:for (?:the )?|για (?:το |τη |την |τα |τον |τις )?)(.{2,50})$/i)
   return match ? match[1]!.trim() : null
@@ -40,7 +46,7 @@ const HAS_QUANTITY = /^(?:\d|[½¼¾⅓⅔⅛])/
 /** Remove promotional lines (channel memberships, subscribe prompts, links, timestamps). */
 export function stripPromotional(text: string): string {
   return text.split(/\r?\n/)
-    .filter(line => !PROMOTIONAL.test(line.replace(/[\p{Extended_Pictographic}️]/gu, '').trim()))
+    .filter(line => !EXTERNAL_URL.test(line) && !PROMOTIONAL.test(line.replace(/[\p{Extended_Pictographic}️]/gu, '').trim()))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -62,7 +68,7 @@ function ingredientFrom(line: string, group: string | null, servings: number): I
 /**
  * Parse recipe text that already carries its own structure — an ingredients section and a method,
  * usually numbered — as found in video descriptions, blog text and pasted notes.
- * Returns null unless at least two method steps are found.
+ * Ingredient-only descriptions retain their measurements with a video-method placeholder.
  */
 export function parseStructuredRecipe(text: string | null | undefined, fallbackServings = 4): StructuredRecipe | null {
   if (!text?.trim()) return null
@@ -75,7 +81,11 @@ export function parseStructuredRecipe(text: string | null | undefined, fallbackS
   let numbered = false
 
   for (const line of lines) {
-    if (isIngredientsHeading(line)) { state = 'ingredients'; group = null; continue }
+    if (isIngredientsHeading(line)) {
+      state = 'ingredients'
+      group = /\srecipe$/i.test(heading(line)) ? line.replace(/^[#*\s]+|[*:\s]+$/g, '').replace(/\s+recipe$/i, '') : null
+      continue
+    }
     if (isMethodHeading(line)) { state = 'method'; continue }
     if (isServeHeading(line) && (state === 'method' || state === 'ingredients')) { state = 'serve'; blocks.push({ title: 'To serve', body: [] }); continue }
     if (isStopHeading(line) && state !== 'intro') { state = 'tail'; continue }
@@ -87,7 +97,20 @@ export function parseStructuredRecipe(text: string | null | undefined, fallbackS
       blocks.push({ title: step[2]!.trim(), body: [] })
       continue
     }
-    if (state === 'intro') { intro.push(line); continue }
+    if (state === 'intro') {
+      if (HAS_QUANTITY.test(line)) {
+        state = 'ingredients'
+        const prev = intro.pop()
+        if (prev && prev.length <= 60 && !/[.!?]$/.test(prev) && !groupHeading(prev)) {
+          group = prev
+        } else if (prev) {
+          intro.push(prev)
+        }
+        ingredientLines.push({ line, group })
+        continue
+      }
+      intro.push(line); continue
+    }
     if (state === 'ingredients') {
       if (!line) continue
       const name = groupHeading(line)
@@ -113,7 +136,9 @@ export function parseStructuredRecipe(text: string | null | undefined, fallbackS
       else if (!oven && lastOven && /\boven\b|φουρν/.test(fold(instruction))) instruction += ` (oven at ${lastOven.temperature}°${lastOven.unit})`
       return timedStep(instruction, index + 1)
     })
-  if (steps.length < 2) return null
+  const ingredientsOnly = steps.length === 0 && ingredientLines.length >= 2
+  if (steps.length < 2 && !ingredientsOnly) return null
+  if (ingredientsOnly) steps.push(timedStep("Follow video for cooking method. Ingredients and proportions are saved from the creator's description.", 1))
 
   const servingsMatch = fold(text).match(/\bserves\s+(\d{1,3})|(\d{1,3})\s+servings|μεριδες\s*:?\s*(\d{1,3})/)
   const servings = servingsMatch ? Number(servingsMatch[1] ?? servingsMatch[2] ?? servingsMatch[3]) : null
@@ -122,7 +147,7 @@ export function parseStructuredRecipe(text: string | null | undefined, fallbackS
   const description = lede ? (lede.match(/^(?:[^.!?]+[.!?]+\s*){1,2}/)?.[0] ?? lede).trim().slice(0, 300) : null
 
   return {
-    description,
+    description: ingredientsOnly ? 'Imported from video description.' : description,
     notes: paragraphs.join('\n\n').slice(0, 9000),
     servings: servings && servings > 0 && servings <= 1000 ? servings : null,
     ingredients: ingredientLines.map(item => ingredientFrom(item.line, item.group, servings ?? fallbackServings)),

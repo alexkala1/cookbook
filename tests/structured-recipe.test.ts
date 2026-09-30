@@ -4,6 +4,36 @@ import { parseDurations } from '../shared/culinary/durations'
 import { ovenTemperature } from '../shared/culinary/heat'
 import { fallbackRecipe, structuredDraft } from '../server/utils/ai/normalize'
 import { recipeCreateSchema } from '../server/utils/validation'
+import { chickenAdoboDescription } from './fixtures/chicken-adobo-description'
+
+it('preserves all 19 Chicken Adobo ingredients without inventing a video method', () => {
+  const parsed = parseStructuredRecipe(chickenAdoboDescription)!
+  expect(parsed).not.toBeNull()
+  expect(parsed.ingredients).toHaveLength(19)
+  expect(parsed.ingredients.map(item => [item.amount, item.unit])).toEqual([
+    [2.5, 'lb'], [0.5, 'cup'], [1 / 3, 'cup'], [1.5, 'cup'], [1, 'piece'],
+    [5, 'cloves'], [3, 'piece'], [1, 'tsp'], [1, 'tbsp'], [2, 'tbsp'],
+    [0, 'as needed'], [0, 'as needed'], [0, 'as needed'], [2, 'cup'],
+    [1.5, 'cup'], [0.5, 'tsp'], [3, 'tbsp'], [0.25, 'cup'], [1, 'tbsp']
+  ])
+  expect(parsed.ingredients[13]!.notes).toContain('garlic coconut rice')
+  expect(parsed.description).toBe('Imported from video description.')
+  expect(parsed.steps.map(step => step.instruction)).toEqual(["Follow video for cooking method. Ingredients and proportions are saved from the creator's description."])
+  expect(parsed.ingredients.some(item => /brown sugar/.test(item.name))).toBe(true)
+  expect(parsed.ingredients.some(item => /fish sauce/.test(item.name))).toBe(true)
+  expect(JSON.stringify(parsed)).not.toMatch(/amzn|bit\.ly|Spatula|Whisk|Kettle Grill|FOLLOW ME/i)
+  expect(structuredDraft(chickenAdoboDescription)!.ingredients).toHaveLength(19)
+})
+
+it('strips embedded URLs and recognizes named ingredient headings without mistaking decimal quantities for numbered steps', () => {
+  expect(stripPromotional('Buy a whisk amzn.to/abc\nA grill https://example.com\nSee bit.ly/abc\n2 eggs')).toBe('2 eggs')
+  for (const heading of ['Chicken Recipe:', 'Chicken ingredients:', 'Chicken shopping list:']) {
+    const parsed = parseStructuredRecipe(`${heading}\n1.5 kg chicken\n2 tbsp oil`)!
+    expect(parsed.ingredients).toHaveLength(2)
+    expect(parsed.steps).toHaveLength(1)
+  }
+  expect(parseStructuredRecipe('Ingredients\n1 egg')).toBeNull()
+})
 
 // Synthetic description with the same shape as a typical cooking-channel video description.
 const braise = `🚨 Big News: Memberships Are Here! 🚨 Hit the Join button to join the community!
@@ -176,4 +206,40 @@ describe('splitNotesUpdate', () => {
 
 it('uses the right article before a step count', () => {
   expect([2, 7, 8, 11, 18, 80, 12].map(stepCountPhrase)).toEqual(['a 2-step', 'a 7-step', 'an 8-step', 'an 11-step', 'an 18-step', 'an 80-step', 'a 12-step'])
+})
+
+it('parses ingredient lists that start directly under a title without an explicit ingredients heading', () => {
+  const description = [
+    'Claire Saffitz Makes Chocolate Chip Cookies | Dessert Person',
+    'What makes the best chocolate chip cookies? In Claire’s opinion, it’s a chewy edge, soft and chewy center.',
+    '',
+    '#ClaireSaffitz #Baking #Cookies',
+    '',
+    'Chocolate Chip Cookies',
+    '2 sticks unsalted butter (8 oz / 227g), cut into tablespoons',
+    '2 tablespoons heavy cream, half-and-half, or whole milk (1 oz / 28g)',
+    '2 cups all-purpose flour (9.2 oz / 260g)',
+    '2 teaspoons Diamond Crystal kosher salt (0.22 oz / 6g)',
+    '1 teaspoon baking soda (0.21 oz / 6g)',
+    '3/4 cup packed dark brown sugar (5.3 oz / 150g)',
+    '3/4 cup granulated sugar (5.3 oz / 150g)',
+    '2 large eggs (3.5 oz / 100g), cold from the refrigerator',
+    '1 tablespoon vanilla extract',
+    '5 ounces (142g) bittersweet chocolate disks, half coarsely chopped',
+    '5 ounces (142g) milk chocolate disks, half coarsely chopped',
+    '',
+    'Video Breakdown:',
+    '0:00 Start',
+    '2:57 Brown The Butter',
+    'Thanks for watching!'
+  ].join('\n')
+
+  const parsed = parseStructuredRecipe(description)!
+  expect(parsed).not.toBeNull()
+  expect(parsed.ingredients).toHaveLength(11)
+  expect(parsed.ingredients[0]).toMatchObject({ amount: 2, unit: 'stick', gramsEquivalent: 227 })
+  expect(parsed.ingredients[2]).toMatchObject({ amount: 2, unit: 'cup', gramsEquivalent: 260 })
+  expect(parsed.ingredients[7]).toMatchObject({ amount: 2, unit: 'piece', gramsEquivalent: 100 })
+  expect(parsed.ingredients[9]).toMatchObject({ amount: 5, unit: 'oz', gramsEquivalent: 142 })
+  expect(parsed.steps).toHaveLength(1)
 })

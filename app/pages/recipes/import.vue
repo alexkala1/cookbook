@@ -48,6 +48,7 @@ async function pickPhoto(event: Event) {
 }
 function removePhoto() { photoDataUrl.value = ''; photoError.value = ''; photoInput.value?.focus() }
 const compareView = ref<'source' | 'parsed'>('source')
+const draftHeading = ref<HTMLElement>()
 let controller: AbortController | undefined
 onBeforeUnmount(() => controller?.abort())
 watch(kind, () => { source.value = ''; photoDataUrl.value = ''; photoError.value = ''; captionsUnavailable.value = false; draft.value = null; original.value = null; error.value = ''; messages.value = [] })
@@ -61,10 +62,16 @@ async function generate() {
     await readRecipeStream(response, (event, raw) => {
       const data = raw as { message?: string, recipe?: RecipeInput, warnings?: string[], provenance?: string, mode?: string, sourceText?: string, captionsUnavailable?: boolean }
       if (data.message) messages.value = [...messages.value.slice(-9), data.message]
-      if (event === 'complete' && data.recipe) { draft.value = photo && !data.recipe.imageUrl ? { ...data.recipe, imageUrl: photo } : data.recipe; captionsUnavailable.value = !!data.captionsUnavailable; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}`; original.value = { input, text: data.sourceText || input, kind: inputKind, photo }; compareView.value = 'source' }
+      if (event === 'complete' && data.recipe) { draft.value = photo && !data.recipe.imageUrl ? { ...data.recipe, imageUrl: photo } : data.recipe; captionsUnavailable.value = !!data.captionsUnavailable; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}`; original.value = { input, text: data.sourceText || input, kind: inputKind, photo }; compareView.value = 'source'; revealDraft() }
     })
   } catch (cause) { draft.value = null; error.value = controller.signal.aborted ? 'Import cancelled.' : cause instanceof Error ? cause.message : 'Import failed. Try again.' }
   finally { busy.value = false }
+}
+// Bring the finished draft into view and tell screen readers it arrived; it isn't in the cookbook yet.
+async function revealDraft() {
+  await nextTick()
+  draftHeading.value?.focus({ preventScroll: true })
+  draftHeading.value?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 }
 async function save() {
   if (!draft.value || saving.value) return
@@ -74,6 +81,8 @@ async function save() {
   finally { saving.value = false }
 }
 const minutesLabel = (minutes: number) => minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
+const isAiError = computed(() => !!error.value && /settings|model|key|rate limit|quota|groq|openai|anthropic|ollama|provider|timed out/i.test(error.value))
+const isSourceError = computed(() => !!error.value && /video|website|youtube|url|redirect|blocked|403|404|unplayable/i.test(error.value))
 useSeoMeta({ title: 'Import a recipe — Heirloom' })
 </script>
 <template>
@@ -101,12 +110,34 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
         <textarea v-if="kind === 'prompt'" v-model="source" class="field mt-2" rows="5" required minlength="5" maxlength="20000" :disabled="busy || saving" placeholder="Grandma’s lemon chicken, roasted on Sundays…" />
         <input v-else v-model="source" class="field mt-2" :type="kind === 'url' ? 'url' : 'text'" required maxlength="2000" :disabled="busy || saving">
       </label>
-      <p class="text-sm">{{ settings.activeProvider === 'ollama' && settings.activeModel ? 'Uses your locally running Ollama model.' : settings.keys[settings.activeProvider] ? 'Uses your selected model. Source text' + (photoDataUrl ? ' and your card photo are' : ' is') + ' sent to that provider.' : 'No API key: structured recipe metadata is preserved; other sources use a clearly labeled starting draft.' }} <NuxtLink class="text-action" to="/settings">AI settings</NuxtLink></p>
+      <p class="text-sm">{{ settings.activeProvider === 'ollama' && settings.activeModel ? 'Uses your locally running Ollama model.' : settings.keys[settings.activeProvider] ? 'Uses your selected model. Source text' + (photoDataUrl ? ' and your card photo are' : ' is') + ' sent to that provider.' : 'No AI key set, so you’ll get a basic draft to finish by hand. Add a key for a fuller import.' }} <NuxtLink class="text-action" to="/settings">AI settings</NuxtLink></p>
       <button class="button-primary" :disabled="busy || saving || !ready" v-stable-action="generateState" :data-state="generateState" :aria-busy="busy">{{ generateLabel('Create recipe draft', 'Creating draft…') }}</button>
       <button v-if="busy" type="button" class="button-secondary ml-3" @click="controller?.abort()">Cancel</button>
     </form>
     <ol v-if="messages.length" class="row-panel mt-6 space-y-2" aria-live="polite" aria-label="Import progress"><li v-for="(message, i) in messages" :key="i">{{ message }}</li></ol>
-    <p v-if="error" role="alert" class="notice mt-6">{{ error }}</p>
+    <div v-if="error" role="alert" class="notice mt-6 rounded-xl border border-terracotta/40 bg-terracotta/5 p-4 text-ink">
+      <div class="flex items-start gap-3">
+        <UIcon name="i-lucide-alert-circle" class="mt-0.5 size-5 flex-none text-terracotta" aria-hidden="true" />
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-base">We couldn’t create a draft</p>
+          <p class="mt-1 text-sm leading-relaxed">{{ error }}</p>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <NuxtLink v-if="isAiError" to="/settings" class="button-secondary inline-flex items-center gap-1.5 py-1 px-3 text-xs">
+              <UIcon name="i-lucide-settings" class="size-4" aria-hidden="true" /> Open AI Settings
+            </NuxtLink>
+            <button v-if="isSourceError && kind !== 'prompt'" type="button" class="button-secondary py-1 px-3 text-xs" @click="kind = 'prompt'">
+              Paste text in Memory instead
+            </button>
+            <button type="button" class="button-secondary py-1 px-3 text-xs" @click="generate">
+              Try again
+            </button>
+            <button type="button" class="text-xs text-muted underline hover:text-ink ml-1" @click="error = ''">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
     <details v-if="draft && original" class="group mt-10 rounded-xl border border-rule bg-paper-2/60 p-4" aria-label="Source comparison">
       <summary class="flex min-h-11 cursor-pointer select-none items-center justify-between gap-3 font-semibold [&::-webkit-details-marker]:hidden">
         <span class="flex items-center gap-2"><UIcon name="i-lucide-columns-2" class="flex-none" aria-hidden="true" />Original source vs parsed recipe</span>
@@ -136,15 +167,27 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
       </div>
     </details>
     <article v-if="draft" class="mt-6 border-t border-espresso/20 pt-8">
-      <p class="meta-label">Review your draft · {{ provenance }}</p>
+      <div role="status" class="flex items-start gap-3 rounded-lg border border-rule bg-paper-2 p-4">
+        <UIcon name="i-lucide-file-pen-line" class="mt-0.5 size-6 flex-none" aria-hidden="true" />
+        <div>
+          <h2 ref="draftHeading" tabindex="-1" class="text-xl">Your draft is ready — not saved yet</h2>
+          <p class="mt-1 text-sm">Nothing is in your cookbook until you save. Look it over, fix the title if needed, then press <strong>Save to Cookbook</strong> at the bottom of the screen.</p>
+        </div>
+      </div>
+      <p class="meta-label mt-6">Review your draft · {{ provenance }}</p>
       <p v-if="captionsUnavailable" role="note" class="notice mt-4"><UIcon name="i-lucide-info" class="mr-1 align-text-bottom" aria-hidden="true" />This video doesn’t have captions, so Heirloom built the recipe from the creator’s cooking notes and timestamps. Steps and amounts that were pieced together are tagged as inferred — give them a quick check before you save.</p>
-      <p v-for="warning in warnings" :key="warning" class="notice mt-4">{{ warning }}</p>
+      <div v-if="warnings.length" role="note" class="mt-4 flex items-start gap-3 rounded-lg border border-rule bg-paper-2/60 p-4 text-sm">
+        <UIcon name="i-lucide-info" class="mt-0.5 size-5 flex-none" aria-hidden="true" />
+        <div><p class="font-semibold">Worth a quick check</p><p v-for="warning in warnings" :key="warning" class="mt-1">{{ warning }}</p></div>
+      </div>
       <label class="mt-6 block">Recipe title<input v-model="draft.title" class="field mt-2" maxlength="200"></label>
       <p class="mt-4">{{ draft.description }}</p>
       <h2 class="mt-6">Ingredients</h2><ul class="mt-4 space-y-3"><li v-for="(ingredient, i) in draft.ingredients" :key="i">{{ ingredient.amount }} {{ ingredient.unit }} {{ ingredient.name }}<p class="text-sm">{{ ingredient.notes }}</p></li></ul>
       <h2 class="mt-6">Method &amp; food science</h2><ol class="mt-4 space-y-5"><li v-for="step in draft.steps" :key="step.stepNumber"><p>{{ step.stepNumber }}. {{ step.instruction }}</p><p v-if="step.durationMinutes || (step.heatLevel && step.heatLevel !== 'none')" class="mt-2 flex flex-wrap gap-2 text-sm font-semibold"><span v-if="step.durationMinutes" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 border-sage/50 bg-sage/10 text-sage-ink"><UIcon :name="step.timerRequired ? 'i-lucide-timer' : 'i-lucide-clock'" aria-hidden="true" />{{ minutesLabel(step.durationMinutes) }}{{ step.timerRequired ? ' timer' : '' }}</span><span v-if="step.heatLevel && step.heatLevel !== 'none'" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 border-terracotta/40 bg-terracotta/10 text-terracotta-ink"><UIcon name="i-lucide-flame" aria-hidden="true" />{{ step.heatLevel.replace('-', '–') }} heat</span></p><p v-if="step.scienceWhy" class="mt-2 text-sm text-sage-ink">{{ step.scienceWhy }}</p></li></ol>
-      <p class="mt-6 text-sm">Save, then use Edit recipe to refine quantities, steps, equipment, and family notes.</p>
-      <button class="button-primary mt-4" :disabled="busy || saving || !draft.title.trim()" v-stable-action="saveState" :data-state="saveState" :aria-busy="saving" @click="save">{{ saveLabel('Save to Cookbook', 'Saving…') }}</button>
+      <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border md:bottom-0">
+        <p class="text-sm"><strong>Not saved yet.</strong> You can refine quantities, steps and family notes later with Edit recipe.</p>
+        <button class="button-primary" :disabled="busy || saving || !draft.title.trim()" v-stable-action="saveState" :data-state="saveState" :aria-busy="saving" @click="save">{{ saveLabel('Save to Cookbook', 'Saving…') }}</button>
+      </div>
     </article>
   </section>
 </template>

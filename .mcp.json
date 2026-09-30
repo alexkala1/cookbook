@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "heirloom": {
+      "command": "npx",
+      "args": ["-y", "tsx", "/home/alex/repos/cookbook/server/mcp/index.ts"]
+    }
+  }
+}

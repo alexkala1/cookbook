@@ -1,5 +1,6 @@
 <script setup lang="ts">
 if (!import.meta.dev) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+useSeoMeta({ title: 'Control states — Heirloom' })
 const states = ['default', 'hover', 'focus', 'active', 'disabled', 'loading', 'error', 'success'] as const
 const classes = ['button-primary', 'button-secondary', 'filter-pill', 'kitchen-button', 'field']
 const text = (state: string) => ({ loading: 'Saving…', error: 'Try again', success: 'Saved' }[state] || 'Save')

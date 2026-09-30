@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { cookingSentences, heatLevelOf, splitInstructions, timedStep } from '../shared/culinary/method-steps'
 import { extractHtml, extractJsonLd, fallbackRecipe } from '../server/utils/ai/normalize'
 import { parseStructuredRecipe } from '../shared/culinary/structured-recipe'
+import { chickenAdoboDescription } from './fixtures/chicken-adobo-description'
+
+it('does not turn affiliate products or Adobo ingredient lines into steps', () => {
+  expect(cookingSentences(chickenAdoboDescription)).toEqual([])
+  expect(cookingSentences('1–2 tbsp brown sugar\nSalt, only if needed\n1/2 tsp salt\nHeat the pan.\nWhisk the sauce.'))
+    .toEqual(['Heat the pan.', 'Whisk the sauce.'])
+})
 
 describe('splitInstructions', () => {
   it('splits inline 1-2-3 numbering', () => {

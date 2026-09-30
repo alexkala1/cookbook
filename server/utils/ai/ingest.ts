@@ -93,6 +93,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') source = ''
     provenance = 'Video description & timestamps (captions unavailable)'
     captionsUnavailable = true
+    draftSource = source
     const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks
     const track = Array.isArray(tracks) ? tracks.find(item => item.languageCode === ((request.kind === 'video' ? request.language : undefined) || 'en')) || tracks[0] : undefined
     if (track?.baseUrl) {
@@ -102,6 +103,31 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
         const transcript = $('text, p').map((_i, el) => $(el).text()).get().join(' ')
         if (transcript.trim()) { source = transcript; provenance = 'Video captions'; captionsUnavailable = false }
       } catch { if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' }) }
+    }
+    if (captionsUnavailable) {
+      const apiKeyMatch = html.match(/"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"/)
+      const videoId = youtubeId(videoTarget)
+      if (apiKeyMatch?.[1] && videoId) {
+        try {
+          const androidResp = await (await fetch(`https://www.youtube.com/youtubei/v1/player?key=${apiKeyMatch[1]}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },
+              videoId
+            }),
+            signal
+          })).json()
+          const androidTracks = androidResp?.captions?.playerCaptionsTracklistRenderer?.captionTracks
+          const androidTrack = Array.isArray(androidTracks) ? androidTracks.find(item => item.languageCode === ((request.kind === 'video' ? request.language : undefined) || 'en')) || androidTracks[0] : undefined
+          if (androidTrack?.baseUrl) {
+            const captions = await safeFetch(androidTrack.baseUrl, signal)
+            const $ = load(captions, { xml: true })
+            const transcript = $('text, p').map((_i, el) => $(el).text()).get().join(' ')
+            if (transcript.trim()) { source = transcript; provenance = 'Video captions'; captionsUnavailable = false }
+          }
+        } catch { if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' }) }
+      }
     }
     if (!source.trim() && title.trim()) {
       source = `Video: ${title}`
@@ -113,8 +139,9 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   if (captionsUnavailable) task += ' This video has no captions track, so the source is the creator\u2019s description. Reconstruct the method in order from its timestamp/chapter lines and the method, notes and ingredient lists it contains, and take proportions only from amounts the creator lists. Tag every step or amount you infer rather than read, by starting its notes with [Inferred from description]. Never present inferred detail as something the creator said.'
   progress('Preserving measurements and identifying gaps')
   // Without a model, prefer the source's own ingredients and numbered method over the generic template.
-  const structured = !extracted && client.mode === 'fallback' ? structuredDraft(draftSource || source, title || undefined) : null
-  const recipe = extracted || structured || await client.generate(recipeCreateSchema, task, source.slice(0, 30000), () => fallbackRecipe(draftSource || source, title || undefined), signal, image)
+  const structured = !extracted && client.mode === 'fallback' ? (draftSource ? structuredDraft(draftSource, title || undefined) : null) || structuredDraft(source, title || undefined) : null
+  const promptSource = request.kind === 'video' && draftSource && draftSource !== source ? `=== VIDEO DESCRIPTION ===\n${draftSource}\n\n=== VIDEO TRANSCRIPT ===\n${source}` : source
+  const recipe = extracted || structured || await client.generate(recipeCreateSchema, task, promptSource.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal, image)
   const sanitized = { ...recipe, originalSaltType: extracted?.originalSaltType ?? null }
   if (!extracted) {
     delete sanitized.imageUrl
@@ -122,5 +149,5 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     delete sanitized.isFavorite
   }
   const draft = recipeCreateSchema.parse(enrichScience({ ...sanitized, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: sourceUrl || null }))
-  return { recipe: draft, sourceText: source.slice(0, 20000), mode: extracted ? 'extracted' as const : client.mode, provenance: structured ? provenance + ' · parsed sections' : provenance, captionsUnavailable, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : structured ? 'No live model used. Ingredients and steps were parsed from the source’s own sections; check lines marked “as needed” and any estimates.' : client.mode === 'fallback' ? 'No live model used. This is a deterministic starting draft, not a recovered recipe.' : 'AI-generated draft: verify inferred quantities and cooking requirements.'] }
+  return { recipe: draft, sourceText: source.slice(0, 20000), mode: extracted ? 'extracted' as const : client.mode, provenance: structured ? provenance + ' · parsed sections' : provenance, captionsUnavailable, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : structured ? 'No AI model was needed: ingredients and steps came straight from the source’s own sections. Check lines marked “as needed” and any estimates.' : client.mode === 'fallback' ? 'No AI key is set, so this is a basic starting draft rather than the full recipe. Fill in the details before you rely on it, or add a key in AI settings for a fuller import.' : 'Drafted by AI: double-check any quantities and cooking times it inferred.'] }
 }

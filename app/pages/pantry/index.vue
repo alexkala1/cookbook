@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PANTRY_STAPLES, pantryStepForUnit, storageLocations, type PantryItem, type PantryDraft, type PantryMatch } from '#shared/culinary/pantry'
 import type { ChefAdvice } from '#shared/culinary/chef-advice'
+useSeoMeta({ title: 'Your pantry — Heirloom' })
 
 const { requestHeaders, ready: byokReady } = useByokSettings()
 

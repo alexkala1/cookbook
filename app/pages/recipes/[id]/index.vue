@@ -9,6 +9,7 @@ import { OFFLINE_DRAFT_DESCRIPTION, stripPromotional } from '#shared/culinary/st
 const route = useRoute()
 const id = String(route.params.id)
 const { data: recipe, error, refresh } = await useFetch<RecipeDetail>('/api/recipes/' + id)
+useSeoMeta({ title: () => `${recipe.value?.title || 'Recipe'} — Heirloom` })
 const { data: kitchen } = await useFetch<KitchenProfile>('/api/settings/kitchen')
 const { data: safety } = await useFetch<{ allergens: string[] }>('/api/recipes/' + id + '/safety')
 type CookLog = { id: string, cookedAt: string | null, servings: number, notes: string | null, rating: number | null }
@@ -17,7 +18,7 @@ const { data: cookLogs } = await useFetch<CookLog[]>('/api/recipes/' + id + '/co
 const mountedForDates = ref(false)
 onMounted(() => { mountedForDates.value = true })
 const cookedOn = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', ...(mountedForDates.value ? {} : { timeZone: 'UTC' }) }) : 'Date unknown'
-import { inSystem } from '../../../utils/display-units'
+import { formatCulinaryAmount, formatIngredientNotes, ingredientInSystem } from '../../../utils/display-units'
 import { downloadRecipeMarkdown } from '../../../utils/recipe-markdown'
 function exportMarkdown() {
   if (!recipe.value) return
@@ -66,7 +67,7 @@ function closeMore(focusSummary = false) {
 onClickOutside(moreMenu, () => closeMore())
 const adjustSummary = computed(() => [imperial.value ? 'US measures' : null, fromSalt.value && fromSalt.value !== toSalt.value ? `${saltLabels[fromSalt.value]} → ${saltLabels[toSalt.value]}` : null].filter(Boolean).join(' · '))
 const INFERRED_TAG = '[Inferred by AI]'
-const quantityLabel =(row: { amount: number, unit: string }) => row.unit === 'as needed' && !row.amount ? 'As needed' : `${row.amount} ${row.unit}`
+const quantityLabel = (row: { amount: number, unit: string }) => row.unit === 'as needed' && !row.amount ? 'As needed' : `${formatCulinaryAmount(row.amount, row.unit)} ${row.unit === 'cup' && row.amount > 1 ? 'cups' : row.unit}`
 const busy = ref(false)
 const actionError = ref('')
 const metricDismissed = ref(false)
@@ -103,10 +104,10 @@ const displayIngredients = computed(() => {
       try { amount = convertSalt(amount, fromSalt.value, toSalt.value, from) }
       catch { note = 'Salt substitution unavailable for this unit.' }
     }
-    const shown = inSystem(amount, from, imperial.value)
+    const shown = ingredientInSystem({ ...row, amount, unit: from }, imperial.value)
     const inferred = row.notes?.startsWith(INFERRED_TAG) ?? false
     const inferredNote = inferred ? row.notes!.slice(INFERRED_TAG.length).trim() : ''
-    return { ...row, amount: Number(shown.amount.toPrecision(4)), unit: shown.unit, conversionNote: note, inferred, notes: inferred ? null : row.notes, inferredNote }
+    return { ...row, amount: shown.amount, unit: shown.unit, conversionNote: note, inferred, notes: inferred ? null : formatIngredientNotes(row.notes), inferredNote }
   })
 })
 // AI-inferred quantities get a quiet chip per row; their (often repeated) explanations collapse into one footnote list.
@@ -296,12 +297,12 @@ function saved(value: RecipeDetail) {
             <li v-for="step in recipe.steps" :key="step.id" class="border-t border-espresso/20 pt-5">
               <div class="flex flex-wrap items-center gap-4"><span class="font-serif text-4xl text-sage">{{ step.stepNumber.toString().padStart(2, '0') }}</span><span v-if="step.durationMinutes != null" class="text-sm">{{ step.durationMinutes }} min</span><span v-if="step.heatLevel && step.heatLevel !== 'none'" class="text-sm">{{ step.heatLevel }} heat</span><span v-if="step.timerRequired" class="text-sm">Timer needed</span></div>
               <p class="mt-4 whitespace-pre-line break-words text-lg leading-relaxed">{{ step.instruction }}</p>
-              <details v-if="hasScience(step)" class="group my-4 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/50 p-4 transition-all">
-                <summary class="science-summary flex items-center justify-between font-serif font-semibold text-stone-800 dark:text-stone-200 cursor-pointer select-none">
-                  <span class="min-w-0"><span aria-hidden="true">🔬 </span>Culinary Science &amp; Milestones<span class="block font-sans text-sm font-normal text-stone-500 dark:text-stone-400 group-open:hidden">Tap to view temperature &amp; sensory cues</span></span>
-                  <UIcon name="i-lucide-chevron-down" class="size-5 flex-none text-stone-500 transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+              <details v-if="hasScience(step)" class="group my-4 rounded-xl border border-rule bg-paper-2 p-4">
+                <summary class="science-summary flex items-center justify-between font-serif font-semibold text-ink cursor-pointer select-none">
+                  <span class="min-w-0"><UIcon name="i-lucide-flask-conical" class="size-4 text-sage-ink inline-block mr-1.5 align-text-bottom" aria-hidden="true" />Culinary Science &amp; Milestones<span class="block font-sans text-xs sm:text-sm font-medium text-muted group-open:hidden">Tap to view temperature &amp; sensory cues</span></span>
+                  <UIcon name="i-lucide-chevron-down" class="size-5 flex-none text-sage-ink transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
                 </summary>
-                <dl v-if="step.sensoryVisual || step.sensoryAudio || step.sensoryAroma || step.sensoryTexture || step.internalTempTargetC != null" class="mt-4 space-y-2 border-l-2 border-sage bg-sage/10 p-4">
+                <dl v-if="step.sensoryVisual || step.sensoryAudio || step.sensoryAroma || step.sensoryTexture || step.internalTempTargetC != null" class="mt-4 space-y-2 border-l-2 border-sage bg-paper-3/50 p-4">
                   <template v-for="(value, label) in { 'Look for': step.sensoryVisual, 'Listen for': step.sensoryAudio, Aroma: step.sensoryAroma, Texture: step.sensoryTexture }" :key="label"><div v-if="value"><dt class="font-semibold">{{ label }}</dt><dd class="break-words">{{ value }}</dd></div></template>
                   <div v-if="step.internalTempTargetC != null"><dt class="font-semibold">Internal temperature</dt><dd>{{ step.internalTempTargetC }} °C</dd></div>
                 </dl>
@@ -349,6 +350,7 @@ function saved(value: RecipeDetail) {
 @media (prefers-reduced-motion: reduce) { .adjust-disclosure > summary::before { transition: none; } }
 
 .science-summary { min-height: 44px; gap: .75rem; list-style: none; }
+.science-summary .text-muted { color: var(--color-muted); }
 .science-summary::-webkit-details-marker { display: none; }
 .science-summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; border-radius: .5rem; }
 

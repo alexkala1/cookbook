@@ -70,8 +70,14 @@ export function splitInstructions(text: string): string[] {
 // Imperative cooking verbs; inflected narrative forms ("roasted", "baked") deliberately do not match.
 const COOKING_VERB = /(?:^|[\s,;:(])(?:preheat|heat|warm|add|rub|coat|stuff|fill|wrap|dust|dip|scatter|mix|stir|whisk|beat|cream|fold|combine|bake|roast|fry|saute|sauté|sear|brown|grill|broil|simmer|boil|poach|steam|braise|stew|cook|chop|slice|dice|mince|grate|peel|cut|trim|season|salt|marinate|pour|knead|shape|roll|rest|cover|drain|rinse|soak|bring|reduce|place|put|transfer|remove|spread|sprinkle|toss|blend|puree|purée|melt|cool|chill|refrigerate|freeze|serve|garnish|drizzle|squeeze|layer|arrange|brush|let|leave|wait|turn|flip|baste|strain|zest|juice|ψήνουμε|ψήστε|βράζουμε|βράστε|προσθέτουμε|προσθέστε|ανακατεύουμε|ανακατέψτε|κόβουμε|κόψτε|τσιγαρίζουμε|σοτάρουμε|αλατίζουμε|ρίχνουμε|αφήνουμε|αφήστε|σερβίρουμε|προθερμαίνουμε|ζυμώνουμε|πλένουμε|καθαρίζουμε|στραγγίζουμε|σκεπάζουμε|χτυπάμε|απλώνουμε|βάζουμε|μαγειρεύουμε)(?![\p{L}])/iu
 
+export const EXTERNAL_URL = /https?:\/\/|\b(?:amzn\.to|bit\.ly|www\.)/i
+const INGREDIENT_QUANTITY = /^(?:\d|[½¼¾⅓⅔⅛⅜⅝⅞])/
+const INGREDIENT_DESCRIPTION = /^(?:(?:salt|pepper)(?:\s+and\s+(?:salt|pepper))?(?:\s*[,(:]|\s*$)|(?:chopped|minced|sliced|diced|ground|steamed|uncooked)\b.*\b(?:for garnish|for serving|to taste)\b)/i
+
 /** Sentences from free text that describe a cooking action or carry a duration. */
 export function cookingSentences(text: string): string[] {
-  return text.split(/\n+/).flatMap(line => splitInstructions(line))
-    .filter(sentence => sentence.length <= 400 && (COOKING_VERB.test(sentence.toLowerCase()) || parseDurations(sentence).length > 0))
+  return text.split(/\n+/).filter(line => !EXTERNAL_URL.test(line))
+    .flatMap(line => splitInstructions(line.replace(/^\s*[-•*·–]\s+/, '')))
+    .filter(sentence => sentence.length <= 400 && !INGREDIENT_QUANTITY.test(sentence) && !INGREDIENT_DESCRIPTION.test(sentence)
+      && (COOKING_VERB.test(sentence.toLowerCase()) || parseDurations(sentence).length > 0))
 }

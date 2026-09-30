@@ -18,6 +18,7 @@ export default defineNuxtConfig({
   // SVG mode preserves the locked cascade and keeps Lucide icons local and accessible.
   icon: { mode: 'svg' },
   app: { head: {
+    title: 'Heirloom',
     // Icon SSR styles can precede the entry stylesheet; establish cascade order first.
     style: [{ key: 'heirloom-layer-order', innerHTML: '@layer properties, theme, base, components, utilities;', tagPriority: -100 }],
     htmlAttrs: { lang: 'en' },

@@ -72,7 +72,21 @@ export async function safeFetch(input: string, signal?: AbortSignal, redirects =
         catch { reject(createError({ statusCode: 422, statusMessage: 'Invalid source redirect' })) }
         return
       }
-      if (response.statusCode !== 200) { response.resume(); reject(createError({ statusCode: 422, statusMessage: 'Source could not be retrieved' })); return }
+      if (response.statusCode === 403) {
+        response.resume()
+        reject(createError({ statusCode: 422, statusMessage: 'The website blocked automated recipe extraction (HTTP 403). Try copying the recipe text and pasting it into Scanned Card / Text instead.' }))
+        return
+      }
+      if (response.statusCode === 404) {
+        response.resume()
+        reject(createError({ statusCode: 422, statusMessage: 'Recipe webpage not found (HTTP 404). Please verify the link or paste the text directly.' }))
+        return
+      }
+      if (response.statusCode !== 200) {
+        response.resume()
+        reject(createError({ statusCode: 422, statusMessage: `Source website returned HTTP ${response.statusCode}. Paste the recipe text directly if the page is unreachable.` }))
+        return
+      }
       const chunks: Buffer[] = []
       let size = 0
       response.on('data', (chunk: Buffer) => {

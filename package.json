@@ -16,10 +16,12 @@
     "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx server/db/seed.ts"
+    "db:seed": "tsx server/db/seed.ts",
+    "mcp": "tsx server/mcp/index.ts"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@nuxt/ui": "^3.0.0",
     "@vueuse/core": "^14.0.0",
     "@vueuse/nuxt": "^14.0.0",
