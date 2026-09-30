@@ -790,8 +790,59 @@ async function journey(browser, viewport) {
       await page.waitForTimeout(400)
       assert(await supermarket.locator('[data-testid="market-price"]').count() === 0, 'Unavailable prices should omit the badge')
     })
+    await step(page, viewport, 'Flow 4 · simple market list', async () => {
+      const market = page.getByRole('region', { name: 'Market shopping list' })
+      const mobile = viewport.name === 'mobile'
+      assert(await market.getByRole('button', { name: 'Copy shopping list' }).count() === 1, 'Exactly one Copy shopping list control should be visible per viewport')
+      assert(await market.getByRole('button', { name: 'Send to phone' }).count() === 0, 'Share actions should be tucked into the Share menu until it opens')
+      const share = market.locator('summary', { hasText: /^Share$/ })
+      await tap(share)
+      for (const name of ['Share on WhatsApp', 'Send to phone', 'Print or save PDF']) assert(await market.getByRole('button', { name }).count() === 1, `${name} should live in the Share menu`)
+      await share.press('Escape')
+      assert(await market.getByRole('button', { name: 'Send to phone' }).count() === 0, 'Escape should close the Share menu')
+      const prepare = market.locator('details', { has: page.locator('summary', { hasText: /^Prepare ahead \(\d+\)$/ }) })
+      assert(await prepare.count() === 1 && !(await prepare.evaluate(node => node.open)), 'Prepare ahead should be a collapsed disclosure with a count')
+      const first = market.locator('section[aria-labelledby^="market-"]').filter({ has: page.locator('li') }).first()
+      const rows = first.locator('li')
+      assert(await rows.count() >= 3, 'The first shop should have at least three items')
+      const heading = first.getByRole('heading', { level: 3 })
+      assert(/^[A-Za-z ]+$/.test((await heading.innerText()).trim()), 'Shop heading name should be just the shop name')
+      assert(await first.getByText(/^\d+ items?$/).count() === 1, 'Shop heading row should show an item count')
+      if (mobile) {
+        const top = await market.getByRole('heading', { name: 'Market shopping list', level: 2 }).evaluate(node => node.getBoundingClientRect().top + window.scrollY)
+        const bottom = await rows.nth(2).evaluate(node => node.getBoundingClientRect().bottom + window.scrollY)
+        assert(bottom - top <= 812 * 1.25, `Heading to third item should fit in ~1.25 screens, got ${Math.round(bottom - top)}px`)
+      } else {
+        for (let i = 0; i < 3; i++) {
+          const height = (await rows.nth(i).boundingBox()).height
+          assert(height <= 72, `Collapsed item row ${i + 1} should be at most 72px tall, got ${Math.round(height)}px`)
+        }
+      }
+      const toggle = market.getByRole('button', { name: /^Details for / }).first()
+      assert(await toggle.getAttribute('aria-expanded') === 'false', 'Details should be closed by default')
+      await tap(toggle)
+      assert(await toggle.getAttribute('aria-expanded') === 'true', 'Details should open on tap')
+      const panel = page.locator('#' + await toggle.getAttribute('aria-controls'))
+      assert(await panel.isVisible() && (await panel.innerText()).trim().length > 0, 'Open Details should show its content')
+      await tap(toggle)
+      assert(!(await panel.isVisible()), 'Details should close again')
+      const bar = page.locator('[data-testid="market-sticky-bar"]')
+      assert(await bar.isVisible() === mobile, 'The sticky progress bar is for mobile only')
+      if (mobile) {
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+        await page.waitForTimeout(200)
+        const last = await market.locator('li').last().boundingBox()
+        const barBox = await bar.boundingBox()
+        assert(last.y + last.height <= barBox.y + 1, 'The sticky bar must not cover the last item')
+        assert(await bar.getByRole('button', { name: 'Copy shopping list' }).isVisible(), 'The sticky bar carries the Copy action')
+      }
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'The list must not scroll horizontally')
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await shot(page, viewport, 'market-simple-list', market)
+    })
     await step(page, viewport, 'Flow 4 · share on WhatsApp, send to phone, import on phone', async () => {
       const market = page.getByRole('region', { name: 'Market shopping list' })
+      await tap(market.locator('summary', { hasText: /^Share$/ }))
       const whatsapp = market.getByRole('button', { name: 'Share on WhatsApp' })
       const box = await whatsapp.boundingBox()
       assert(box.width >= 44 && box.height >= 44, `Share on WhatsApp target should be at least 44×44, got ${Math.round(box.width)}×${Math.round(box.height)}`)
