@@ -74,7 +74,7 @@ function pumpPrices() {
   }
 }
 watch(routedList, value => {
-  if (!value || typeof navigator === 'undefined' || navigator.onLine === false) return
+  if (!value || !import.meta.client || navigator.onLine === false) return
   for (const destination of value.destinations) {
     if (destination.section !== 'supermarket') continue
     for (const item of destination.items) {
