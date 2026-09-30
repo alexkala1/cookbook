@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
+import IconLaiki from './icons/market/IconLaiki.vue'
+import IconChasapis from './icons/market/IconChasapis.vue'
+import IconFournos from './icons/market/IconFournos.vue'
+import IconSupermarket from './icons/market/IconSupermarket.vue'
 import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
 import { inferStorage, type PantryDraft } from '#shared/culinary/pantry'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
@@ -118,11 +123,11 @@ async function generate() {
   } finally { if (!disposed) busy.value = false }
 }
 
-const vendorBadge: Record<MarketSection, { icon: string, category: string, tone: string }> = {
-  laiki: { icon: 'i-lucide-carrot', category: 'Fresh produce', tone: 'border-olive/40 bg-olive/10 text-olive-ink' },
-  chasapis: { icon: 'i-lucide-beef', category: 'Meat & poultry', tone: 'border-terracotta/40 bg-terracotta/10 text-terracotta-ink' },
-  fournos: { icon: 'i-lucide-croissant', category: 'Bread & pastry', tone: 'border-rule bg-paper-3 text-ink' },
-  supermarket: { icon: 'i-lucide-store', category: 'Pantry & dairy', tone: 'border-sage/50 bg-sage/10 text-sage-ink' }
+const vendorBadge: Record<MarketSection, { icon: Component, category: string, tone: string }> = {
+  laiki: { icon: IconLaiki, category: 'Fresh produce', tone: 'border-olive/40 bg-olive/10 text-olive-ink' },
+  chasapis: { icon: IconChasapis, category: 'Meat & poultry', tone: 'border-terracotta/40 bg-terracotta/10 text-terracotta-ink' },
+  fournos: { icon: IconFournos, category: 'Bread & pastry', tone: 'border-rule bg-paper-3 text-ink' },
+  supermarket: { icon: IconSupermarket, category: 'Pantry & dairy', tone: 'border-sage/50 bg-sage/10 text-sage-ink' }
 }
 
 // Print only this list (see the unscoped print styles below), then restore the page.
@@ -276,14 +281,17 @@ async function copy() {
       <p role="status" class="sr-only">{{ orderNote }}</p>
       <section v-for="(destination, stop) in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h3 :id="'market-' + destination.section" class="text-2xl">{{ destination.name }}</h3>
+          <h3 :id="'market-' + destination.section" class="flex min-w-0 items-center gap-3 text-2xl">
+            <component :is="vendorBadge[destination.section].icon" class="size-8 flex-none" />
+            <span>{{ destination.name }}</span>
+          </h3>
           <div v-if="mode === 'market' && routedList.destinations.length > 1" class="market-reorder flex gap-2 print:hidden" role="group" :aria-label="'Reorder ' + destination.name">
             <button :id="'move-up-' + destination.section" type="button" class="button-secondary min-h-11" :disabled="stop === 0" :aria-label="'Move ' + destination.name + ' up'" @click="moveSection(destination.section, -1)"><UIcon name="i-lucide-arrow-up" aria-hidden="true" />Move up</button>
             <button :id="'move-down-' + destination.section" type="button" class="button-secondary min-h-11" :disabled="stop === routedList.destinations.length - 1" :aria-label="'Move ' + destination.name + ' down'" @click="moveSection(destination.section, 1)"><UIcon name="i-lucide-arrow-down" aria-hidden="true" />Move down</button>
           </div>
         </div>
         <p class="mt-2 inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border px-3 py-1 text-sm font-semibold" :class="vendorBadge[destination.section].tone">
-          <UIcon :name="vendorBadge[destination.section].icon" class="flex-none" aria-hidden="true" /><span lang="el">{{ destination.localizedName }}</span><span class="font-normal">· {{ vendorBadge[destination.section].category }}</span>
+          <span lang="el">{{ destination.localizedName }}</span><span class="font-normal">· {{ vendorBadge[destination.section].category }}</span>
         </p>
         <ul class="mt-4 divide-y divide-rule border-y border-rule">
           <li v-for="(item, index) in destination.items" :key="item.id" class="py-5">

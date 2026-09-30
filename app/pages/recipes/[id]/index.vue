@@ -14,7 +14,7 @@ const id = String(route.params.id)
 const { data: recipe, error, refresh } = await useFetch<RecipeDetail>('/api/recipes/' + id)
 useSeoMeta({ title: () => `${recipe.value?.title || 'Recipe'} — Heirloom` })
 const { data: kitchen } = await useFetch<KitchenProfile>('/api/settings/kitchen')
-const { data: safety } = await useFetch<{ allergens: string[] }>('/api/recipes/' + id + '/safety')
+const { data: safety, refresh: refreshSafety } = await useFetch<{ allergens: string[] }>('/api/recipes/' + id + '/safety')
 type CookLog = { id: string, cookedAt: string | null, servings: number, notes: string | null, rating: number | null }
 const { data: cookLogs } = await useFetch<CookLog[]>('/api/recipes/' + id + '/cook-logs')
 // Dates are shown in the cook's own time zone, which the server can't know: render UTC until mounted so hydration agrees.
@@ -57,6 +57,46 @@ async function makeTwist() {
 }
 const deleting = ref(false)
 const { requestHeaders } = useByokSettings()
+const reimporting = ref(false), reimportBusy = ref(false), reimportError = ref(''), reimportNote = ref('')
+const sourceUrl = ref('')
+const reimportWarnings = ref<string[]>([])
+const { state: reimportState, label: reimportLabel } = useActionFeedback(reimportBusy, reimportError)
+function openReimport() {
+  if (!recipe.value?.sourceUrl || busy.value || twistBusy.value) return
+  closeMore()
+  twisting.value = false; translating.value = false; deleting.value = false
+  sourceUrl.value = recipe.value.sourceUrl
+  reimportError.value = ''; reimportNote.value = ''; reimportWarnings.value = []
+  reimporting.value = true
+  void nextTick(() => document.getElementById('recipe-source-url')?.focus())
+}
+function closeReimport() {
+  if (reimportBusy.value) return
+  reimporting.value = false
+  reimportError.value = ''
+  moreMenu.value?.querySelector('summary')?.focus()
+}
+async function reimportRecipe() {
+  if (!recipe.value || reimportBusy.value || busy.value || twistBusy.value) return
+  reimportBusy.value = true; busy.value = true
+  reimportError.value = ''; reimportNote.value = ''; reimportWarnings.value = []
+  try {
+    const result = await $fetch<{ recipe: RecipeDetail, warnings: string[] }>('/api/recipes/' + id + '/reimport', {
+      method: 'POST', headers: requestHeaders(), body: { url: sourceUrl.value.trim() }
+    })
+    recipe.value = result.recipe
+    servings.value = result.recipe.servings
+    reimportWarnings.value = result.warnings
+    safety.value = undefined
+    await refreshSafety()
+    reimportNote.value = 'Re-imported from source. Review the refreshed ingredients and steps.'
+    reimporting.value = false
+    moreMenu.value?.querySelector('summary')?.focus()
+  } catch (cause: unknown) {
+    const failure = cause as { data?: { statusMessage?: string }, statusMessage?: string }
+    reimportError.value = failure?.data?.statusMessage || failure?.statusMessage || 'Could not confirm the re-import. Check the recipe before trying again.'
+  } finally { reimportBusy.value = false; busy.value = false }
+}
 const translating = ref(false), translateBusy = ref(false), translateError = ref(''), translateNote = ref('')
 const targetLang = ref('el'), translateMode = ref<'twist' | 'replace'>('twist')
 const translateWarnings = ref<string[]>([])
@@ -220,13 +260,28 @@ function saved(value: RecipeDetail) {
             <div class="more-menu__panel">
               <NuxtLink :to="{ path: '/recipes/' + id + '/print', query: { ...scaledQuery, ...(imperial ? { system: 'us' } : {}) } }" class="more-menu__item"><UIcon name="i-lucide-printer" aria-hidden="true" />Print heirloom card</NuxtLink>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); exportMarkdown()"><UIcon name="i-lucide-file-text" aria-hidden="true" />Export Markdown card</button>
-              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); editing = true"><UIcon name="i-lucide-pencil" aria-hidden="true" />Edit recipe</button>
-              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); translating = false; twisting = true"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Make a twist</button>
-              <button type="button" class="more-menu__item" :disabled="busy || twistBusy" @click="closeMore(); twisting = false; deleting = false; translating = true"><UIcon name="i-lucide-languages" aria-hidden="true" />Translate recipe</button>
-              <button type="button" class="more-menu__item more-menu__item--danger" :disabled="busy" @click="closeMore(); deleting = true"><UIcon name="i-lucide-trash" aria-hidden="true" />Delete recipe</button>
+              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); reimporting = false; editing = true"><UIcon name="i-lucide-pencil" aria-hidden="true" />Edit recipe</button>
+              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); reimporting = false; translating = false; twisting = true"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Make a twist</button>
+              <button type="button" class="more-menu__item" :disabled="busy || twistBusy" @click="closeMore(); reimporting = false; twisting = false; deleting = false; translating = true"><UIcon name="i-lucide-languages" aria-hidden="true" />Translate recipe</button>
+              <button v-if="recipe.sourceUrl" type="button" class="more-menu__item" :disabled="busy || twistBusy" @click="openReimport"><UIcon name="i-lucide-refresh-cw" aria-hidden="true" />Re-import from source</button>
+              <button type="button" class="more-menu__item more-menu__item--danger" :disabled="busy" @click="closeMore(); reimporting = false; deleting = true"><UIcon name="i-lucide-trash" aria-hidden="true" />Delete recipe</button>
             </div>
           </details>
         </div>
+        <form v-if="reimporting" class="keepsake-card mt-6" aria-labelledby="reimport-title" @submit.prevent="reimportRecipe" @keydown.esc.prevent="closeReimport">
+          <h2 id="reimport-title" class="font-serif">Re-import from source</h2>
+          <p id="reimport-description" class="mt-2 max-w-xl">Replace the recipe’s ingredients and steps with a fresh import. Your favorites, rating, family notes and cooking history stay saved. For a video with an incomplete method, use the full written recipe URL.</p>
+          <label class="mt-4 block">Source URL
+            <input id="recipe-source-url" v-model="sourceUrl" type="url" required maxlength="2000" class="field mt-2" :disabled="reimportBusy" aria-describedby="reimport-description" autocomplete="url">
+          </label>
+          <p v-if="reimportError" role="alert" class="notice mt-4">{{ reimportError }}</p>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <button class="button-primary min-h-11" :disabled="busy || twistBusy" v-stable-action="reimportState" :data-state="reimportState" :aria-busy="reimportBusy">{{ reimportLabel('Re-import recipe', 'Re-importing…') }}</button>
+            <button type="button" class="button-secondary min-h-11" :disabled="reimportBusy" @click="closeReimport">Not now</button>
+          </div>
+        </form>
+        <p v-if="reimportNote" role="status" class="notice mt-4">{{ reimportNote }}</p>
+        <ul v-if="reimportWarnings.length" class="mt-3 list-disc space-y-2 pl-5 text-sm"><li v-for="warning in reimportWarnings" :key="warning">{{ warning }}</li></ul>
         <form v-if="twisting" class="keepsake-card mt-6" aria-labelledby="twist-title" @submit.prevent="makeTwist">
           <span class="keepsake-badge"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Family lineage</span>
           <h2 id="twist-title" class="mt-3 font-serif">Make a family twist</h2>

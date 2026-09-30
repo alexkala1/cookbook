@@ -11,6 +11,13 @@ const quantity = (value: string) => value.split(/\s+/).reduce((sum, part) => {
 export function parseIngredientLine(line: string, servings = 4): IngredientDraft {
   const metric = line.match(/\(\s*(?:[\d.,]+\s*oz\s*\/\s*)?(\d+(?:[.,]\d+)?)\s*(kg|g)\s*\)/i)
   if (metric) {
+    const originalMeasure = line.slice(0, metric.index).trim()
+    if (originalMeasure.includes('+')) {
+      // The source's exact metric total is safer than treating "+ 2 tsp" as part of the ingredient name.
+      const grams = Number(metric[1]!.replace(',', '.')) * (metric[2]!.toLowerCase() === 'kg' ? 1000 : 1)
+      const name = line.slice(metric.index! + metric[0].length).trim().replace(/^,\s*/, '')
+      return { name: name.slice(0, 200) || 'Ingredient to identify', amount: grams, unit: 'g', gramsEquivalent: grams, notes: `Source measure: ${originalMeasure}.` }
+    }
     const parsed = parseIngredientLine(line.replace(metric[0], '').replace(/\s+,/g, ',').replace(/\s+/g, ' ').trim(), servings)
     return { ...parsed, gramsEquivalent: Number(metric[1]!.replace(',', '.')) * (metric[2]!.toLowerCase() === 'kg' ? 1000 : 1) }
   }

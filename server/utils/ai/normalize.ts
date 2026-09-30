@@ -3,6 +3,7 @@ import { recipeCreateSchema, saltTypes, type RecipeInput } from '../validation'
 import { parseIngredientLine, type IngredientDraft } from '../../../shared/culinary/ingredient-line'
 import { parseStructuredRecipe, stripPromotional } from '../../../shared/culinary/structured-recipe'
 import { cookingSentences, splitInstructions, timedStep } from '../../../shared/culinary/method-steps'
+import { parseDurations } from '../../../shared/culinary/durations'
 
 const clean = (value: unknown): string => typeof value === 'string' ? load(value).text().trim() : ''
 export function parseIngredient(line: string, servings = 4): IngredientDraft {
@@ -11,7 +12,8 @@ export function parseIngredient(line: string, servings = 4): IngredientDraft {
 
 export function duration(value: unknown) {
   const match = typeof value === 'string' && value.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/)
-  return match ? Math.ceil(Number(match[1] || 0) * 1440 + Number(match[2] || 0) * 60 + Number(match[3] || 0) + Number(match[4] || 0) / 60) : 0
+  return match ? Math.ceil(Number(match[1] || 0) * 1440 + Number(match[2] || 0) * 60 + Number(match[3] || 0) + Number(match[4] || 0) / 60)
+    : typeof value === 'string' ? Math.ceil(parseDurations(value).reduce((sum, seconds) => sum + seconds, 0) / 60) : 0
 }
 export function extractJsonLd(html: string): RecipeInput | null {
   const $ = load(html)
@@ -61,14 +63,50 @@ export function extractHtml(html: string) {
   const $ = load(html)
   const pageTitle = $('h1').first().text() || $('title').text()
   $('script, style, nav, aside, footer, header, form, noscript, svg, button').remove()
-  const container = RECIPE_CONTAINERS.map(selector => $(selector).first()).find(node => node.text().trim().length >= 80) ?? $('body')
-  const title = container.find('[itemprop="name"]').first().text() || pageTitle
+  const container = RECIPE_CONTAINERS.map(selector => ({ selector, node: $(selector).first() }))
+    // An article containing only the ingredients must not hide the method elsewhere on the page.
+    .find(({ selector, node }) => node.text().trim().length >= 80 && (selector === 'main'
+      || node.find('ol, [itemprop="recipeIngredient"]').length > 0
+      || /ingredients?|directions?|instructions?|method|υλικά|εκτέλεση/i.test(node.find('h2, h3, h4').text())))?.node ?? $('body')
+  const title = container.find('[itemprop="name"]').first().text() || container.find('h1').first().text() || pageTitle
   // Keep block boundaries: list items and paragraphs become their own lines (blank-line separated) so the
   // structured parser can find the ingredient list and one method step per item.
   container.find('br').replaceWith('\n')
+  container.find('ul, ol').each((_index, list) => {
+    const node = $(list)
+    const previous = node.prevAll('p, h2, h3, h4').first()
+    const label = previous.text().trim().match(/^([^.!?\n]{1,50}):$/)?.[1]?.replace(/^[*#\s]+/, '').trim()
+    const section = label && !/^(?:notes?|tips?|equipment|nutrition|comments?|ratings?)$/i.test(label) ? label : undefined
+    if (node.is('ul')) {
+      if (section) previous.text('For the ' + section)
+    } else {
+      if (section) previous.remove()
+      node.children('li').each((index, item) => {
+        $(item).prepend(`${index + 1}. ${section ? section + ': ' : ''}`)
+      })
+    }
+  })
   container.find(BLOCKS).each((_index, element) => { $(element).prepend('\n').append('\n\n') })
-  const text = container.text().split('\n').map(line => line.replace(/[^\S\n]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  const text = container.text().replace(/[\u200b-\u200d\ufeff]/g, '').split('\n').map(line => line.replace(/[^\S\n]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim()
   return { title: title.replace(/\s+/g, ' ').trim().slice(0, 200), text: text.slice(0, 30000) }
+}
+
+/** Supplement incomplete schema.org metadata with the page's own ingredient/method lists. */
+export function extractPageRecipe(html: string): RecipeInput | null {
+  const metadata = extractJsonLd(html)
+  if (metadata?.ingredients?.length && metadata.steps?.length) return metadata
+  const plain = extractHtml(html)
+  const parsed = structuredDraft(plain.text, plain.title)
+  if (!parsed?.ingredients?.length || !parsed.steps?.length || parsed.steps.some(step => step.instruction.startsWith('Follow video for cooking method.'))) return null
+  if (!metadata) return parsed
+  return {
+    ...parsed, ...metadata,
+    ingredients: metadata.ingredients?.length ? metadata.ingredients : parsed.ingredients,
+    steps: metadata.steps?.length ? metadata.steps : parsed.steps,
+    prepTimeMinutes: metadata.prepTimeMinutes || parsed.prepTimeMinutes,
+    cookTimeMinutes: metadata.cookTimeMinutes || parsed.cookTimeMinutes,
+    totalTimeMinutes: metadata.totalTimeMinutes || parsed.totalTimeMinutes
+  }
 }
 
 const isDrink = (text: string) => /cocktail|martini|margarita|negroni/i.test(text)

@@ -3,7 +3,7 @@ import { createError, type H3Event } from 'h3'
 import { load } from 'cheerio'
 import { aiClient } from './client'
 import { safeFetch } from './safe-fetch'
-import { extractHtml, extractJsonLd, fallbackRecipe, structuredDraft } from './normalize'
+import { extractHtml, extractJsonLd, extractPageRecipe, fallbackRecipe, structuredDraft } from './normalize'
 import { enrichScience } from './science'
 import { recipeCreateSchema, validate } from '../validation'
 
@@ -54,7 +54,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   const request = validate(ingestSchema, input)
   const client = aiClient(event)
   let source = '', title = '', sourceUrl: string | undefined, draftSource = ''
-  let extracted: ReturnType<typeof extractJsonLd> = null
+  let extracted: ReturnType<typeof extractPageRecipe> = null
   let provenance = 'Conversational memory'
   let image: { data: string, mimeType: string } | undefined
   let captionsUnavailable = false
@@ -78,9 +78,12 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   else if (request.kind === 'url' && !/^(?:https?:)?\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\//i.test(request.url)) {
     sourceUrl = request.url
     const html = await safeFetch(sourceUrl, signal)
-    extracted = extractJsonLd(html)
+    // Complete schema.org metadata is used as-is; page lists only supplement incomplete metadata.
+    const jsonLd = extractJsonLd(html)
+    const complete = !!(jsonLd?.ingredients?.length && jsonLd.steps?.length)
+    extracted = complete ? jsonLd : extractPageRecipe(html)
     const plain = extractHtml(html); source = plain.text; title = plain.title
-    provenance = extracted ? 'Recipe JSON-LD' : 'Page text'
+    provenance = complete ? 'Recipe JSON-LD' : extracted ? 'Recipe metadata & page lists' : 'Page text'
   } else {
     const videoTarget = request.kind === 'video' ? request.videoUrl : request.url
     sourceUrl = 'https://www.youtube.com/watch?v=' + youtubeId(videoTarget)

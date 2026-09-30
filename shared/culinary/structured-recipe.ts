@@ -73,6 +73,7 @@ function ingredientFrom(line: string, group: string | null, servings: number): I
 export function parseStructuredRecipe(text: string | null | undefined, fallbackServings = 4): StructuredRecipe | null {
   if (!text?.trim()) return null
   const lines = stripPromotional(text).split('\n').map(line => line.trim())
+  const explicitIngredients = lines.some(isIngredientsHeading)
   const intro: string[] = []
   const ingredientLines: { line: string, group: string | null }[] = []
   const blocks: { title: string | null, body: string[] }[] = []
@@ -98,7 +99,7 @@ export function parseStructuredRecipe(text: string | null | undefined, fallbackS
       continue
     }
     if (state === 'intro') {
-      if (HAS_QUANTITY.test(line)) {
+      if (!explicitIngredients && HAS_QUANTITY.test(line)) {
         state = 'ingredients'
         const prev = intro.pop()
         if (prev && prev.length <= 60 && !/[.!?]$/.test(prev) && !groupHeading(prev)) {
