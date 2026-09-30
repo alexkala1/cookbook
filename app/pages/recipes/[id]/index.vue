@@ -5,6 +5,9 @@ import type { SaltType } from '../../../utils/units'
 import { evaluateCocktail } from '#shared/culinary/cocktails'
 import { suggestMetric, applyMetric, flourBasis } from '#shared/culinary/densities'
 import { OFFLINE_DRAFT_DESCRIPTION, stripPromotional } from '#shared/culinary/structured-recipe'
+import type { RecipeInput } from '../../../../server/utils/validation'
+import { toRecipeInput } from '../../../utils/recipe-input'
+import { readTranslateLang, writeTranslateLang, translationLanguageOptions } from '../../../utils/translation-prefs'
 
 const route = useRoute()
 const id = String(route.params.id)
@@ -53,6 +56,51 @@ async function makeTwist() {
   finally { twistBusy.value = false }
 }
 const deleting = ref(false)
+const { requestHeaders } = useByokSettings()
+const translating = ref(false), translateBusy = ref(false), translateError = ref(''), translateNote = ref('')
+const targetLang = ref('el'), translateMode = ref<'twist' | 'replace'>('twist')
+const translateWarnings = ref<string[]>([])
+const { state: translateState, label: translateLabel } = useActionFeedback(translateBusy, translateError)
+onMounted(() => { targetLang.value = readTranslateLang() })
+watch(translating, open => { if (open) void nextTick(() => document.getElementById('recipe-translate-lang')?.focus()) })
+function closeTranslation() {
+  translating.value = false
+  translateError.value = ''
+  moreMenu.value?.querySelector('summary')?.focus()
+}
+async function translateRecipe() {
+  if (!recipe.value || translateBusy.value || busy.value || twistBusy.value) return
+  translateBusy.value = true; busy.value = true; translateError.value = ''; translateNote.value = ''
+  translateWarnings.value = []
+  const language = targetLang.value, mode = translateMode.value
+  const label = translationLanguageOptions.find(item => item.code === language)!.label
+  let savedTranslation = false
+  try {
+    const translated = await $fetch<{ recipe: RecipeInput, warnings: string[] }>('/api/ai/recipe/translate', { method: 'POST', headers: requestHeaders(), body: { recipe: toRecipeInput(recipe.value), targetLanguage: language } })
+    translateWarnings.value = translated.warnings
+    if (mode === 'replace') {
+      recipe.value = await $fetch<RecipeDetail>('/api/recipes/' + id, { method: 'PUT', body: translated.recipe })
+      savedTranslation = true
+      await refresh()
+    } else {
+      const fork = await $fetch<{ id: string }>('/api/recipes/' + id + '/fork', { method: 'POST', body: { variationName: label, title: translated.recipe.title } })
+      try { await $fetch('/api/recipes/' + fork.id, { method: 'PUT', body: translated.recipe }) }
+      catch (cause) {
+        await $fetch('/api/recipes/' + fork.id, { method: 'DELETE' }).catch(() => {})
+        throw cause
+      }
+      savedTranslation = true
+      writeTranslateLang(language)
+      await navigateTo('/recipes/' + fork.id)
+    }
+    writeTranslateLang(language)
+    translateNote.value = 'Translated to ' + label + '. Numbers and timers are unchanged.'
+  } catch (cause: unknown) {
+    const failure = cause as { data?: { statusMessage?: string, message?: string }, statusMessage?: string }
+    const message = failure?.data?.statusMessage || failure?.data?.message || failure?.statusMessage || 'Could not translate this recipe. Please try again.'
+    translateError.value = message + (savedTranslation ? ' Translation was saved, but the page could not finish updating.' : ' Your recipe is untouched.')
+  } finally { translateBusy.value = false; busy.value = false }
+}
 // Book-view simplification: long notes collapse, secondary actions live in a More menu.
 const notesText = computed(() => stripPromotional(recipe.value?.heirloomNotes ?? ''))
 const notesLong = computed(() => notesText.value.length > 360 || notesText.value.split('\n').length > 4)
@@ -173,7 +221,8 @@ function saved(value: RecipeDetail) {
               <NuxtLink :to="{ path: '/recipes/' + id + '/print', query: { ...scaledQuery, ...(imperial ? { system: 'us' } : {}) } }" class="more-menu__item"><UIcon name="i-lucide-printer" aria-hidden="true" />Print heirloom card</NuxtLink>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); exportMarkdown()"><UIcon name="i-lucide-file-text" aria-hidden="true" />Export Markdown card</button>
               <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); editing = true"><UIcon name="i-lucide-pencil" aria-hidden="true" />Edit recipe</button>
-              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); twisting = true"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Make a twist</button>
+              <button type="button" class="more-menu__item" :disabled="busy" @click="closeMore(); translating = false; twisting = true"><UIcon name="i-lucide-git-branch" aria-hidden="true" />Make a twist</button>
+              <button type="button" class="more-menu__item" :disabled="busy || twistBusy" @click="closeMore(); twisting = false; deleting = false; translating = true"><UIcon name="i-lucide-languages" aria-hidden="true" />Translate recipe</button>
               <button type="button" class="more-menu__item more-menu__item--danger" :disabled="busy" @click="closeMore(); deleting = true"><UIcon name="i-lucide-trash" aria-hidden="true" />Delete recipe</button>
             </div>
           </details>
@@ -189,6 +238,29 @@ function saved(value: RecipeDetail) {
           <div class="mt-4 flex flex-wrap gap-3">
             <button class="button-primary" :disabled="twistBusy" v-stable-action="twistState" :data-state="twistState" :aria-busy="twistBusy">{{ twistLabel('Create twist', 'Creating…') }}</button>
             <button type="button" class="button-secondary" :disabled="twistBusy" @click="twisting = false; twistError = ''">Not now</button>
+          </div>
+        </form>
+        <form v-if="translating" class="keepsake-card mt-6" aria-labelledby="translate-title" @submit.prevent="translateRecipe">
+          <h2 id="translate-title" class="font-serif">Translate recipe</h2>
+          <label class="mt-4 block max-w-md">Translate recipe to
+            <select id="recipe-translate-lang" v-model="targetLang" class="field mt-2 min-h-11" :disabled="translateBusy">
+              <option v-for="language in translationLanguageOptions" :key="language.code" :value="language.code">{{ language.label }}</option>
+            </select>
+          </label>
+          <fieldset class="mt-4" :disabled="translateBusy">
+            <legend class="font-semibold">Save translation</legend>
+            <label class="flex min-h-11 items-center gap-3"><input v-model="translateMode" type="radio" value="twist" name="translate-mode">Save as a family twist (keeps original)</label>
+            <label class="flex min-h-11 items-center gap-3"><input v-model="translateMode" type="radio" value="replace" name="translate-mode">Replace this recipe</label>
+          </fieldset>
+          <p v-if="translateMode === 'replace'" class="mt-2 text-sm">The original wording will be overwritten.</p>
+          <p v-if="translateError" role="alert" class="notice mt-4">{{ translateError }} <NuxtLink v-if="/settings/i.test(translateError)" to="/settings" class="text-action">Open AI Settings</NuxtLink></p>
+          <div aria-live="polite">
+            <p v-if="translateNote" class="mt-4">{{ translateNote }}</p>
+            <p v-for="warning in translateWarnings" :key="warning" class="notice mt-2">{{ warning }}</p>
+          </div>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <button class="button-primary min-h-11" :disabled="busy || twistBusy" v-stable-action="translateState" :data-state="translateState" :aria-busy="translateBusy">{{ translateLabel('Translate', 'Translating…') }}</button>
+            <button type="button" class="button-secondary min-h-11" :disabled="translateBusy" @click="closeTranslation">Not now</button>
           </div>
         </form>
         <div v-if="deleting" class="notice mt-6" role="alert">
