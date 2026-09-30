@@ -5,10 +5,11 @@ import IconChasapis from './icons/market/IconChasapis.vue'
 import IconFournos from './icons/market/IconFournos.vue'
 import IconSupermarket from './icons/market/IconSupermarket.vue'
 import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
-import { inferStorage, type PantryDraft } from '#shared/culinary/pantry'
+import { inferStorage, type PantryDraft, type PantryItem } from '#shared/culinary/pantry'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
 import { formatWhatsAppMarketList, encodeMarketPayload, generateMarketQrSvg } from '../utils/market-share'
 import { formatPriceBadge, type PriceBadge } from '../utils/market-prices'
+import { applyPantryStock } from '../utils/pantry-stock'
 import type { PriceResponse } from '../../server/utils/market-prices'
 
 const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean; importedList?: MarketShoppingList }>()
@@ -16,6 +17,12 @@ const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[];
 const list = ref<MarketShoppingList | null>(props.importedList ?? null)
 const checked = ref<string[]>([])
 const mode = ref<ShoppingMode>('market')
+// Optional: subtract what the pantry already holds. Off unless the cook opts in (remembered on this device).
+const pantryKey = 'heirloom-market-deduct-pantry'
+const deductPantry = ref(false)
+const pantryStock = ref<PantryItem[] | null>(null)
+const pantryLoading = ref(false)
+const pantryMessage = ref('')
 const destinations = ref<Record<string, MarketSection>>({})
 // The cook's own walking order through the shops, remembered on this device.
 const orderKey = 'heirloom-market-destination-order'
@@ -23,6 +30,7 @@ const sectionOrder = ref<MarketSection[]>([...marketSections])
 const orderNote = ref('')
 onMounted(() => {
   if (props.autoGenerate) void generate()
+  try { if (localStorage.getItem(pantryKey) === '1') void setDeduct(true) } catch { /* Storage blocked: stay off. */ }
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(orderKey) ?? 'null')
     if (Array.isArray(saved)) {
@@ -32,7 +40,12 @@ onMounted(() => {
   } catch { /* Storage blocked or unreadable: keep the default order. */ }
 })
 watch(sectionOrder, value => { try { localStorage.setItem(orderKey, JSON.stringify(value)) } catch { /* Order simply won't persist. */ } })
-const routedList = computed(() => list.value ? routeShoppingList(list.value, destinations.value, mode.value, sectionOrder.value) : null)
+const stocked = computed(() => list.value && deductPantry.value && pantryStock.value ? applyPantryStock(list.value, pantryStock.value) : null)
+const covered = computed(() => stocked.value?.covered ?? [])
+const routedList = computed(() => {
+  const base = stocked.value?.list ?? list.value
+  return base ? routeShoppingList(base, destinations.value, mode.value, sectionOrder.value) : null
+})
 
 // Swap with the neighbouring stop that is actually on screen, so every click visibly moves the section.
 async function moveSection(section: MarketSection, direction: -1 | 1) {
@@ -54,7 +67,9 @@ const copying = ref(false)
 const copyError = ref('')
 const { state: copyState, label: copyLabel } = useActionFeedback(copying, copyError)
 const summary = computed(() => routedList.value ? shoppingListText(routedList.value, checked.value) : '')
-const itemCount = computed(() => list.value?.destinations.reduce((count, store) => count + store.items.length, 0) ?? 0)
+const itemCount = computed(() => routedList.value?.destinations.reduce((count, store) => count + store.items.length, 0) ?? 0)
+// Ticks on items the pantry now covers are not counted: only what is still on the list matters.
+const checkedCount = computed(() => { const visible = new Set(routedList.value?.destinations.flatMap(store => store.items.map(item => item.id))); return checked.value.filter(id => visible.has(id)).length })
 let controller: AbortController | undefined
 let disposed = false
 const priceController = new AbortController()
@@ -96,6 +111,26 @@ async function moveItem(id: string, destination: MarketSection) {
   destinations.value[id] = destination
   await nextTick()
   document.getElementById('destination-' + id)?.focus()
+}
+
+function rememberDeduct(on: boolean) { try { localStorage.setItem(pantryKey, on ? '1' : '0') } catch { /* The choice simply won't persist. */ } }
+async function setDeduct(on: boolean, box?: HTMLInputElement) {
+  pantryMessage.value = ''
+  if (!on) { deductPantry.value = false; rememberDeduct(false); return }
+  pantryLoading.value = true
+  try {
+    const rows = await $fetch<PantryItem[]>('/api/pantry', { signal: priceController.signal })
+    if (disposed) return
+    pantryStock.value = rows
+    deductPantry.value = true
+    rememberDeduct(true)
+    if (!rows.length) pantryMessage.value = 'Your pantry is empty, so nothing was deducted. Add stock on the Pantry page.'
+  } catch {
+    if (disposed) return
+    deductPantry.value = false
+    if (box) box.checked = false
+    pantryMessage.value = 'Couldn’t read your pantry, so nothing was deducted. Please try again.'
+  } finally { if (!disposed) pantryLoading.value = false }
 }
 
 async function generate() {
@@ -252,13 +287,17 @@ async function copy() {
     </div>
     <p v-if="error" role="alert" class="mt-4 rounded-lg border border-error bg-paper p-4 text-error">{{ error }}</p>
     <div v-if="list && routedList" class="mt-4 space-y-4">
-      <p class="text-sm text-muted print:hidden">{{ servings ? 'For ' + servings + ' ' + (servingsNoun ?? 'guests') + '. ' : '' }}Pantry stock isn’t subtracted. Checkmarks reset if you regenerate.</p>
-      <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2 print:hidden">
-        <button class="filter-pill" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
-        <button class="filter-pill" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
+      <p class="text-sm text-muted print:hidden">{{ servings ? 'For ' + servings + ' ' + (servingsNoun ?? 'guests') + '. ' : '' }}{{ deductPantry ? 'Pantry stock is subtracted.' : 'Pantry stock isn’t subtracted.' }} Checkmarks reset if you regenerate.</p>
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 print:hidden">
+        <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2">
+          <button class="filter-pill" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
+          <button class="filter-pill" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
+        </div>
+        <label class="inline-flex min-h-11 items-center gap-2 font-semibold"><input type="checkbox" :checked="deductPantry" :disabled="pantryLoading || busy" @change="setDeduct(($event.target as HTMLInputElement).checked, $event.target as HTMLInputElement)">Deduct pantry stock</label>
       </div>
+      <p v-if="pantryMessage" role="status" class="text-sm print:hidden">{{ pantryMessage }}</p>
       <div class="flex flex-wrap items-center gap-3 print:hidden">
-        <p v-if="!phone" role="status" class="num">{{ checked.length }} of {{ itemCount }} items checked</p>
+        <p v-if="!phone" role="status" class="num">{{ checkedCount }} of {{ itemCount }} items checked</p>
         <button v-if="pendingRestock.length" type="button" class="button-primary min-h-11 inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
         <button v-if="!phone" type="button" class="button-secondary min-h-11" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
         <details ref="shareMenu" class="market-share" @keydown.esc="closeShare(true)">
@@ -300,7 +339,8 @@ async function copy() {
           <li v-for="(alert, index) in list.prepAlerts" :key="index"><strong>{{ alert.recipeTitle }}:</strong> {{ alert.text }}</li>
         </ul>
       </details>
-      <p v-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
+      <p v-if="!itemCount && covered.length" role="status">Everything on this list is already in your pantry.</p>
+      <p v-else-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
       <p role="status" class="sr-only">{{ orderNote }}</p>
       <section v-for="(destination, stop) in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
         <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -321,12 +361,13 @@ async function copy() {
             <h4 v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="mb-1 mt-3 text-sm font-semibold text-muted">{{ item.aisle }}</h4>
             <div class="flex flex-wrap items-center gap-x-3 gap-y-0">
               <label class="flex min-h-11 min-w-0 flex-1 basis-52 items-center gap-3">
-                <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" class="size-5 flex-none" />
+                <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
                 <span class="min-w-0 font-semibold" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
               </label>
               <span v-if="destination.section === 'supermarket'" class="market-price min-h-6 print:hidden" data-testid="market-price-slot">
                 <span v-if="priceBadges[item.id]" data-testid="market-price" class="market-price__badge inline-flex max-w-full items-center gap-1 rounded-full border border-sage/50 bg-sage/10 px-2.5 py-0.5 text-xs font-semibold text-sage-ink" :title="priceBadges[item.id]!.label" :aria-label="priceBadges[item.id]!.label"><UIcon name="i-lucide-tag" class="size-3.5 flex-none" aria-hidden="true" /><span lang="el" class="truncate">{{ priceBadges[item.id]!.text }}</span></span>
               </span>
+              <span v-if="item.pantryNote" class="text-sm text-muted print:hidden">{{ item.pantryNote }}</span>
               <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field market-destination !mt-0 min-h-11 !w-auto max-w-40 py-1 text-sm" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
                 <option v-for="section in marketSections" :key="section" :value="section">{{ sectionInfo[section].name }}</option>
               </select>
@@ -342,8 +383,17 @@ async function copy() {
           </li>
         </ul>
       </section>
+      <details v-if="covered.length" class="market-covered rounded-lg border border-rule bg-paper-2 px-4 print:hidden">
+        <summary class="flex min-h-11 cursor-pointer items-center font-semibold">Already in your pantry ({{ covered.length }})</summary>
+        <ul class="divide-y divide-rule pb-2">
+          <li v-for="row in covered" :key="row.id" class="flex flex-wrap items-baseline justify-between gap-x-3 py-2">
+            <span class="font-semibold">{{ row.name }}</span>
+            <span class="text-sm text-muted">{{ row.amount > 0 ? 'need ' + row.amount + ' ' + row.unit + ' · ' : '' }}have {{ row.have }}</span>
+          </li>
+        </ul>
+      </details>
       <div v-if="itemCount && phone" data-testid="market-sticky-bar" class="market-sticky sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 flex items-center justify-between gap-3 border-t border-rule bg-paper/95 px-4 py-2 backdrop-blur print:hidden">
-        <p role="status" class="num">{{ checked.length }} of {{ itemCount }} items checked</p>
+        <p role="status" class="num">{{ checkedCount }} of {{ itemCount }} items checked</p>
         <button type="button" class="button-primary min-h-11" :disabled="copying || busy" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
       </div>
     </div>
