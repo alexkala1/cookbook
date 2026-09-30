@@ -3,6 +3,8 @@ import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from
 import { inferStorage, type PantryDraft } from '#shared/culinary/pantry'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
 import { formatWhatsAppMarketList, encodeMarketPayload, generateMarketQrSvg } from '../utils/market-share'
+import { formatPriceBadge, type PriceBadge } from '../utils/market-prices'
+import type { PriceResponse } from '../../server/utils/market-prices'
 
 const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean; importedList?: MarketShoppingList }>()
 // An imported list (scanned from another device) is shown as-is: there is nothing to generate.
@@ -50,7 +52,40 @@ const summary = computed(() => routedList.value ? shoppingListText(routedList.va
 const itemCount = computed(() => list.value?.destinations.reduce((count, store) => count + store.items.length, 0) ?? 0)
 let controller: AbortController | undefined
 let disposed = false
-onBeforeUnmount(() => { disposed = true; controller?.abort() })
+const priceController = new AbortController()
+onBeforeUnmount(() => { disposed = true; controller?.abort(); priceController.abort() })
+
+// Supermarket prices are a bonus: fetched quietly, three at a time, and never reported as an error.
+const MAX_PRICE_LOOKUPS = 30, PRICE_CONCURRENCY = 3
+const priceBadges = ref<Record<string, PriceBadge | null>>({})
+const priceAsked = new Set<string>()
+let priceQueue: { id: string, name: string }[] = [], priceActive = 0
+function resetPrices() { priceBadges.value = {}; priceAsked.clear(); priceQueue = [] }
+async function lookupPrice({ id, name }: { id: string, name: string }) {
+  try {
+    const result = await $fetch<PriceResponse>('/api/market/prices', { query: { q: name }, signal: priceController.signal })
+    if (!disposed) priceBadges.value[id] = result.available ? formatPriceBadge(result.products) : null
+  } catch { /* No price, no badge. */ }
+}
+function pumpPrices() {
+  while (!disposed && priceActive < PRICE_CONCURRENCY && priceQueue.length) {
+    priceActive++
+    void lookupPrice(priceQueue.shift()!).finally(() => { priceActive--; pumpPrices() })
+  }
+}
+watch(routedList, value => {
+  if (!value || typeof navigator === 'undefined' || navigator.onLine === false) return
+  for (const destination of value.destinations) {
+    if (destination.section !== 'supermarket') continue
+    for (const item of destination.items) {
+      const name = item.name.trim()
+      if (priceAsked.has(item.id) || priceAsked.size >= MAX_PRICE_LOOKUPS || !name || name.length > 80) continue
+      priceAsked.add(item.id)
+      priceQueue.push({ id: item.id, name })
+    }
+  }
+  pumpPrices()
+}, { immediate: true, flush: 'post' })
 
 async function moveItem(id: string, destination: MarketSection) {
   destinations.value[id] = destination
@@ -76,6 +111,7 @@ async function generate() {
     restockSuccess.value = null
     restockError.value = ''
     destinations.value = {}
+    resetPrices()
     mode.value = 'market'
   } catch {
     if (!disposed) error.value = 'Could not generate the shopping list. Your schedule is still available. Please try again.'
@@ -268,6 +304,9 @@ async function copy() {
               <p v-if="item.note">{{ item.note }}</p>
               <p v-for="(note, index) in item.prepNotes" :key="index"><strong>Prep:</strong> {{ note }}</p>
             </div>
+            <div v-if="destination.section === 'supermarket'" class="market-price ml-0 mt-2 min-h-6 sm:ml-14 print:hidden" data-testid="market-price-slot">
+              <span v-if="priceBadges[item.id]" data-testid="market-price" class="market-price__badge inline-flex max-w-full items-center gap-1 rounded-full border border-sage/50 bg-sage/10 px-2.5 py-0.5 text-xs font-semibold text-sage-ink" :title="priceBadges[item.id]!.label" :aria-label="priceBadges[item.id]!.label"><UIcon name="i-lucide-tag" class="size-3.5 flex-none" aria-hidden="true" /><span lang="el" class="truncate">{{ priceBadges[item.id]!.text }}</span></span>
+            </div>
           </li>
         </ul>
       </section>
@@ -280,6 +319,9 @@ async function copy() {
 .market-action { max-width: 100%; white-space: normal; }
 .restock-notice { display: flex; align-items: flex-start; gap: .5rem; border-left: 3px solid var(--color-sage-ink); background: var(--color-paper-2); padding: .75rem 1rem; color: var(--color-ink); }
 .qr-code :deep(svg) { width: 100%; max-width: 16rem; height: auto; }
+.market-price__badge { animation: market-price-in .2s ease-out; }
+@keyframes market-price-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .market-price__badge { animation: none; } }
 .restock-notice a { display: inline-flex; min-height: 44px; align-items: center; }
 </style>
 
