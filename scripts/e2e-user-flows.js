@@ -716,6 +716,8 @@ async function journey(browser, viewport) {
     })
     await step(page, viewport, 'Flow 4 · market shopping list and routing', async () => {
       const market = page.getByRole('region', { name: 'Market shopping list' })
+      // Keep the suite offline: price lookups answer "unavailable" until the dedicated price step.
+      await page.route('**/api/market/prices*', route => route.fulfill({ json: { available: false, query: '', products: [] } }))
       await tap(market.getByRole('button', { name: 'Generate Market Shopping List' }))
       for (const destination of ['Laiki market', 'Butcher', 'Supermarket']) await market.getByRole('heading', { name: destination, exact: true }).waitFor()
       await shot(page, viewport, 'market-route', market)
@@ -750,6 +752,43 @@ async function journey(browser, viewport) {
       await shot(page, viewport, 'market-restocked', notice)
       const stocked = await page.evaluate(async name => (await (await fetch('/api/pantry')).json()).some(row => row.name === name), itemName)
       assert(stocked, `${itemName} should now be in the pantry`)
+    })
+    await step(page, viewport, 'Flow 4 · supermarket price badge without layout shift', async () => {
+      const market = page.getByRole('region', { name: 'Market shopping list' })
+      await page.unroute('**/api/market/prices*')
+      let asked = 0
+      await page.route('**/api/market/prices*', async route => {
+        const q = new URL(route.request().url()).searchParams.get('q') || ''
+        await new Promise(resolve => setTimeout(resolve, 700))
+        const first = ++asked === 1
+        await route.fulfill({ json: first ? { available: true, query: q, products: [{ id: 'p1', name: 'ΔΩΔΩΝΗ Φέτα ΠΟΠ 200g', brand: 'ΔΩΔΩΝΗ', minPrice: 3.55, retailers: [{ retailer: 'sklavenitis', displayName: 'Σκλαβενίτης', price: 3.55 }, { retailer: 'ab', displayName: 'ΑΒ', price: 3.69 }] }] } : { available: false, query: q, products: [] } }).catch(() => {})
+      })
+      await tap(market.getByRole('button', { name: 'Generate Market Shopping List' }))
+      const supermarket = market.locator('section[aria-labelledby="market-supermarket"]')
+      await supermarket.getByRole('heading', { name: 'Supermarket', exact: true }).waitFor()
+      const slots = supermarket.locator('[data-testid="market-price-slot"]')
+      assert(await slots.count() >= 1 && await supermarket.locator('[data-testid="market-price"]').count() === 0, 'Reserved price slots should exist before any badge arrives')
+      const measure = () => supermarket.locator('li').evaluateAll(rows => ({ rows: rows.map(row => row.getBoundingClientRect().height), page: document.documentElement.scrollHeight }))
+      await supermarket.scrollIntoViewIfNeeded()
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      const before = await measure()
+      assert(before.rows.every(height => height > 0), 'Rows should be laid out before measuring')
+      const badge = supermarket.locator('[data-testid="market-price"]').first()
+      await badge.waitFor({ timeout: 8000 })
+      await page.waitForTimeout(300)
+      const after = await measure()
+      assert((await badge.innerText()).trim() === 'Σκλαβενίτης 3.55 €', `Badge text should be the lowest retailer price, got ${await badge.innerText()}`)
+      assert(/Lowest price found: .*Σκλαβενίτης, 3\.55 euros/.test(await badge.getAttribute('aria-label')), 'Badge should carry a descriptive aria-label')
+      assert(JSON.stringify(before) === JSON.stringify(after), 'Price badges must not change row or page height: ' + JSON.stringify(before) + ' vs ' + JSON.stringify(after))
+      assert(await market.getByRole('alert').count() === 0, 'Price lookups must never raise an alert')
+      assert(!(await market.getByRole('button', { name: 'Copy shopping list' }).textContent()).includes('€'), 'Prices stay out of the list actions')
+      await shot(page, viewport, 'market-price-badge', supermarket)
+      await page.unroute('**/api/market/prices*')
+      await page.route('**/api/market/prices*', route => route.fulfill({ json: { available: false, query: '', products: [] } }))
+      await tap(market.getByRole('button', { name: 'Generate Market Shopping List' }))
+      await supermarket.getByRole('heading', { name: 'Supermarket', exact: true }).waitFor()
+      await page.waitForTimeout(400)
+      assert(await supermarket.locator('[data-testid="market-price"]').count() === 0, 'Unavailable prices should omit the badge')
     })
     await step(page, viewport, 'Flow 4 · share on WhatsApp, send to phone, import on phone', async () => {
       const market = page.getByRole('region', { name: 'Market shopping list' })
