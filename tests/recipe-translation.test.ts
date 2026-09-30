@@ -4,6 +4,8 @@ import handler from '../server/api/ai/recipe/translate.post'
 import csrf from '../server/middleware/csrf'
 import { enforceInvariants, translationLanguages } from '../server/utils/ai/translate'
 import { recipeCreateSchema } from '../server/utils/validation'
+import { toRecipeInput } from '../app/utils/recipe-input'
+import type { RecipeDetail } from '../shared/types/recipe'
 
 afterEach(() => vi.unstubAllGlobals())
 const headers = { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }
@@ -107,4 +109,20 @@ it('preserves null and absent fields', () => {
   const { recipe } = enforceInvariants(withoutEquipment, reply)
   expect(recipe.cuisine).toBeNull()
   expect(recipe).not.toHaveProperty('equipment')
+})
+it('strips database and lineage metadata before strict recipe validation', () => {
+  const detail = {
+    ...source, id: 'source', createdAt: null, updatedAt: null, parentRecipeId: 'parent', variationName: 'Family',
+    parent: { id: 'parent', title: 'Parent' }, variations: [],
+    ingredients: source.ingredients!.map(item => ({ ...item, id: 'ingredient', recipeId: 'source' })),
+    steps: source.steps!.map(item => ({ ...item, id: 'step', recipeId: 'source' })),
+    equipment: source.equipment!.map(item => ({ ...item, id: 'equipment', recipeId: 'source' }))
+  } as RecipeDetail
+  const input = toRecipeInput(detail)
+  expect(recipeCreateSchema.safeParse(input).success).toBe(true)
+  expect(input).not.toHaveProperty('id')
+  expect(input).not.toHaveProperty('parent')
+  expect(input.ingredients![0]).not.toHaveProperty('recipeId')
+  expect(input.sourceUrl).toBeNull()
+  expect(input.imageUrl).toBeNull()
 })
