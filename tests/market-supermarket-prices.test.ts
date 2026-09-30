@@ -3,6 +3,9 @@ import { createApp, toWebHandler } from 'h3'
 import prices from '../server/api/market/prices.get'
 import { resetPriceCache } from '../server/utils/market-prices'
 import { formatPriceBadge } from '../app/utils/market-prices'
+import { http2Get } from '../server/utils/http2-get'
+
+vi.mock('../server/utils/http2-get', () => ({ http2Get: vi.fn() }))
 
 const handle = toWebHandler(createApp().use(prices))
 const call = (q?: string) => handle(new Request('http://localhost/api/market/prices' + (q === undefined ? '' : '?q=' + encodeURIComponent(q))))
@@ -16,14 +19,22 @@ const feta200 = {
 }
 const cleaner = { id: 'c1', name: 'AJAX Fête des Fleurs Καθαριστικό Τζαμιών 750ml', brand: 'AJAX', category: 'Καθαρισμός Τζαμιών', price_stats: { min_price: 2.48 }, retailer_prices: [{ retailer: 'mymarket', retailer_display_name: 'My Market', price: 2.48 }] }
 const upstream = (products: unknown[], status = 200) => new Response(JSON.stringify({ products }), { status })
-const stubFetch = (impl: (...args: any[]) => unknown) => { const spy = vi.fn(impl); vi.stubGlobal('fetch', spy); return spy }
+// The upstream transport is HTTP/2 (see server/utils/http2-get.ts); stubs may still return Responses for brevity.
+const stubUpstream = (impl: (...args: any[]) => unknown) => {
+  const spy = vi.mocked(http2Get)
+  spy.mockImplementation(async (url, options) => {
+    const result = await impl(url, options) as Response | { status: number, body: string }
+    return result instanceof Response ? { status: result.status, body: await result.text() } : result
+  })
+  return spy
+}
 const fallback = (query: string) => ({ available: false, query, products: [] })
 
-beforeEach(() => { resetPriceCache(); vi.useFakeTimers() })
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+beforeEach(() => { resetPriceCache(); vi.mocked(http2Get).mockReset(); vi.useFakeTimers() })
+afterEach(() => { vi.useRealTimers() })
 
 it('returns lowest-first retailers and drops upstream noise', async () => {
-  stubFetch(async () => upstream([feta200]))
+  stubUpstream(async () => upstream([feta200]))
   const response = await call('φετα')
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual({ available: true, query: 'φετα', products: [{
@@ -33,7 +44,7 @@ it('returns lowest-first retailers and drops upstream noise', async () => {
 })
 
 it('queries the government API with fixed params and a browser user agent', async () => {
-  const spy = stubFetch(async () => upstream([feta200]))
+  const spy = stubUpstream(async () => upstream([feta200]))
   await call('φετα')
   expect(spy).toHaveBeenCalledTimes(1)
   const url = new URL(String(spy.mock.calls[0]![0]))
@@ -43,7 +54,7 @@ it('queries the government API with fixed params and a browser user agent', asyn
 })
 
 it('caches for 24 hours, case and accent insensitively', async () => {
-  const spy = stubFetch(async () => upstream([feta200]))
+  const spy = stubUpstream(async () => upstream([feta200]))
   const first = await (await call('φετα')).json()
   const second = await (await call('Φέτα ')).json()
   expect(spy).toHaveBeenCalledTimes(1)
@@ -55,7 +66,7 @@ it('caches for 24 hours, case and accent insensitively', async () => {
 
 it('shares one upstream request between concurrent identical lookups', async () => {
   let release!: () => void
-  const spy = stubFetch(() => new Promise(resolve => { release = () => resolve(upstream([feta200])) }))
+  const spy = stubUpstream(() => new Promise(resolve => { release = () => resolve(upstream([feta200])) }))
   const both = Promise.all([call('γαλα'), call('γαλα')])
   await vi.advanceTimersByTimeAsync(0)
   release()
@@ -65,7 +76,7 @@ it('shares one upstream request between concurrent identical lookups', async () 
 })
 
 it('gives up after exactly 2500ms with a graceful 200', async () => {
-  stubFetch((_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))))
+  stubUpstream((_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))))
   let settled = false
   const pending = call('αλευρι').then(response => { settled = true; return response })
   await vi.advanceTimersByTimeAsync(2499)
@@ -86,7 +97,7 @@ it.each([
   ['empty object', async () => new Response('{}', { status: 200 })],
   ['null products', async () => new Response('{"products":null}', { status: 200 })]
 ])('degrades to available:false with HTTP 200 when upstream is %s', async (_name, impl) => {
-  stubFetch(impl)
+  stubUpstream(impl)
   const response = await call('φετα')
   expect(response.status).toBe(200)
   const text = await response.text()
@@ -95,19 +106,19 @@ it.each([
 })
 
 it('caches failures for only 60 seconds', async () => {
-  const spy = stubFetch(async () => new Response('blocked', { status: 403 }))
+  const spy = stubUpstream(async () => new Response('blocked', { status: 403 }))
   await call('φετα')
   await vi.advanceTimersByTimeAsync(59_000)
   await call('φετα')
   expect(spy).toHaveBeenCalledTimes(1)
-  spy.mockImplementation(async () => upstream([feta200]))
+  stubUpstream(async () => upstream([feta200]))
   await vi.advanceTimersByTimeAsync(1_001)
   expect((await (await call('φετα')).json()).available).toBe(true)
   expect(spy).toHaveBeenCalledTimes(2)
 })
 
 it('treats an empty upstream result as a cached success', async () => {
-  const spy = stubFetch(async () => upstream([]))
+  const spy = stubUpstream(async () => upstream([]))
   expect(await (await call('φετα')).json()).toEqual({ available: true, query: 'φετα', products: [] })
   await vi.advanceTimersByTimeAsync(3_600_000)
   await call('φετα')
@@ -115,18 +126,18 @@ it('treats an empty upstream result as a cached success', async () => {
 })
 
 it('keeps only products relevant to the query', async () => {
-  stubFetch(async () => upstream([cleaner]))
+  stubUpstream(async () => upstream([cleaner]))
   expect(await (await call('feta')).json()).toEqual({ available: true, query: 'feta', products: [] })
   resetPriceCache()
-  stubFetch(async () => upstream([{ ...feta200, name: 'ΦΕΤΑ ΠΑΝΤΕΛΗ 800g', brand: 'ΠΑΝΤΕΛΗ' }]))
+  stubUpstream(async () => upstream([{ ...feta200, name: 'ΦΕΤΑ ΠΑΝΤΕΛΗ 800g', brand: 'ΠΑΝΤΕΛΗ' }]))
   expect((await (await call('φετα')).json()).products).toHaveLength(1)
   resetPriceCache()
-  stubFetch(async () => upstream([{ ...feta200, id: 'm1', name: 'ΓΑΛΑ ΦΑΡΜΑ 1L', brand: 'ΦΑΡΜΑ', category: 'Γάλα' }]))
+  stubUpstream(async () => upstream([{ ...feta200, id: 'm1', name: 'ΓΑΛΑ ΦΑΡΜΑ 1L', brand: 'ΦΑΡΜΑ', category: 'Γάλα' }]))
   expect((await (await call('γάλα')).json()).products).toHaveLength(1)
 })
 
 it.each([[undefined], [''], ['   '], ['x'.repeat(81)]])('rejects bad input %j without contacting upstream', async q => {
-  const spy = stubFetch(async () => upstream([feta200]))
+  const spy = stubUpstream(async () => upstream([feta200]))
   const response = await call(q)
   expect(response.status).toBe(200)
   expect((await response.json()).available).toBe(false)
@@ -134,7 +145,7 @@ it.each([[undefined], [''], ['   '], ['x'.repeat(81)]])('rejects bad input %j wi
 })
 
 it('drops invalid prices and products, falls back to the cheapest retailer and caps at three products', async () => {
-  stubFetch(async () => upstream([
+  stubUpstream(async () => upstream([
     { ...feta200, id: 'a', price_stats: undefined, retailer_prices: [{ retailer: 'x', retailer_display_name: 'X', price: -1 }, { retailer: 'y', retailer_display_name: 'Y', price: null }, { retailer: 'z', retailer_display_name: 'Z', price: '3.55' }, { retailer: 'ab', price: 4.2 }] },
     { ...feta200, id: 'b', retailer_prices: [{ retailer: 'x', price: 'free' }] },
     { ...feta200, id: 'c' }, { ...feta200, id: 'd' }, { ...feta200, id: 'e' }
@@ -145,7 +156,7 @@ it('drops invalid prices and products, falls back to the cheapest retailer and c
 })
 
 it('never lets the query alter the upstream URL', async () => {
-  const spy = stubFetch(async () => upstream([]))
+  const spy = stubUpstream(async () => upstream([]))
   await call('a&countries=US#x?y')
   const url = new URL(String(spy.mock.calls[0]![0]))
   expect(url.searchParams.get('q')).toBe('a&countries=US#x?y')
