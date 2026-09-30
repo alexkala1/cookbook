@@ -730,8 +730,10 @@ async function journey(browser, viewport) {
       assert(Array.isArray(stored) && stored.length === 4, 'Custom shop order should persist in localStorage')
       await tap(market.getByRole('button', { name: `Move ${before[0]} up` }))
       assert((await stops()).join() === before.join(), 'Move up should restore the original order')
-      const destination = market.getByRole('combobox', { name: /^Destination for / }).first()
-      const itemName = (await destination.getAttribute('aria-label')).replace('Destination for ', '')
+      const itemName = (await market.getByRole('checkbox', { name: /^Bought: / }).first().getAttribute('aria-label')).replace('Bought: ', '')
+      assert(await market.getByRole('combobox', { name: /^Destination for / }).count() === 0, 'Destination selects should stay tucked inside Details until opened')
+      await tap(market.getByRole('button', { name: `Details for ${itemName}`, exact: true }))
+      const destination = market.getByRole('combobox', { name: `Destination for ${itemName}`, exact: true })
       await destination.selectOption('supermarket')
       const moved = market.getByRole('combobox', { name: `Destination for ${itemName}`, exact: true })
       assert(await moved.inputValue() === 'supermarket', 'Per-item routing should move the item to the supermarket')
@@ -815,15 +817,27 @@ async function journey(browser, viewport) {
       } else {
         for (let i = 0; i < 3; i++) {
           const height = (await rows.nth(i).boundingBox()).height
-          assert(height <= 72, `Collapsed item row ${i + 1} should be at most 72px tall, got ${Math.round(height)}px`)
+          assert(height <= 56, `Collapsed item cell ${i + 1} should be at most 56px tall, got ${Math.round(height)}px`)
         }
+        // Wide screens use their width: a shop with six or more items flows into columns, and the whole list fits one screen.
+        const big = market.locator('section[aria-labelledby^="market-"]').filter({ has: page.locator('li:nth-child(6)') }).first()
+        const lefts = await big.locator('li').evaluateAll(nodes => [...new Set(nodes.map(node => Math.round(node.getBoundingClientRect().left)))])
+        assert(lefts.length >= 2, `A long shop list should flow into columns on desktop, saw ${lefts.length} column(s)`)
+        const span = await page.evaluate(() => {
+          const top = document.querySelector('.market-shopping h2').getBoundingClientRect().top + window.scrollY
+          const last = [...document.querySelectorAll('.market-shopping li')].at(-1).getBoundingClientRect()
+          return last.bottom + window.scrollY - top
+        })
+        assert(span <= 900, `The whole list should fit one 900px screen on desktop, got ${Math.round(span)}px`)
+        const controls = await first.locator('li').first().evaluate(node => { const box = node.querySelector('input').getBoundingClientRect(), button = node.querySelector('button[aria-expanded]').getBoundingClientRect(), cell = node.getBoundingClientRect(); return { gap: button.left - box.right, cell: cell.width } })
+        assert(controls.gap < 420, `Item controls should sit near the name, not across the page (gap ${Math.round(controls.gap)}px)`)
       }
       const toggle = market.getByRole('button', { name: /^Details for / }).first()
       assert(await toggle.getAttribute('aria-expanded') === 'false', 'Details should be closed by default')
       await tap(toggle)
       assert(await toggle.getAttribute('aria-expanded') === 'true', 'Details should open on tap')
       const panel = page.locator('#' + await toggle.getAttribute('aria-controls'))
-      assert(await panel.isVisible() && (await panel.innerText()).trim().length > 0, 'Open Details should show its content')
+      assert(await panel.isVisible() && await panel.getByRole('combobox', { name: /^Destination for / }).isVisible(), 'Open Details should show the destination mover')
       await tap(toggle)
       assert(!(await panel.isVisible()), 'Details should close again')
       const bar = page.locator('[data-testid="market-sticky-bar"]')
