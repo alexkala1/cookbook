@@ -49,7 +49,7 @@ async (page) => {
       const lamb = data.destinations.flatMap(section => section.items).find(item => item.name === 'Lamb shoulder')
       if (!lamb || !((lamb.amount === 1200 && lamb.unit === 'g') || (lamb.amount === 1.2 && lamb.unit === 'kg'))) throw Error('Guest scaling failed')
       await market.getByText(lamb.counterPhrase, { exact: true }).waitFor()
-      await market.getByRole('heading', { name: 'Prepare ahead', exact: true }).waitFor()
+      await market.getByText(/^Prepare ahead \(\d+\)$/).waitFor()
       if (!(await market.innerText()).includes('Surplus:')) throw Error('Surplus guidance missing')
       const checkbox = market.getByRole('checkbox', { name: 'Bought: Lamb shoulder', exact: true })
       await checkbox.check()
