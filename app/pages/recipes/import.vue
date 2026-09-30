@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RecipeInput } from '../../../server/utils/validation'
 import { readRecipeStream } from '../../utils/sse'
+import { readTranslateLang, writeTranslateLang, translationLanguageOptions } from '../../utils/translation-prefs'
 const { requestHeaders, ready, settings } = useByokSettings()
 const kind = ref<'url' | 'video' | 'ocr' | 'prompt'>('url')
 const tabs = { url: 'Web URL', video: 'Video Link', ocr: 'Scanned Card / Photo OCR', prompt: 'Conversational Memory' } as const
@@ -10,6 +11,8 @@ const { state: generateState, label: generateLabel } = useActionFeedback(busy, e
 const { state: saveState, label: saveLabel } = useActionFeedback(saving, error)
 const messages = ref<string[]>([]), warnings = ref<string[]>([])
 const draft = ref<RecipeInput | null>(null)
+const targetLang = ref('el'), translating = ref(false), translateError = ref(''), translateNote = ref('')
+onMounted(() => { targetLang.value = readTranslateLang() })
 const provenance = ref('')
 // What the cook gave us and the text the importer actually read, for side-by-side review.
 const original = ref<{ input: string, text: string, kind: typeof kind.value, photo: string } | null>(null)
@@ -53,6 +56,8 @@ let controller: AbortController | undefined
 onBeforeUnmount(() => controller?.abort())
 watch(kind, () => { source.value = ''; photoDataUrl.value = ''; photoError.value = ''; captionsUnavailable.value = false; draft.value = null; original.value = null; error.value = ''; messages.value = [] })
 async function generate() {
+  if (translating.value || saving.value || busy.value) return
+  translateError.value = ''; translateNote.value = ''
   controller = new AbortController(); busy.value = true; error.value = ''; draft.value = null; original.value = null; messages.value = []
   const input = source.value, inputKind = kind.value, photo = kind.value === 'ocr' ? photoDataUrl.value : ''
   captionsUnavailable.value = false
@@ -74,11 +79,27 @@ async function revealDraft() {
   draftHeading.value?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 }
 async function save() {
-  if (!draft.value || saving.value) return
+  if (!draft.value || saving.value || translating.value) return
   saving.value = true; error.value = ''
   try { const recipe = await $fetch<{ id: string }>('/api/recipes', { method: 'POST', body: draft.value }); await navigateTo('/recipes/' + recipe.id) }
   catch { error.value = 'Could not save this draft. It is still here; try again.' }
   finally { saving.value = false }
+}
+async function translateDraft() {
+  if (!draft.value || translating.value || saving.value || busy.value) return
+  translating.value = true; translateError.value = ''; translateNote.value = ''
+  const language = targetLang.value, currentDraft = draft.value
+  try {
+    const response = await fetch('/api/ai/recipe/translate', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify({ recipe: currentDraft, targetLanguage: language }) })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.statusMessage || data.message || 'Could not translate this draft.')
+    if (draft.value !== currentDraft) return
+    draft.value = data.recipe
+    warnings.value = [...warnings.value, ...(data.warnings || [])]
+    translateNote.value = 'Translated to ' + translationLanguageOptions.find(item => item.code === language)?.label + '. Numbers and timers are unchanged.'
+    writeTranslateLang(language)
+  } catch (cause) { translateError.value = cause instanceof Error ? cause.message : 'Could not translate this draft. Try again.' }
+  finally { translating.value = false }
 }
 const minutesLabel = (minutes: number) => minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
 const isAiError = computed(() => !!error.value && /settings|model|key|rate limit|quota|groq|openai|anthropic|ollama|provider|timed out/i.test(error.value))
@@ -90,7 +111,7 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
     <h1 class="mt-4">Bring a recipe home.</h1>
     <p class="mt-6">Recover a recipe, understand its method, and review the details before adding it to your cookbook.</p>
     <div class="mt-8 flex flex-wrap gap-3" aria-label="Import source">
-      <button v-for="(name, tab) in tabs" :key="tab" class="filter-pill" :aria-pressed="kind === tab" :disabled="busy || saving" @click="kind = tab">{{ name }}</button>
+      <button v-for="(name, tab) in tabs" :key="tab" class="filter-pill" :aria-pressed="kind === tab" :disabled="busy || saving || translating" @click="kind = tab">{{ name }}</button>
     </div>
     <form class="mt-6 space-y-5" @submit.prevent="generate">
       <div v-if="kind === 'ocr'">
@@ -111,7 +132,7 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
         <input v-else v-model="source" class="field mt-2" :type="kind === 'url' ? 'url' : 'text'" required maxlength="2000" :disabled="busy || saving">
       </label>
       <p class="text-sm">{{ settings.activeProvider === 'ollama' && settings.activeModel ? 'Uses your locally running Ollama model.' : settings.keys[settings.activeProvider] ? 'Uses your selected model. Source text' + (photoDataUrl ? ' and your card photo are' : ' is') + ' sent to that provider.' : 'No AI key set, so you’ll get a basic draft to finish by hand. Add a key for a fuller import.' }} <NuxtLink class="text-action" to="/settings">AI settings</NuxtLink></p>
-      <button class="button-primary" :disabled="busy || saving || !ready" v-stable-action="generateState" :data-state="generateState" :aria-busy="busy">{{ generateLabel('Create recipe draft', 'Creating draft…') }}</button>
+      <button class="button-primary" :disabled="busy || saving || translating || !ready" v-stable-action="generateState" :data-state="generateState" :aria-busy="busy">{{ generateLabel('Create recipe draft', 'Creating draft…') }}</button>
       <button v-if="busy" type="button" class="button-secondary ml-3" @click="controller?.abort()">Cancel</button>
     </form>
     <ol v-if="messages.length" class="row-panel mt-6 space-y-2" aria-live="polite" aria-label="Import progress"><li v-for="(message, i) in messages" :key="i">{{ message }}</li></ol>
@@ -180,13 +201,25 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
         <UIcon name="i-lucide-info" class="mt-0.5 size-5 flex-none" aria-hidden="true" />
         <div><p class="font-semibold">Worth a quick check</p><p v-for="warning in warnings" :key="warning" class="mt-1">{{ warning }}</p></div>
       </div>
-      <label class="mt-6 block">Recipe title<input v-model="draft.title" class="field mt-2" maxlength="200"></label>
+      <div class="row-panel mt-6" :aria-busy="translating">
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="min-w-0 flex-1">Translate draft to
+            <select v-model="targetLang" class="field mt-2 min-h-11" data-testid="translate-lang" :disabled="translating || saving">
+              <option v-for="language in translationLanguageOptions" :key="language.code" :value="language.code">{{ language.label }}</option>
+            </select>
+          </label>
+          <button type="button" class="button-secondary min-h-11" data-testid="translate-draft" :disabled="translating || busy || saving" @click="translateDraft">{{ translating ? 'Translating…' : 'Translate draft' }}</button>
+        </div>
+        <p v-if="translateError" role="alert" class="notice mt-3">{{ translateError }} <NuxtLink v-if="/settings/i.test(translateError)" to="/settings" class="text-action">Open AI Settings</NuxtLink></p>
+        <p class="mt-3 text-sm" aria-live="polite">{{ translateNote }}</p>
+      </div>
+      <label class="mt-6 block">Recipe title<input v-model="draft.title" class="field mt-2" maxlength="200" :disabled="translating || saving"></label>
       <p class="mt-4">{{ draft.description }}</p>
       <h2 class="mt-6">Ingredients</h2><ul class="mt-4 space-y-3"><li v-for="(ingredient, i) in draft.ingredients" :key="i">{{ ingredient.amount }} {{ ingredient.unit }} {{ ingredient.name }}<p class="text-sm">{{ ingredient.notes }}</p></li></ul>
       <h2 class="mt-6">Method &amp; food science</h2><ol class="mt-4 space-y-5"><li v-for="step in draft.steps" :key="step.stepNumber"><p>{{ step.stepNumber }}. {{ step.instruction }}</p><p v-if="step.durationMinutes || (step.heatLevel && step.heatLevel !== 'none')" class="mt-2 flex flex-wrap gap-2 text-sm font-semibold"><span v-if="step.durationMinutes" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 border-sage/50 bg-sage/10 text-sage-ink"><UIcon :name="step.timerRequired ? 'i-lucide-timer' : 'i-lucide-clock'" aria-hidden="true" />{{ minutesLabel(step.durationMinutes) }}{{ step.timerRequired ? ' timer' : '' }}</span><span v-if="step.heatLevel && step.heatLevel !== 'none'" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 border-terracotta/40 bg-terracotta/10 text-terracotta-ink"><UIcon name="i-lucide-flame" aria-hidden="true" />{{ step.heatLevel.replace('-', '–') }} heat</span></p><p v-if="step.scienceWhy" class="mt-2 text-sm text-sage-ink">{{ step.scienceWhy }}</p></li></ol>
       <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border md:bottom-0">
         <p class="text-sm"><strong>Not saved yet.</strong> You can refine quantities, steps and family notes later with Edit recipe.</p>
-        <button class="button-primary" :disabled="busy || saving || !draft.title.trim()" v-stable-action="saveState" :data-state="saveState" :aria-busy="saving" @click="save">{{ saveLabel('Save to Cookbook', 'Saving…') }}</button>
+        <button class="button-primary" :disabled="busy || saving || translating || !draft.title.trim()" v-stable-action="saveState" :data-state="saveState" :aria-busy="saving" @click="save">{{ saveLabel('Save to Cookbook', 'Saving…') }}</button>
       </div>
     </article>
   </section>
