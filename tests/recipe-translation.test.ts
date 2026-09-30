@@ -6,6 +6,7 @@ import { enforceInvariants, translationLanguages } from '../server/utils/ai/tran
 import { recipeCreateSchema } from '../server/utils/validation'
 import { toRecipeInput } from '../app/utils/recipe-input'
 import type { RecipeDetail } from '../shared/types/recipe'
+import { readTranslateLang, writeTranslateLang, translationLanguageOptions } from '../app/utils/translation-prefs'
 
 afterEach(() => vi.unstubAllGlobals())
 const headers = { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }
@@ -125,4 +126,30 @@ it('strips database and lineage metadata before strict recipe validation', () =>
   expect(input.ingredients![0]).not.toHaveProperty('recipeId')
   expect(input.sourceUrl).toBeNull()
   expect(input.imageUrl).toBeNull()
+})
+it('falls back to source text for blank translations without filling empty source fields', () => {
+  const original = { ...source, description: '', heirloomNotes: null }
+  const reply = translated()
+  reply.title = '   '
+  reply.description = 'Invented description'
+  reply.heirloomNotes = 'Invented notes'
+  reply.ingredients![0]!.name = ''
+  const result = enforceInvariants(original, reply).recipe
+  expect(result.title).toBe(source.title)
+  expect(result.description).toBe('')
+  expect(result.heirloomNotes).toBeNull()
+  expect(result.ingredients![0]!.name).toBe(source.ingredients![0]!.name)
+})
+it('keeps client language choices aligned and tolerates unavailable or invalid storage', () => {
+  expect(translationLanguageOptions).toEqual(translationLanguages.map(({ code, label }) => ({ code, label })))
+  vi.stubGlobal('localStorage', { getItem: () => { throw new Error('blocked') }, setItem: () => { throw new Error('blocked') } })
+  expect(readTranslateLang()).toBe('el')
+  expect(() => writeTranslateLang('fr')).not.toThrow()
+  const setItem = vi.fn()
+  vi.stubGlobal('localStorage', { getItem: () => 'xx', setItem })
+  expect(readTranslateLang()).toBe('el')
+  writeTranslateLang('xx')
+  expect(setItem).not.toHaveBeenCalled()
+  writeTranslateLang('fr')
+  expect(setItem).toHaveBeenCalledWith('heirloom.translate.lang.v1', 'fr')
 })

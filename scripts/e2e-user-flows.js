@@ -19,7 +19,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { chromium } from 'playwright'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const SHOTS = join(ROOT, 'docs/screenshots/e2e-flow')
+const SHOTS = process.env.E2E_SCREENSHOT_DIR || join(ROOT, 'docs/screenshots/e2e-flow')
 const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 900, isMobile: false },
   { name: 'mobile', width: 375, height: 812, isMobile: true }
@@ -932,6 +932,116 @@ async function journey(browser, viewport) {
       await shot(page, viewport, 'handbook')
     })
 
+    await step(page, viewport, 'Translation · draft, family twist and replacement', async () => {
+      await go('/recipes/import')
+      const draft = await importDraft('Web URL', 'Recipe URL', 'https://fixtures.heirloom.test/recipe.html', 'Recipe JSON-LD · extracted')
+      const beforeTimers = await draft.locator('span').filter({ hasText: /^\d.*timer$/ }).allTextContents()
+      let releaseTranslation
+      let delayTranslation = true
+      await page.route('**/api/ai/recipe/translate', async route => {
+        const body = route.request().postDataJSON()
+        assert(body.targetLanguage === 'el', 'Translation should request Greek')
+        if (delayTranslation) await new Promise(resolve => { releaseTranslation = resolve })
+        await route.fulfill({ json: { recipe: { ...body.recipe, title: 'Φασολάκια λαδερά', description: 'Οικογενειακή συνταγή.' }, warnings: [], mode: 'live', targetLanguage: 'el' } })
+      })
+      assert(await page.getByTestId('translate-lang').inputValue() === 'el', 'Greek should be selected by default')
+      await page.getByTestId('translate-lang').selectOption('el')
+      await tap(page.getByTestId('translate-draft'))
+      await page.getByRole('button', { name: 'Translating…' }).waitFor()
+      assert(await page.getByRole('button', { name: 'Save to Cookbook' }).isDisabled(), 'Saving must be disabled during translation')
+      while (!releaseTranslation) await sleep(10)
+      releaseTranslation()
+      delayTranslation = false
+      await page.getByText('Translated to Ελληνικά. Numbers and timers are unchanged.', { exact: true }).waitFor()
+      assert(/[Α-Ω]/.test(await draft.getByLabel('Recipe title').inputValue()), 'Draft title should contain Greek')
+      assert(JSON.stringify(await draft.locator('span').filter({ hasText: /^\d.*timer$/ }).allTextContents()) === JSON.stringify(beforeTimers), 'Translation must preserve timer badges')
+      assert(await page.locator('[aria-label="Source comparison"]').count() === 1, 'Source comparison must remain available')
+      assert(await page.evaluate(() => localStorage.getItem('heirloom.translate.lang.v1')) === 'el', 'Successful translation should remember Greek')
+      await assertLayout(page, viewport, 'translated draft')
+      await shot(page, viewport, 'translated-draft', page.getByTestId('translate-lang'))
+      await tap(page.getByRole('button', { name: 'Save to Cookbook' }))
+      await page.waitForURL(/\/recipes\/[0-9a-f-]{36}$/)
+      const originalUrl = page.url()
+      const original = await page.evaluate(async () => (await fetch('/api' + location.pathname)).json())
+      const openTranslate = async () => {
+        await page.locator('.more-menu > summary').click()
+        await tap(page.getByRole('button', { name: 'Translate recipe', exact: true }))
+        await page.waitForFunction(() => document.activeElement?.id === 'recipe-translate-lang')
+      }
+      await openTranslate()
+      const panel = page.locator('form[aria-labelledby="translate-title"]')
+      assert(await panel.getByRole('radio', { name: 'Save as a family twist (keeps original)' }).isChecked(), 'Family twist must be the default')
+      await shot(page, viewport, 'translation-options', panel)
+      await tap(panel.getByRole('button', { name: 'Not now' }))
+      assert(await page.locator('.more-menu > summary').evaluate(element => element === document.activeElement), 'Cancel should restore focus to More')
+      await openTranslate()
+      await tap(panel.getByRole('button', { name: 'Translate', exact: true }))
+      await page.waitForURL(url => url.href !== originalUrl && /\/recipes\/[0-9a-f-]{36}$/.test(url.pathname))
+      await page.getByRole('heading', { name: 'Φασολάκια λαδερά', exact: true }).waitFor()
+      const twist = await page.evaluate(async () => (await fetch('/api' + location.pathname)).json())
+      assert(twist.parentRecipeId === original.id && twist.variationName === 'Ελληνικά', 'Translation must save a linked Greek family twist')
+      assert(twist.steps[0].durationMinutes === original.steps[0].durationMinutes, 'Saved twist must retain timers')
+      const originalAfter = await page.evaluate(async id => (await fetch('/api/recipes/' + id)).json(), original.id)
+      assert(originalAfter.title === original.title && JSON.stringify(originalAfter.steps) === JSON.stringify(original.steps), 'Twist must leave source content untouched')
+      await shot(page, viewport, 'translated-family-twist', page.getByRole('heading', { level: 1 }))
+      await openTranslate()
+      await panel.getByRole('radio', { name: 'Replace this recipe', exact: true }).check()
+      await panel.getByText('The original wording will be overwritten.', { exact: true }).waitFor()
+      const twistUrl = page.url()
+      await tap(panel.getByRole('button', { name: 'Translate', exact: true }))
+      await panel.getByText('Translated to Ελληνικά. Numbers and timers are unchanged.', { exact: true }).waitFor()
+      assert(page.url() === twistUrl, 'Replace must retain the current recipe URL')
+      await page.unroute('**/api/ai/recipe/translate')
+      const rejected = await context.request.post(base + '/api/ai/recipe/translate', { headers: { Origin: base, 'x-byok-provider': 'gemini', 'x-byok-key': 'x', 'x-byok-model': 'm' }, data: { recipe: { title: 'A', description: 'B' } } })
+      assert(rejected.status() === 400 && (await rejected.text()).includes('Gemini'), 'Built server must reject Gemini')
+    })
+
+    await step(page, viewport, 'Translation · failed save cleans up fork and preserves source', async () => {
+      // Expected HTTP failures run in a separate tab; only their exact network diagnostics are allowed.
+      const failurePage = await context.newPage()
+      const unexpected = []
+      failurePage.on('pageerror', error => unexpected.push(error.message))
+      failurePage.on('console', message => {
+        if (message.type() === 'error' && !/Failed to load resource: the server responded with a status of 400/.test(message.text())) unexpected.push(message.text())
+      })
+      try {
+        await failurePage.goto(page.url())
+        await failurePage.waitForLoadState('networkidle')
+        const original = await failurePage.evaluate(async () => (await fetch('/api' + location.pathname)).json())
+        let forkId = '', deletedId = ''
+        await failurePage.route('**/api/ai/recipe/translate', route => route.fulfill({ json: { recipe: { ...route.request().postDataJSON().recipe, title: 'Μετάφραση' }, warnings: [], mode: 'live', targetLanguage: 'el' } }))
+        await failurePage.route('**/api/recipes/**', async route => {
+          const request = route.request(), url = new URL(request.url())
+          if (request.method() === 'POST' && url.pathname.endsWith('/fork')) {
+            const response = await route.fetch()
+            forkId = (await response.json()).id
+            await route.fulfill({ response })
+          } else if (request.method() === 'PUT') {
+            await route.fulfill({ status: 400, json: { statusMessage: 'Translation save rejected for test.' } })
+          } else {
+            if (request.method() === 'DELETE') deletedId = url.pathname.split('/').pop()
+            await route.continue()
+          }
+        })
+        await failurePage.locator('.more-menu > summary').click()
+        await failurePage.getByRole('button', { name: 'Translate recipe', exact: true }).click()
+        const panel = failurePage.locator('form[aria-labelledby="translate-title"]')
+        await panel.getByRole('button', { name: 'Translate', exact: true }).click()
+        await panel.getByRole('alert').filter({ hasText: 'Your recipe is untouched.' }).waitFor()
+        assert(forkId && deletedId === forkId, 'Failed fork PUT must request cleanup of that fork')
+        const removed = await context.request.get(base + '/api/recipes/' + forkId)
+        assert(removed.status() === 404, 'Failed fork must actually be removed from the database')
+        await panel.getByRole('radio', { name: 'Replace this recipe', exact: true }).check()
+        await panel.getByRole('button', { name: 'Try again', exact: true }).click()
+        await panel.getByRole('alert').filter({ hasText: 'Your recipe is untouched.' }).waitFor()
+        const unchanged = await (await context.request.get(base + '/api/recipes/' + original.id)).json()
+        assert(JSON.stringify(unchanged) === JSON.stringify(original), 'Failed replacement must leave the complete original unchanged')
+        await assertLayout(failurePage, viewport, 'translation save error')
+        await shot(failurePage, viewport, 'translation-save-error', panel)
+        assert(unexpected.length === 0, 'Unexpected errors during failure paths: ' + unexpected.join(', '))
+      } finally { await failurePage.close() }
+    })
+
     verifyClean()
   } finally {
     await context.close()
@@ -962,7 +1072,7 @@ async function main() {
   } finally {
     await browser.close()
   }
-  console.log(`\nSteps: ${report.steps} · assertions: ${report.assertions} · screenshots: ${report.screenshots.length} (docs/screenshots/e2e-flow/) · ${((Date.now() - started) / 1000).toFixed(1)}s`)
+  console.log(`\nSteps: ${report.steps} · assertions: ${report.assertions} · screenshots: ${report.screenshots.length} (${SHOTS}) · ${((Date.now() - started) / 1000).toFixed(1)}s`)
   if (report.failures.length) {
     console.log('FAILED:\n  ' + report.failures.join('\n  '))
     process.exit(1)
