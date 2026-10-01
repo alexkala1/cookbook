@@ -10,6 +10,7 @@ import {
 } from '#shared/culinary/conductor'
 import type { SeasonInfo, SeasonStatus } from '#shared/culinary/seasonality'
 import type { DietaryAudit, Guest } from '#shared/culinary/dietary'
+import { recommendPairingForMenu } from '#shared/culinary/beverage-pairings'
 import { chefBriefing, dayPrefix, milestones } from '../../utils/chef-briefing'
 
 type Serve = {
@@ -149,6 +150,7 @@ const rows = computed(() =>
       ].sort((a, b) => a.start - b.start || (a.kind === 'serve' ? -1 : 1))
     : []
 )
+const menuPairings = computed(() => plan.value ? recommendPairingForMenu(plan.value.serves.filter(serve => serve.course !== 'beverage' && serve.course !== 'side').slice().sort((a, b) => a.offset - b.offset).map(serve => ({ title: serve.recipeTitle, course: serve.course }))) : [])
 const briefing = computed(() => plan.value ? chefBriefing(plan.value, ovens.value, { names: tableGuests.value.map(guest => guest.name), audit: audit.value }) : [])
 const keyTimes = computed(() => plan.value ? milestones(plan.value) : [])
 const milestoneIcon = { start: 'i-lucide-play', oven: 'i-lucide-heater', serve: 'i-lucide-utensils' } as const
@@ -393,6 +395,17 @@ async function conduct() {
         </div>
         <p v-if="error" role="alert" class="notice mt-3">{{ error }}</p>
         <p v-for="(line, i) in briefing" :key="i" class="mt-3 max-w-3xl text-lg leading-relaxed">{{ line }}</p>
+        <div v-if="menuPairings.length" class="mt-6" data-testid="beverage-pairings">
+          <h4 class="text-sm font-semibold uppercase tracking-wide text-muted">What to pour</h4>
+          <ul class="mt-2 grid gap-2 sm:grid-cols-2">
+            <li v-for="item in menuPairings" :key="item.title + item.course" class="rounded-xl border border-line p-3">
+              <p class="text-sm text-muted">{{ item.course ? courseLabels[item.course as ConductorCourse] + ': ' : '' }}{{ item.title }}</p>
+              <p class="font-serif text-lg">{{ item.pairing.beverage.name }} <span class="text-sm text-muted">· {{ item.pairing.beverage.greekName }}</span></p>
+              <p class="text-sm">{{ item.pairing.beverage.region }} · serve at {{ item.pairing.beverage.servingTempC }} °C</p>
+              <p class="text-sm text-muted">Non-alcoholic: {{ item.pairing.nonAlcoholic.name }}</p>
+            </li>
+          </ul>
+        </div>
         <h4 class="mt-6 text-sm font-semibold uppercase tracking-wide text-muted">Key times</h4>
         <ul class="mt-2 divide-y divide-espresso/10" aria-label="Key times">
           <li v-for="item in keyTimes" :key="item.key" class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3 py-2.5">
