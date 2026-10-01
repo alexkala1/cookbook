@@ -224,6 +224,11 @@ Unlike generic US apps that assume a single big-box supermarket with numbered ai
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
+**The Κάβα (Cellar & Beverages) section:** `shared/culinary/grocery.ts` adds `kava` as a fifth entry in `marketSections` (after `supermarket`), with `sectionInfo.kava = { name: 'Cellar & Beverages', localizedName: 'Κάβα', storeType: 'kava_cellar', category: 'beverage' }`. `kava_cellar` was already in the `grocery_items.store_destination` enum, which is plain `text` in SQLite, so no migration is needed.
+- **Catalog:** four `group: true` entries (`greek_wine`, `greek_spirit`, `beer`, `greek_drink`) hold English and folded Greek stems for the Greek grape varieties, tsipouro/ouzo/raki/Metaxa/mastiha, lager/pilsner/ale and Greek brands, and mountain tea/soumada. `group` stops different bottles merging into one line. Short words such as `ale` and `fix` are whole-name (`=`) terms so "Aleppo pepper" does not match. Longest term wins, so "red wine vinegar" stays in the supermarket; the old generic wine/ouzo terms were removed from the supermarket entry to avoid ties.
+- **UI:** `app/components/icons/market/IconKava.vue` (wine glass) is registered in `vendorIcon` in `MarketShoppingList.vue`. `routeShoppingList` gives the Κάβα its own "Cellar & beverages" aisle in one-stop mode.
+- **Dinner integration:** `menuShoppingDrinks()` in `shared/culinary/beverage-pairings.ts` returns each distinct alcoholic pairing once. The "Add these drinks to my shopping list" toggle on `/meal-plan` passes them as the `drinks` prop; `/api/grocery/generate` accepts a `drinks: [{ name }]` array and adds them as a synthetic `beverage` course (one piece each). Tests: `tests/market-kava.test.ts`.
+
 ### 3. Commercial Pack-Size Rounding & Leftover Waste Prevention
 Recipes call for exact culinary grams, but stores sell packaged goods:
 - **Pack-Size Reality:**
@@ -253,13 +258,23 @@ Recipes call for exact culinary grams, but stores sell packaged goods:
 
 Good cooking doesn't end when the meal is plated:
 - **Food Safety Guidelines:**
-  - Safe refrigeration shelf-life based on USDA / EFSA standards (e.g., cooked poultry: 3-4 days; seafood: 2 days).
-  - Freezer longevity and vacuum-seal recommendations.
+  - Safe refrigeration shelf-life from USDA / FoodSafety.gov and UK FSA guidance, inferred from the recipe: rice and grains 1 day, seafood 2, meat and poultry 3, everything else 4 (at ≤4°C).
+  - Freezer-friendliness and best-texture months (1 for rice and pastry, 2 for seafood, 3 otherwise); none for egg-lemon and custard dishes. The freezer time is a quality guide, not a safety expiry.
 - **Texture-Preserving Reheating:**
   - Prevents the dreaded "rubbery microwave syndrome":
-    - *Crispy items (pizza, fried chicken, pastries):* "Reheat at 190°C in an oven or air fryer for 5-7 minutes. Do not microwave."
-    - *Stews and braises:* "Reheat gently on stovetop with 2 tbsp of water/broth to loosen gelatin."
-    - *Pasta:* "Reheat in a skillet with a splash of water and a dab of butter to re-emulsify the sauce."
+    - *Crispy items (pies, pastries, fried foods):* "Reheat uncovered at 190°C in an oven or air fryer; start checking at 5-8 minutes. Do not microwave."
+    - *Stews and braises:* "Reheat gently on the stovetop with 2-3 tbsp of water/broth to loosen gelatin."
+    - *Pasta and starch:* "Reheat in a skillet with a splash of water and a dab of butter to re-emulsify the sauce"; baked pasta in a covered 175°C oven.
+    - *Rice and grains:* covered microwave with a little water, stirred midway, reheated once.
+    - *Soups and broths:* gentle stovetop heat; egg-lemon soups are never boiled hard.
+    - *Vegetable dishes (ladera):* 160°C oven, then fresh olive oil.
+    - Everything else: covered oven at 175°C. Every method ends with "check the centre reaches 74°C"; the temperatures are appliance settings, not safe internal temperatures.
+
+### Implementation
+- **Engine:** `shared/culinary/storage-reheating.ts` is a pure, deterministic module. `inferStorageReheating(recipe)` classifies by title, then tags, description and method into seven categories (`crispy`, `braise_stew`, `pasta_starch`, `rice_grains`, `soup_broth`, `vegetable_ladera`, `general`), with named dishes outranking generic ingredients (giouvetsi is a braise, not pasta). It returns `{ category, fridgeLifeDays, freezerFriendly, freezerLifeMonths, storageTips, reheating }`. `isStorageReheatingApplicable` hides it for drinks, cocktails, salads and smoothies. Design and sources: `docs/plans/storage-reheating.md`.
+- **Card:** `app/components/RecipeStorageReheatingCard.vue` renders the advice, with a `kitchen` prop for the high-contrast Kitchen Mode theme and a collapsible "Safe storage tips" list with source links.
+- **Placement:** on the recipe page (`app/pages/recipes/[id]/index.vue`) and in the finish dialog of Kitchen Mode (`app/pages/recipes/[id]/cook.vue`, heading "Leftovers & Reheating"), shown after the journal and pantry prompts. There is no separate finish-prompt component.
+- **Tests:** `tests/storage-reheating.test.ts`.
 
 ---
 
@@ -323,3 +338,30 @@ Greek and Mediterranean cooking is profoundly seasonal. A tomato salad in August
   - *Winter Tomatoes:* *"Fresh tomatoes lack summer sunshine sugars and natural glutamates. Fix: Add 1 tsp double-concentrated tomato paste, 1/4 tsp sugar, and 1 tsp red wine vinegar to restore umami balance."*
   - *Winter Strawberries / Stone Fruit:* *"Fruit is underripe and tart. Fix: Macerate in 2 tbsp orange juice and a splash of Greek Metaxa or honey for 30 minutes before assembling dessert."*
   - *Seasonal Green Foraging Guide:* Suggests which wild greens (*χόρτα: βλήτα, ραδίκια, σταμναγκάθι, ζοχοί*) are currently in peak season at the local Laiki Agora.
+
+---
+
+## 17. Feature 17: Heirloom MCP Server (Ecosystem)
+
+External agents (Claude Desktop, Antigravity, Cursor, and any MCP client) can drive the cookbook through `server/mcp/index.ts`, a Model Context Protocol server built with `@modelcontextprotocol/sdk` (`McpServer`, name `heirloom`, version 1.0.0).
+
+- **Transport and launch:** stdio only (`StdioServerTransport`). `package.json` maps `"mcp": "tsx server/mcp/index.ts"`, so `npm run mcp --silent` or `pnpm mcp` starts it. Standard output carries only protocol messages: the `--silent` flag is required with npm because npm's own banner would corrupt the stream. Status and fatal errors go to standard error.
+- **Storage:** it opens the same SQLite database as the app through `server/db`, honouring `DATABASE_URL`, and reuses the app's utilities (`getRecipe`, `listRecipes`, `saveRecipe`, `listPantry`, `savePantry`, `pantryMatches`), so validation, unit merging, storage inference and shelf-life estimates match the web UI.
+- **Tools (8):**
+
+| Tool | Notes |
+| :--- | :--- |
+| `heirloom_fetch_source` | Reads a YouTube video (title, author, description, transcript via the player caption track with an Innertube fallback) or a web page (title, JSON-LD, first 10,000 characters of text) through `safeFetch`. Read-only; the agent does the interpretation. |
+| `heirloom_save_recipe` | Create, or update when `id` is a UUID. Runs `enrichScience`, then `recipeCreateSchema` validation (including safe-temperature rules). |
+| `heirloom_list_recipes` | Filters: `search`, `cuisine`, `type`, `difficulty`, `isFavorite`, `limit` (1-100, default 50). |
+| `heirloom_get_recipe` | Full recipe by id. |
+| `heirloom_delete_recipe` | Hard delete by id; errors if it does not exist. |
+| `heirloom_list_pantry` | All stock across the four locations. |
+| `heirloom_upsert_pantry` | Validated by the shared `pantryInput` schema; merges compatible units. |
+| `heirloom_match_pantry` | Same ranking as "Cook With What I Have". |
+
+- **Errors:** each handler catches failures and returns `{ error }` with `isError: true`, so a bad call never crashes the server.
+- **Trust:** there is no authentication because the process is local and started by the agent. The write tools have full effect on your database, and `heirloom_fetch_source` fetches arbitrary URLs. Back up before bulk edits.
+- **Client config:** see "Connect an AI agent (MCP)" in `docs/USER_GUIDE.md` for the `mcpServers` JSON.
+- **Tests:** `tests/mcp-server.test.ts` (needs a migrated and seeded database).
+

@@ -11,9 +11,11 @@ A place for recipes worth passing down. Start with a dish you love, check the de
 - [Plan dinner backwards](#plan-dinner-backwards)
 - [Shop the Greek markets](#shop-the-greek-markets)
 - [Keep a useful pantry](#keep-a-useful-pantry)
+- [Store and reheat leftovers](#store-and-reheat-leftovers)
 - [Cook for your guests](#cook-for-your-guests)
 - [Keep the memory](#keep-the-memory)
 - [Privacy and your AI keys](#privacy-and-your-ai-keys)
+- [Connect an AI agent (MCP)](#connect-an-ai-agent-mcp)
 - [Host your own cookbook](#host-your-own-cookbook)
 - [When something does not work](#when-something-does-not-work)
 
@@ -184,6 +186,7 @@ Heirloom's grocery engine groups compatible quantities across a menu and routes 
 | Butcher · Χασάπης | Meat, with Greek counter phrases for recognized cuts and preparation |
 | Bakery · Φούρνος | Bread and recognized bakery supplies |
 | Supermarket · Σούπερ μάρκετ | Dairy, dry goods, packaged ingredients and unrecognized items |
+| Cellar · Κάβα | Wine, spirits, beer and traditional Greek drinks |
 
 The result can include package-size suggestions, surplus ideas and advance-prep alerts. Review the units and notes: unlike measures remain separate when a density is unknown. These are shopping categories, not live stock checks, map directions or opening hours. Routing currently targets Greek markets. Pantry deduction is optional and off by default; see [Skip what you already have](#skip-what-you-already-have).
 
@@ -224,11 +227,17 @@ Select **Share** for three options:
 
 **Copy shopping list** remains available for plain text.
 
+### Buy drinks at the Κάβα
+
+Wine, spirits, beer and traditional drinks have their own **Cellar & Beverages · Κάβα** section, with a wine-glass icon, shown after the Supermarket. It recognizes Greek wines (Assyrtiko, Moschofilero, Malagousia, Xinomavro, Agiorgitiko, Vinsanto, Muscat, Retsina, Savatiano, Vidiano, or simply "wine" / κρασί), spirits (tsipouro, tsikoudia, ouzo, raki, Metaxa, mastiha), beer (lager, pilsner, ale, Mythos, Nissos, Septem, Fix, μπύρα) and drinks such as Greek mountain tea and soumada, in English or Greek. Cooking ingredients that merely contain the word, such as wine vinegar, stay with the Supermarket. If an item lands in the wrong place, move it with **Shop at**.
+
+On the **Dinner** page you can add the plan's drinks in one tap. Under **What to pour**, select **Add these drinks to my shopping list**. Each distinct alcoholic pairing is added to the Market shopping list as one bottle (for example Ouzo, Xinomavro and Vinsanto / Muscat of Samos) and appears under Κάβα. If the list is already showing, it refreshes at once. Select the button again (it then reads **Drinks are on your shopping list**) to remove the drinks. Changing the menu clears the choice, so confirm it again for the new menu. Non-alcoholic suggestions are not added; buy those with your other shopping. Quantities are always one bottle, so adjust for your guests in the shop.
+
 ### Choose your own shopping route
 
-**Market Route** starts with the Greek destination split. Use **Shop at** beside an item to move it to Laiki, Butcher, Bakery or Supermarket. For example, move feta to Laiki or meat to Supermarket. Empty sections disappear and new ones appear as needed; quantities, counter phrases, checkmarks and package guidance travel with the item.
+**Market Route** starts with the Greek destination split. Use **Shop at** beside an item to move it to Laiki, Butcher, Bakery, Supermarket or Cellar. For example, move feta to Laiki or meat to Supermarket. Empty sections disappear and new ones appear as needed; quantities, counter phrases, checkmarks and package guidance travel with the item.
 
-Select **One-Stop Supermarket** to consolidate everything under Supermarket, with Produce, Meat counter, Bakery, and Dairy/pantry/other aisle headings based on the original classification. These are broad shopping aids, not a particular store's floor plan. Destination selectors are disabled in this mode. Switch back to **Market Route** to restore and edit your custom destinations. Checkmarks survive mode changes, and **Copy shopping list** always exports the route or supermarket aisles currently displayed.
+Select **One-Stop Supermarket** to consolidate everything under Supermarket, with Produce, Meat counter, Bakery, Cellar & beverages, and Dairy/pantry/other aisle headings based on the original classification. These are broad shopping aids, not a particular store's floor plan. Destination selectors are disabled in this mode. Switch back to **Market Route** to restore and edit your custom destinations. Checkmarks survive mode changes, and **Copy shopping list** always exports the route or supermarket aisles currently displayed.
 
 Checkoffs, destination overrides and shopping mode are local to the currently displayed list. Regenerating, leaving or reloading the page, or changing dinner inputs resets them. Copy the list into your notes before heading out if you need a lasting checklist. Each successful generation saves a new list on the server, but this view does not retrieve earlier lists or save checkmarks and destination changes back to them. Use the **Deduct pantry stock** checkbox, or review your pantry yourself, before buying.
 
@@ -253,6 +262,36 @@ Choose **Cook With What I Have** to rank saved recipes by ingredient completenes
 **The current Done action leaves Kitchen Mode; it does not subtract ingredients from the pantry.** There is no automatic cook-completion deduction in this release. Keep inventory current yourself: remove a used-up item, or remove its old entry and re-add the remaining quantity, preserving its location and expiry date. Adding the remainder without removing the old entry would increase stock instead.
 
 For example, if you used 300 g from 500 g of split peas, replace that pantry entry with 200 g. Do this once after cooking, based on what you actually used rather than the original recipe's serving count.
+
+## Store and reheat leftovers
+
+Open a recipe and scroll to **Storage & Texture-Preserving Reheating**. The same card appears as **Leftovers & Reheating** at the bottom of the Kitchen Mode finish screen, below the journal and pantry prompts. It is hidden for drinks, cocktails, salads and smoothies.
+
+**How long it keeps.** The card gives a refrigerator limit at 4 °C or colder, based on USDA (FoodSafety.gov) and UK Food Standards Agency guidance and on what the recipe contains:
+
+| Leftover | Fridge |
+| --- | --- |
+| Rice and grain dishes | 1 day |
+| Fish and seafood | 2 days |
+| Meat and poultry | 3 days |
+| Vegetable, bean, pastry and other dishes | 4 days |
+
+It also says whether the dish is freezer-friendly and for how many months it keeps its best texture (about 1 to 3). That freezer time is a quality guide, not a safety expiry. Egg-lemon soups and custard fillings are marked as not suited to freezing because they split. **Safe storage tips** lists the basics: chill in shallow portions within 2 hours (1 hour above 32 °C), label with the date, reheat only what you will eat, and thaw in the fridge.
+
+**How to reheat.** Heirloom picks a method from the dish name, tags, ingredients and method. It shows the appliance, a temperature or time as a starting estimate, and a short note on why it works:
+
+| Dish | Method |
+| --- | --- |
+| Crispy pastry and fried foods (spanakopita, baklava, roast potatoes) | Oven or air fryer at 190 °C, uncovered, starting to check after 5 to 8 minutes. Do not microwave. |
+| Braises and stews (kokkinisto, stifado, bean stews) | Stovetop on low-medium heat with 2 to 3 tbsp of water or broth to loosen the sauce. |
+| Pasta and starch (pasta, orzo, pastitsio) | Skillet with a splash of water and a dab of butter or olive oil to bring the sauce back together. Baked pasta goes in a covered 175 °C oven. |
+| Rice and grains | Microwave with 1 to 2 tbsp of water per portion under a vented cover, stirring midway. Reheat once only. |
+| Soups and broths (including avgolemono) | Stovetop, stirring. Egg-lemon soup is warmed gently and never boiled hard. |
+| Vegetable dishes (ladera, gemista, briam) | Oven at 160 °C, then a fresh drizzle of olive oil. |
+
+Anything else gets a generic covered oven reheat at 175 °C.
+
+Guidance assumes the food was cooked properly and chilled promptly. In every case, check with a food thermometer that the centre reaches 74 °C; time alone does not prove it is safe. Reheating cannot make food that was left out too long safe, so when in doubt, throw it out.
 
 ## Cook for your guests
 
@@ -288,6 +327,45 @@ Keys are stored **unencrypted in this browser's localStorage**. Anyone with acce
 When a live model is used, source text and relevant request content leave Heirloom for that provider. Provider retention and charges follow your account's terms. With no live key, structured recipe metadata and labeled offline fallbacks can still work; fetching a URL or video still needs network access. Camera frames stay on-device.
 
 The PWA can retain previously visited pages and selected read responses, including personal data, for offline use. Mutations and AI/BYOK calls are not queued or cached as offline work. Cached reads may be stale. On a shared device, clear the site's browser storage as well as saved keys. Installation and service-worker features require HTTPS or localhost. Updates offer **Reload** or **Later** outside Kitchen Mode.
+
+## Connect an AI agent (MCP)
+
+Heirloom includes a Model Context Protocol (MCP) server so an agent such as Claude Desktop, Antigravity or Cursor can read and write your cookbook and pantry. It runs on your own computer over stdio, uses the same database as the app, and makes no network connection to the agent. Anything you configure it to do is saved to your cookbook as if you had done it yourself, so connect only agents you trust.
+
+From a checkout of Heirloom with dependencies installed, start it with:
+
+```bash
+npm run mcp --silent
+# or: pnpm mcp
+```
+
+You normally do not run this by hand; the agent starts it. Add this to the agent's MCP settings (for Claude Desktop that is `claude_desktop_config.json`), replacing the path with your checkout:
+
+```json
+{
+  "mcpServers": {
+    "heirloom": {
+      "command": "npm",
+      "args": ["--prefix", "/home/you/heirloom", "run", "mcp", "--silent"]
+    }
+  }
+}
+```
+
+Keep `--silent`. Without it npm prints a banner on standard output, which breaks the connection. If your agent cannot find `npm`, use the full path to it. The server prints `Heirloom MCP server running on stdio` on standard error when it is ready. To use a different database file, set `DATABASE_URL` in the config's `env`.
+
+| Tool | What it does |
+| --- | --- |
+| `heirloom_fetch_source` | Fetches a recipe web page (title, schema.org Recipe data and page text) or a YouTube video (title, author, description and transcript when available) so the agent can read it. |
+| `heirloom_save_recipe` | Creates a recipe, or updates one when you pass its `id`. Input is validated and enriched with the cooking-science notes. |
+| `heirloom_list_recipes` | Searches saved recipes by text, cuisine, type, difficulty or favorites. |
+| `heirloom_get_recipe` | Returns one recipe in full: ingredients, timed steps and science notes. |
+| `heirloom_delete_recipe` | Permanently deletes a recipe by `id`. |
+| `heirloom_list_pantry` | Lists pantry, fridge, freezer and spice stock with quantities and expiry dates. |
+| `heirloom_upsert_pantry` | Adds or updates pantry items, normalizing names and merging compatible units. |
+| `heirloom_match_pantry` | Ranks saved recipes by what your pantry can cover and lists what is missing. |
+
+Deleting and saving have no undo, so [back up](#back-up-before-updating) first if an agent will edit many recipes. The fetch tool reads whatever URL it is given, so it carries the same caution as importing a recipe from the web.
 
 ## Host your own cookbook
 
