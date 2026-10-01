@@ -1,5 +1,31 @@
 import { difficulties, recipeCreateSchema, recipeTypes } from '../validation'
 
+export function repairTruncatedJson(str: string): string {
+  let s = str.trim()
+  try { JSON.parse(s); return s } catch { /* Repair only incomplete JSON. */ }
+  let inString = false, escaped = false, lastBrace = -1
+  let stack: string[] = [], completedStack: string[] = []
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+    } else if (ch === '"') inString = true
+    else if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === '}' || ch === ']') {
+      if (stack.pop() !== ch) return s
+      if (ch === '}') { lastBrace = i; completedStack = [...stack] }
+    }
+  }
+  // Drop the unfinished tail after the last complete object, ignoring braces in strings.
+  if (lastBrace >= 0) { s = s.slice(0, lastBrace + 1); stack = completedStack }
+  else if (inString) return s
+  // Close containers in nesting order, rather than placing all ] before all }.
+  return s + stack.reverse().join('')
+}
+
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : ''
 const numeric = (value: unknown) => typeof value === 'number' ? value : typeof value === 'string' ? Number.parseFloat(value.match(/[+-]?(?:\d+\.?\d*|\.\d+)/)?.[0] ?? '') : NaN

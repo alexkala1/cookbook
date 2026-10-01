@@ -1,7 +1,7 @@
 import { createError, getHeader, type H3Event } from 'h3'
 import { z } from 'zod'
 import { recipeCreateSchema } from '../validation'
-import { sanitizeAiDraft } from './sanitize-draft'
+import { repairTruncatedJson, sanitizeAiDraft } from './sanitize-draft'
 
 const providers = ['openai', 'anthropic', 'gemini', 'groq', 'ollama'] as const
 
@@ -168,12 +168,8 @@ export function aiClient(event: H3Event) {
         }
 
         const data = JSON.parse(text)
-        if (data.choices?.[0]?.finish_reason === 'length') {
-          throw createError({
-            statusCode: 422,
-            statusMessage: 'The recipe draft was cut off because it exceeded the model’s response limit. Try importing with shorter notes or a smaller section.'
-          })
-        }
+        const isTruncated = data.choices?.[0]?.finish_reason === 'length'
+        const truncationError = () => createError({ statusCode: 422, statusMessage: 'The recipe draft was cut off because it exceeded the model’s response limit. Try importing with shorter notes or a smaller section.' })
         const content =
           provider === 'anthropic'
             ? data.content
@@ -187,9 +183,15 @@ export function aiClient(event: H3Event) {
                 : data.choices?.[0]?.message?.content
         let parsed: unknown
         try {
-          parsed = JSON.parse(extractJson(content))
+          const json = extractJson(content)
+          try { parsed = JSON.parse(json) }
+          catch (error) {
+            if (!isTruncated) throw error
+            parsed = JSON.parse(repairTruncatedJson(json))
+          }
         } catch {
           console.error('[aiClient] JSON parse failed:', content)
+          if (isTruncated) throw truncationError()
           throw createError({ statusCode: 502, statusMessage: `${name} returned an unreadable response that could not be parsed as JSON. Please retry.` })
         }
         let parseResult = schema.safeParse(parsed)
@@ -199,6 +201,7 @@ export function aiClient(event: H3Event) {
         }
         if (!parseResult.success) {
           console.error('[aiClient] Schema validation failed:', parseResult.error.format())
+          if (isTruncated) throw truncationError()
           throw createError({ statusCode: 502, statusMessage: `${name} generated a draft that did not match the expected recipe structure. Please retry.` })
         }
         return parseResult.data

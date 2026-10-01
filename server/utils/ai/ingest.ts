@@ -91,7 +91,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   let image: { data: string, mimeType: string } | undefined
   let captionsUnavailable = false
   let chapters: VideoChapter[] = [], cues: TranscriptCue[] = []
-  let task = 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.'
+  let task = 'Extract a concise, accurate recipe draft. Include ingredients with exact amounts/units, ordered cooking steps with duration and heat level, and essential equipment. Keep instructions clear, direct and actionable. Do not write lengthy sensory essays (science and cues are enriched automatically).'
   progress('Reading the source')
   if (request.kind === 'prompt') source = request.prompt
   else if (request.kind === 'ocr') {
@@ -175,7 +175,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     }
     if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Video has no accessible title, captions, or description. Paste your notes in Memory instead.' })
   }
-  if (captionsUnavailable) task += ' This video has no captions track, so the source is the creator\u2019s description. Reconstruct the method in order from its timestamp/chapter lines and the method, notes and ingredient lists it contains, and take proportions only from amounts the creator lists. Tag every step or amount you infer rather than read, by starting its notes with [Inferred from description]. Never present inferred detail as something the creator said.'
+  if (captionsUnavailable) task += ' Reconstruct the method in order from the creator’s description and ingredient lists. Keep steps clear and concise.'
   const recipeChapters = chapters.filter(chapter => chapter.isRecipe)
   if (recipeChapters.length >= 2) {
     const recipes: RecipeInput[] = [], sources: string[] = [], missingTranscript: string[] = []
@@ -187,7 +187,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
       const scopedSource = [chapter.sourceText, transcript].filter(Boolean).join('\n\n')
       sources.push(`${chapter.title}\n${scopedSource}`)
       const structured = client.mode === 'fallback' ? structuredDraft(scopedSource, chapter.title) : null
-      const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', `Chapter: ${chapter.title}\n${scopedSource}`.replace(/\s+/g, ' ').trim().slice(0, 12000), () => fallbackRecipe(scopedSource, chapter.title), signal)
+      const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', `Chapter: ${chapter.title}\n${scopedSource}`.replace(/\s+/g, ' ').trim().slice(0, 8000), () => fallbackRecipe(scopedSource, chapter.title), signal)
       const sanitized = { ...recipe, originalSaltType: null }
       delete sanitized.imageUrl
       delete sanitized.rating
@@ -204,7 +204,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   const promptSource = request.kind === 'video' && draftSource && draftSource !== source ? `=== VIDEO DESCRIPTION ===\n${draftSource}\n\n=== VIDEO TRANSCRIPT ===\n${source}` : source
   // Keep original line breaks for deterministic section parsing; compact only model input.
   const modelSource = request.kind === 'ocr' ? promptSource : promptSource.replace(/\s+/g, ' ').trim()
-  const recipe = extracted || structured || await client.generate(recipeCreateSchema, task, modelSource.slice(0, 12000), () => fallbackRecipe(source, title || undefined), signal, image)
+  const recipe = extracted || structured || await client.generate(recipeCreateSchema, task, modelSource.slice(0, 8000), () => fallbackRecipe(source, title || undefined), signal, image)
   const sanitized = { ...recipe, originalSaltType: extracted?.originalSaltType ?? null }
   if (!extracted) {
     delete sanitized.imageUrl

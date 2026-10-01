@@ -5,7 +5,7 @@ import csrf from '../server/middleware/csrf'
 import { aiClient, humanizeProviderError } from '../server/utils/ai/client'
 import { recipeCreateSchema } from '../server/utils/validation'
 import { readRecipeStream } from '../app/utils/sse'
-import { sanitizeAiDraft } from '../server/utils/ai/sanitize-draft'
+import { repairTruncatedJson, sanitizeAiDraft } from '../server/utils/ai/sanitize-draft'
 afterEach(() => vi.unstubAllGlobals())
 const headers = { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }
 it('cleans common recipe deviations without mutating source or weakening the API schema', () => {
@@ -60,14 +60,16 @@ it('humanizes token-limit errors without exposing organization details', () => {
   expect(humanizeProviderError('groq', 413, 'Request too large for organization private-id', 'test')).toContain('Try importing a smaller section')
   expect(humanizeProviderError('groq', 400, 'reduce your message size', 'test')).not.toContain('private-id')
 })
-it('compacts and caps model-facing ingest notes at 12,000 characters', async () => {
+it('compacts and caps ingest notes at 8,000 characters with a full Groq generation budget', async () => {
   const fetchSpy = vi.fn(async () => success())
   vi.stubGlobal('fetch', fetchSpy)
   const handle = toWebHandler(createApp().use(stream))
-  const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Soup  notes\n\n' + 'x'.repeat(19000) }) }))
+  const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test', 'x-byok-provider': 'groq' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Soup  notes\n\n' + 'x'.repeat(19000) }) }))
   await readRecipeStream(response, vi.fn())
   const sent = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
-  expect(sent.messages[1].content).toHaveLength(12000)
+  expect(sent.messages[1].content).toHaveLength(8000)
+  expect(sent.max_tokens).toBe(2048)
+  expect(sent.messages[0].content).toContain('science and cues are enriched automatically')
   expect(sent.messages[1].content).toMatch(/^Soup notes x/)
   expect(sent.messages[1].content).not.toMatch(/\s{2,}/)
 })
@@ -154,11 +156,33 @@ it.each([500, 502, 503])('preserves actionable provider HTTP %s errors through S
   const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test', 'x-byok-provider': 'groq' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Make lemon chicken' }) }))
   await expect(readRecipeStream(response, vi.fn())).rejects.toThrow(`Groq error (${status}): Service temporarily unavailable`)
 })
-it.each([JSON.stringify(recipe), '{"title":"Soup'])('rejects token-truncated output before accepting or parsing it', async content => {
+it.each([
+  JSON.stringify(recipe),
+  '{"title":"Soup","description":"Warm","ingredients":[{"name":"salt","amount":"to taste"},{"name":"unfinished',
+  '{"title":"Soup","description":"Warm","steps":[{"instruction":"Simmer.","heatLevel":"med"},{"instruction":"unfinished'
+])('salvages complete or repairable token-truncated drafts', async content => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content } }] }))))
+  const response = await request()
+  expect(response.status).toBe(200)
+  const draft = await response.json()
+  expect(recipeCreateSchema.safeParse(draft).success).toBe(true)
+  expect(draft.title).toBe('Soup')
+  expect(JSON.stringify(draft)).not.toContain('unfinished')
+  if (draft.ingredients) expect(draft.ingredients).toEqual([{ name: 'salt', amount: 0, unit: 'item', sortOrder: 1 }])
+  if (draft.steps) expect(draft.steps).toEqual([{ stepNumber: 1, instruction: 'Simmer.', heatLevel: 'medium' }])
+})
+it.each(['unrepairable garbage', '{"title":"Soup', '{"title":42'])('rejects unrepairable or invalid token-truncated output', async content => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content } }] }))))
   const response = await request()
   expect(response.status).toBe(422)
   expect((await response.json()).statusMessage).toContain('exceeded the model’s response limit')
+})
+it('repairs nested containers while ignoring escaped quotes and braces inside strings', () => {
+  const nested = { items: [{ nested: { instruction: 'Use a "{quoted}" label and a trailing slash \\' } }] }
+  const complete = JSON.stringify(nested)
+  expect(repairTruncatedJson(complete)).toBe(complete)
+  expect(JSON.parse(repairTruncatedJson(complete.slice(0, -3)))).toEqual(nested)
+  expect(JSON.parse(repairTruncatedJson('{"title":"Soup","description":"Warm"'))).toEqual(recipe)
 })
 it.each([
   ['not JSON', '[aiClient] JSON parse failed:', 'could not be parsed as JSON'],
