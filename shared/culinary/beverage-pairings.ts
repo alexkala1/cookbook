@@ -66,6 +66,16 @@ export function recommendPairingForRecipe(recipe: PairingRecipe): Pairing {
   return build(fallback)
 }
 
+/** Shopping-list names for a menu's alcoholic pairings, one per distinct drink, in menu order. */
+export function menuShoppingDrinks(menu: MenuPairing[]): string[] {
+  const seen = new Map<string, string>()
+  for (const item of menu) {
+    const drink = item.pairing.beverage
+    if (drink.category !== 'non-alcoholic' && !seen.has(drink.id)) seen.set(drink.id, drink.name)
+  }
+  return [...seen.values()]
+}
+
 export type MenuPairing = { title: string, course?: string, pairing: Pairing }
 
 export function recommendPairingForMenu(recipes: { title: string, course?: string }[]): MenuPairing[] {

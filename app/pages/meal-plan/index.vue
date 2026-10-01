@@ -10,7 +10,7 @@ import {
 } from '#shared/culinary/conductor'
 import type { SeasonInfo, SeasonStatus } from '#shared/culinary/seasonality'
 import type { DietaryAudit, Guest } from '#shared/culinary/dietary'
-import { recommendPairingForMenu } from '#shared/culinary/beverage-pairings'
+import { menuShoppingDrinks, recommendPairingForMenu } from '#shared/culinary/beverage-pairings'
 import { chefBriefing, dayPrefix, milestones } from '../../utils/chef-briefing'
 
 type Serve = {
@@ -151,6 +151,11 @@ const rows = computed(() =>
     : []
 )
 const menuPairings = computed(() => plan.value ? recommendPairingForMenu(plan.value.serves.filter(serve => serve.course !== 'beverage' && serve.course !== 'side').slice().sort((a, b) => a.offset - b.offset).map(serve => ({ title: serve.recipeTitle, course: serve.course }))) : [])
+const shoppingDrinks = computed(() => menuShoppingDrinks(menuPairings.value))
+const addDrinks = ref(false)
+const drinksForList = computed(() => addDrinks.value ? shoppingDrinks.value : [])
+// A different menu means different drinks: ask again rather than silently carrying the choice over.
+watch(() => shoppingDrinks.value.join('|'), () => { addDrinks.value = false })
 const briefing = computed(() => plan.value ? chefBriefing(plan.value, ovens.value, { names: tableGuests.value.map(guest => guest.name), audit: audit.value }) : [])
 const keyTimes = computed(() => plan.value ? milestones(plan.value) : [])
 const milestoneIcon = { start: 'i-lucide-play', oven: 'i-lucide-heater', serve: 'i-lucide-utensils' } as const
@@ -405,6 +410,8 @@ async function conduct() {
               <p class="text-sm text-muted">Non-alcoholic: {{ item.pairing.nonAlcoholic.name }}</p>
             </li>
           </ul>
+          <button type="button" class="filter-pill mt-3 min-h-11" :aria-pressed="addDrinks" data-testid="add-drinks" @click="addDrinks = !addDrinks"><UIcon name="i-lucide-wine" class="size-5" aria-hidden="true" />{{ addDrinks ? 'Drinks are on your shopping list' : 'Add these drinks to my shopping list' }}</button>
+          <p v-if="addDrinks" role="status" class="mt-2 text-sm">{{ shoppingDrinks.join(', ') }} will appear under <span lang="el">Κάβα</span> in the Market shopping list below.</p>
         </div>
         <h4 class="mt-6 text-sm font-semibold uppercase tracking-wide text-muted">Key times</h4>
         <ul class="mt-2 divide-y divide-espresso/10" aria-label="Key times">
@@ -513,7 +520,7 @@ async function conduct() {
         </ol>
       </section>
 
-      <MarketShoppingList :courses="chosen" :servings="guestCount || undefined" />
+      <MarketShoppingList :courses="chosen" :servings="guestCount || undefined" :drinks="drinksForList" />
 
       <section aria-label="Seasonality">
         <h2>What’s in season · {{ monthNames[plan.month - 1] }}</h2>

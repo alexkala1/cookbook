@@ -15,6 +15,8 @@ const requestSchema = z.object({
   recipeIds: z.array(recipeId).min(1).max(12).optional(),
   menu: z.object({ appetizerId: recipeId.optional(), mainCourseId: recipeId.optional(), dessertId: recipeId.optional(), beverageId: recipeId.optional() }).strict().optional(),
   servings: servings.optional(),
+  // Drinks to buy for the table (for example from the Dinner pairings); they route to the Κάβα like any other ingredient.
+  drinks: z.array(z.object({ name: z.string().trim().min(1).max(80) }).strict()).min(1).max(12).optional(),
   title: z.string().trim().min(1).max(200).optional()
 }).strict()
   .refine(value => [value.courses, value.recipeIds, value.menu].filter(Boolean).length === 1, 'Provide exactly one of courses, recipeIds, or menu')
@@ -26,8 +28,9 @@ export default defineEventHandler(async event => {
   const courses = input.courses ?? input.recipeIds?.map(id => ({ recipeId: id, course: 'main' as const, servings: undefined }))
     ?? menuIds.filter((row): row is [string, MenuCourse] => !!row[0]).map(([id, course]) => ({ recipeId: id, course, servings: undefined }))
   const menu = courses.map(row => ({ course: row.course, servings: row.servings ?? input.servings, recipe: getRecipe(row.recipeId) }))
-  const plan = buildGroceryList(menu)
-  const listId = randomUUID(), title = input.title ?? menu.map(row => row.recipe.title).join(' · ').slice(0, 200)
+  const drinks = input.drinks?.length ? [{ course: 'beverage' as const, servings: 1, recipe: { id: 'dinner-drinks', title: 'Dinner drinks', servings: 1, ingredients: input.drinks.map(drink => ({ name: drink.name, amount: 1, unit: 'piece' })) } }] : []
+  const plan = buildGroceryList([...menu, ...drinks])
+  const listId = randomUUID(), title = input.title ?? [...menu.map(row => row.recipe.title), ...(drinks.length ? ['Drinks'] : [])].join(' · ').slice(0, 200)
   const destinations = plan.sections.map(({ category: _category, items, ...section }) => ({
     ...section, items: items.map(item => ({ ...item, id: randomUUID() }))
   }))

@@ -15,7 +15,7 @@ export type MarketShoppingList = {
 }
 
 export function routeShoppingList(list: MarketShoppingList, overrides: Readonly<Record<string, MarketSection>> = {}, mode: ShoppingMode = 'market', order: readonly MarketSection[] = marketSections): MarketShoppingList {
-  const aisles: Record<MarketSection, string> = { laiki: 'Produce', chasapis: 'Meat counter', fournos: 'Bakery', supermarket: 'Dairy, pantry & other' }
+  const aisles: Record<MarketSection, string> = { laiki: 'Produce', chasapis: 'Meat counter', fournos: 'Bakery', supermarket: 'Dairy, pantry & other', kava: 'Cellar & beverages' }
   const items = list.destinations.flatMap(destination => destination.items.map(item => ({ ...item, source: destination.section })))
   if (mode === 'supermarket') items.sort((a, b) => marketSections.indexOf(a.source) - marketSections.indexOf(b.source))
   return { ...list, destinations: order.map(section => ({

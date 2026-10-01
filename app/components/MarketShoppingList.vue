@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
+import IconKava from './icons/market/IconKava.vue'
 import IconLaiki from './icons/market/IconLaiki.vue'
 import IconChasapis from './icons/market/IconChasapis.vue'
 import IconFournos from './icons/market/IconFournos.vue'
@@ -12,7 +13,7 @@ import { formatPriceBadge, type PriceBadge } from '../utils/market-prices'
 import { applyPantryStock } from '../utils/pantry-stock'
 import type { PriceResponse } from '../../server/utils/market-prices'
 
-const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean; importedList?: MarketShoppingList }>()
+const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean; importedList?: MarketShoppingList; drinks?: string[] }>()
 // An imported list (scanned from another device) is shown as-is: there is nothing to generate.
 const list = ref<MarketShoppingList | null>(props.importedList ?? null)
 const checked = ref<string[]>([])
@@ -133,6 +134,9 @@ async function setDeduct(on: boolean, box?: HTMLInputElement) {
   } finally { if (!disposed) pantryLoading.value = false }
 }
 
+// Adding or removing drinks on the Dinner page refreshes a list that is already showing.
+watch(() => props.drinks?.join('|') ?? '', () => { if (list.value && !props.importedList && !busy.value) void generate() })
+
 async function generate() {
   if (busy.value || copying.value) return
   busy.value = true
@@ -142,7 +146,7 @@ async function generate() {
   try {
     const result = await $fetch<MarketShoppingList>('/api/grocery/generate', {
       method: 'POST', signal: controller.signal,
-      body: { courses: props.courses.map(({ recipeId, course }) => ({ recipeId, course })), ...(props.servings ? { servings: props.servings } : {}) }
+      body: { courses: props.courses.map(({ recipeId, course }) => ({ recipeId, course })), ...(props.servings ? { servings: props.servings } : {}), ...(props.drinks?.length ? { drinks: props.drinks.map(name => ({ name })) } : {}) }
     })
     if (disposed) return
     list.value = result
@@ -158,7 +162,7 @@ async function generate() {
   } finally { if (!disposed) busy.value = false }
 }
 
-const vendorIcon: Record<MarketSection, Component> = { laiki: IconLaiki, chasapis: IconChasapis, fournos: IconFournos, supermarket: IconSupermarket }
+const vendorIcon: Record<MarketSection, Component> = { laiki: IconLaiki, chasapis: IconChasapis, fournos: IconFournos, supermarket: IconSupermarket, kava: IconKava }
 
 // Desktop and phones get different chrome (inline counter + Copy vs a sticky bottom bar), and only one of them is ever in the DOM.
 // Starts false so server and first client render agree; updated after mount.
