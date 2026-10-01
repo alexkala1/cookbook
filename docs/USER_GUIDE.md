@@ -146,6 +146,32 @@ For a starter-pack dinner, consider spanakopita, lamb with fava, then revani. Ma
 
 The Dinner page does not automatically run the guest audit. Check the same menu in **Guests** before buying ingredients.
 
+### Pour something Greek
+
+Each dish gets an authentic Greek drink suggestion, with a non-alcoholic alternative:
+
+| Dish | Pairing |
+| --- | --- |
+| Seafood, salads, feta, fried starters | Assyrtiko (Santorini), crisp and mineral |
+| Chicken, vegetarian dishes, light cheeses | Moschofilero (Mantineia), aromatic and light |
+| Pies, herb-forward dishes, cheesy pasta | Malagousia, round with stone fruit |
+| Lamb, beef, stifado, kokkinisto | Xinomavro (Naoussa), bold with high acid |
+| Moussaka, souvlaki, roasts, casseroles | Agiorgitiko (Nemea), velvety plum and cherry |
+| Baklava, galaktoboureko, honeyed pastries | Vinsanto or Muscat of Samos, sweet |
+| Mezedes, loukaniko, salted fish | Tsipouro or Tsikoudia |
+| Grilled octopus, fried kalamari | Ouzo |
+| Gyro, street food, grilled meats | Greek craft beer (Nissos, Septem, Chios, Fix, Mythos) |
+
+Non-alcoholic choices include Greek mountain tea with lemon and thyme honey, soumada (almond drink) and sparkling souroti with lemon peel. Every suggestion lists its region, tasting notes and serving temperature in °C.
+
+You will find pairings in three places:
+
+1. **Chef's briefing** ends with a sentence such as "Pour a crisp Santorini Assyrtiko for the starter, followed by a bold Naoussa Xinomavro with the lamb."
+2. **What to pour** in the plan lists each course with its drink, region, serving temperature and non-alcoholic option.
+3. **Recipe pages** show a **Greek pairing** note under the description (not on drink or cocktail recipes).
+
+Pairings come from the dish name, tags and ingredients, so an unusual title may get a general suggestion. Treat them as a starting point and drink responsibly.
+
 Once the schedule is displayed, find **Market shopping list** below the timeline and choose **Generate Market Shopping List**. It uses the selected courses and your optional guest count. Without a guest count, each recipe keeps its own serving quantity. Changing dinner inputs clears the schedule and shopping list; rebuild the schedule before generating a revised list.
 
 ## Shop the Greek markets
@@ -159,15 +185,44 @@ Heirloom's grocery engine groups compatible quantities across a menu and routes 
 | Bakery · Φούρνος | Bread and recognized bakery supplies |
 | Supermarket · Σούπερ μάρκετ | Dairy, dry goods, packaged ingredients and unrecognized items |
 
-The result can include package-size suggestions, surplus ideas and advance-prep alerts. Review the units and notes: unlike measures remain separate when a density is unknown. These are shopping categories, not live stock checks, map directions or opening hours. Routing currently targets Greek markets and **does not subtract pantry stock**.
+The result can include package-size suggestions, surplus ideas and advance-prep alerts. Review the units and notes: unlike measures remain separate when a density is unknown. These are shopping categories, not live stock checks, map directions or opening hours. Routing currently targets Greek markets. Pantry deduction is optional and off by default; see [Skip what you already have](#skip-what-you-already-have).
 
 ### Take the list shopping
 
 1. Build your dinner schedule, then select **Generate Market Shopping List** below its timeline. If generation fails, your schedule stays available; choose **Try again**.
 2. Read **Prepare ahead** before shopping. These alerts preserve preparation and advance-timing notes from your recipes.
 3. Shop by the displayed destination headings. Show the **At the counter** Greek phrase to the butcher when provided. Dairy appears under Supermarket, rather than a separate dairy destination.
-4. Check an item's box when bought. The count updates and the item is crossed out; its package recommendations and surplus tips stay readable. Uncheck it to put it back on your list.
+4. Check an item's box when bought. The count updates and the item is crossed out. Uncheck it to put it back on your list.
 5. Select **Copy shopping list** to copy a plain-text version grouped by destination, including prep alerts, Greek counter phrases, quantities, package suggestions, surplus tips and checked markers. A short confirmation appears. If clipboard permission is unavailable, select and copy the text offered below the button.
+
+### Scan compact rows
+
+Each item is one line: a checkbox, the quantity and name, and, for supermarket items, a price chip. Secondary advice sits behind a per-item **Details** disclosure so the list stays easy to scan. Open it for the Greek counter phrase, package size to buy, surplus tip, notes and preparation reminders. **Prepare ahead** is a disclosure too. On a phone, a sticky bar keeps your progress ("N of M items checked") in reach.
+
+### Compare supermarket prices
+
+Supermarket items quietly look up live shelf prices from [Posokanei](https://posokanei.gov.gr), the Greek government's price-comparison service. The chip shows the lowest single-retailer package price found and the retailer's name (for example Σκλαβενίτης, ΑΒ or My Market, whichever the service lists). Select the chip's tooltip or screen-reader label for the matched product.
+
+- Prices are a bonus. If the service is slow or unavailable, or finds no confident match, the item simply has no chip and no error appears.
+- The chip is the price of one matched package, not a cost for the quantity you need, and it is not a stock check. Confirm in the shop.
+- Lookups run for up to 30 items, three at a time, and results are reused for a day.
+- Prices are hidden from the printed list.
+
+### Skip what you already have
+
+Turn on **Deduct pantry stock** (the checkbox above the list) to deduct what your [pantry](#keep-a-useful-pantry) already holds. Covered items move into an **Already in your pantry** disclosure; partly covered items show a reduced quantity. If everything is covered, the list says so. An empty pantry deducts nothing and tells you. Expired stock is not counted. The choice is remembered on this device only and does not change your pantry.
+
+After shopping, **Restock pantry** adds the items you ticked to your pantry once. Storage places are a best guess, so review them on the Pantry page.
+
+### Share the list
+
+Select **Share** for three options:
+
+- **Share on WhatsApp** opens WhatsApp with the list as text.
+- **Send to phone** shows a QR code. Scan it with your phone to carry the list into the shop.
+- **Print or save PDF** prints only the list, with Prepare ahead opened. Controls and prices are left off.
+
+**Copy shopping list** remains available for plain text.
 
 ### Choose your own shopping route
 
@@ -175,11 +230,17 @@ The result can include package-size suggestions, surplus ideas and advance-prep 
 
 Select **One-Stop Supermarket** to consolidate everything under Supermarket, with Produce, Meat counter, Bakery, and Dairy/pantry/other aisle headings based on the original classification. These are broad shopping aids, not a particular store's floor plan. Destination selectors are disabled in this mode. Switch back to **Market Route** to restore and edit your custom destinations. Checkmarks survive mode changes, and **Copy shopping list** always exports the route or supermarket aisles currently displayed.
 
-Checkoffs, destination overrides and shopping mode are local to the currently displayed list. Regenerating, leaving or reloading the page, or changing dinner inputs resets them. Copy the list into your notes before heading out if you need a lasting checklist. Each successful generation saves a new list on the server, but this view does not retrieve earlier lists or save checkmarks and destination changes back to them. Review your pantry separately before buying.
+Checkoffs, destination overrides and shopping mode are local to the currently displayed list. Regenerating, leaving or reloading the page, or changing dinner inputs resets them. Copy the list into your notes before heading out if you need a lasting checklist. Each successful generation saves a new list on the server, but this view does not retrieve earlier lists or save checkmarks and destination changes back to them. Use the **Deduct pantry stock** checkbox, or review your pantry yourself, before buying.
 
 ## Keep a useful pantry
 
-Open **Pantry** and add the name, quantity, unit, storage location and optional expiry date. Filter by **All**, **Fridge**, **Freezer** or **Pantry**. Dated items are ordered soonest first; an item without an expiry date is not assumed to stay fresh indefinitely.
+Open **Pantry** and add the name, quantity, unit, storage location and optional expiry date. There are four storage locations: **Pantry**, **Fridge**, **Freezer** and **Spices**. Filter by **All** or any one of them. Dated items are ordered soonest first.
+
+If you leave the expiry date blank, Heirloom estimates one from the ingredient and where you store it. The estimate is a planning default and is not stored as a package date: fresh fish and poultry in the fridge get about 2 days, eggs about 4 weeks, and ground spices about a year (whole spices two). Freezer items run from 90 days (bread) to 240. Always enter the printed date when you have one.
+
+Spices such as oregano, cumin, pepper and cinnamon are filed under **Spices** automatically when you add a receipt line or restock from a shopping list. Fresh herbs and fresh peppers go to the fridge instead.
+
+**Low stock** appears as a badge on items that are nearly used up (about 100 g or ml, or one piece, or none). Use the **Low stock** filter, which shows a count for the current shelf, to see what to replenish. Cook With What I Have also names low-stock ingredients it matched.
 
 Adding the same normalized name in the same location merges quantities when units can be converted. Incompatible units produce an error; use the existing unit. The earliest known expiry is retained, so check actual batches before combining them.
 

@@ -64,6 +64,10 @@
 
 - **Virtual Pantry Inventory:**
   - Track staple ingredients on hand (flours, vinegars, oils, spices, dairy).
+  - **Four storage locations:** `pantry`, `fridge`, `freezer` and `spices` (`storageLocations` in `shared/culinary/pantry.ts`). `inferStorage` files seasonings under `spices` and keeps fresh herbs and fresh peppers in the fridge.
+  - **Migration `server/db/migrations/0007_pantry_spices.sql`:** SQLite cannot alter a CHECK constraint, so the migration rebuilds `pantry_items` (create `__new_pantry_items`, copy rows, drop, rename) with `storage_location in ('pantry','fridge','freezer','spices')` and recreates `pantry_name_location_idx`. Existing rows are preserved. Run `npm run db:migrate` after updating.
+  - **Shelf-life inference:** `estimateShelfLifeDays(name, location)` returns a planning default in days from ingredient category and storage, for example fish or poultry in the fridge 2, eggs 28, soft dairy 7, ground spices 365 (whole 730), frozen meat 180. The server (`server/utils/pantry.ts`) and the pantry form apply it only when no expiry was given; an explicit date or an explicit "no expiry" always wins.
+  - **Low stock:** `isLowStock` flags empty stock, or at most 100 g/ml or one piece, and the Pantry page offers a Low stock filter with a count. `matchPantry` marks low-stock ingredients it matched.
   - "Cook with What I Have" generator: Filter cookbook or generate custom dinner based on expiring pantry items.
 - **Food Science Substitution Matrix:**
   - When substituting an ingredient, the AI evaluates 3 dimensions:
@@ -100,6 +104,16 @@ Hosting a dinner party requires executive chef project management. Heirloom auto
 ```
 
 The system identifies bottlenecks (e.g. only 1 oven, 4 burners) and organizes the cooking sequence to avoid conflicts.
+
+### Greek Beverage & Wine Pairings
+`shared/culinary/beverage-pairings.ts` is a pure, dependency-free module shared by the server, the Conductor and the recipe page.
+
+- **Catalog:** wines (Assyrtiko, Moschofilero, Malagousia, Xinomavro, Agiorgitiko, Vinsanto / Muscat of Samos), spirits (Tsipouro / Tsikoudia, Ouzo), Greek craft beer, and non-alcoholic drinks (mountain tea, soumada, souroti). Each `Beverage` carries `name`, `greekName`, `category` (`wine | spirit | beer | non-alcoholic`), `region`, `tastingNotes`, `servingTempC` and a sentence `phrase`.
+- **Matching:** `recommendPairingForRecipe({ title, ingredients?, tags?, course? })` runs an ordered rule list, first match wins. Title and tags are tested first, then ingredient names (so feta on lamb does not turn it into a salad), then a course fallback. It returns `{ beverage, alternatives, nonAlcoholic, reason }`.
+- **Menus:** `recommendPairingForMenu(recipes)` pairs each course and forces the sweet pairing for a `dessert` course.
+- **Briefing integration:** `beverageBriefing(serves)` in `app/utils/chef-briefing.ts` builds one sentence in serving order, skipping sides and the beverage course and naming a repeated drink only once, for example "Pour a crisp Santorini Assyrtiko for the starter, followed by a bold Naoussa Xinomavro with the Arni me Patates." `chefBriefing` appends it before the day-before prep note.
+- **UI:** a "What to pour" panel in `app/pages/meal-plan/index.vue` and a Greek pairing callout in `app/pages/recipes/[id]/index.vue` (hidden for drink and cocktail recipes).
+- **Tests:** `tests/beverage-pairings.test.ts` and the beverage case in `tests/chef-briefing.test.ts`.
 
 ---
 
@@ -220,9 +234,18 @@ Recipes call for exact culinary grams, but stores sell packaged goods:
     - *"You will have 100g of phyllo leftover from the Portokalopita: Brush with leftover butter, dust with cinnamon-sugar, and bake for 8 mins for crispy coffee crisps!"*
 
 ### 4. Interactive In-Store Checklist
+- Compact one-line rows with a per-item **Details** disclosure for counter phrases, package sizes, surplus tips and prep notes.
 - Strike-through as you pick up items.
-- Live pantry sync: items already in your kitchen are automatically marked "Already in Pantry" with a single tap to unhide.
+- Opt-in pantry deduction (`app/utils/pantry-stock.ts`, `applyPantryStock`): when the cook ticks **Deduct pantry stock**, covered items move into an **Already in your pantry** disclosure and partly covered items shrink. Expired stock is ignored; the choice is kept in `localStorage` only.
+- **Share menu:** WhatsApp text, a QR code ("Send to phone") and Print / save PDF.
 - Offline-ready: Works seamlessly in underground supermarket basements with zero mobile signal.
+
+### 5. Live Greek Supermarket Prices (Posokanei)
+- **Endpoint:** `GET /api/market/prices?q=<ingredient>` (`server/api/market/prices.get.ts`) calls `https://api.posokanei.gov.gr/products` through `lookupPrices` in `server/utils/market-prices.ts`. The client (`MarketShoppingList.vue`) asks for supermarket items only, three at a time and for at most 30 per list, and renders the lowest single-retailer price as a chip via `formatPriceBadge`. A missing price is silent: no chip, no error.
+- **HTTP/2 transport:** the API's WAF rejects Node's HTTP/1.1 clients (`fetch`, `https`) but serves HTTP/2, so `server/utils/http2-get.ts` opens one short-lived `node:http2` session per request and sends a browser-style `User-Agent` and `Accept: application/json`. We do not forge TLS fingerprints or use a headless browser; the workaround is only a different protocol. If the API starts rejecting this, prices degrade to "unavailable".
+- **Safety limits:** 2.5 s timeout through `AbortSignal`, 512 KB response cap, the session destroyed on abort or error, `zod` validation of the response, relevance filtering of every query token against name, brand and category (accent- and final-sigma-folded for Greek), and at most 3 products per query.
+- **Cache:** an in-memory map capped at 500 entries, with 24 h for successes and 60 s for failures, plus an in-flight map so concurrent requests for the same name share one upstream call. Queries over 80 characters are rejected.
+- **Tests:** `tests/market-prices-transport.test.ts` and `tests/market-supermarket-prices.test.ts`; the cache is cleared with `resetPriceCache()`.
 
 ---
 
