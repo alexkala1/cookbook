@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RecipeInput } from '../../../server/utils/validation'
 import { readRecipeStream } from '../../utils/sse'
+import { importedRecipes, replaceAt, saveAllRecipes, switchTo, type ImportComplete } from '../../utils/multi-recipe-import'
 import { readTranslateLang, writeTranslateLang, translationLanguageOptions } from '../../utils/translation-prefs'
 const { requestHeaders, ready, settings } = useByokSettings()
 const kind = ref<'url' | 'video' | 'ocr' | 'prompt'>('url')
@@ -10,7 +11,17 @@ const busy = ref(false), saving = ref(false), error = ref('')
 const { state: generateState, label: generateLabel } = useActionFeedback(busy, error)
 const { state: saveState, label: saveLabel } = useActionFeedback(saving, error)
 const messages = ref<string[]>([]), warnings = ref<string[]>([])
-const draft = ref<RecipeInput | null>(null)
+// Every recipe found in the source, and which one is on screen. `draft` is the selected recipe, so edits and
+// translations land on it and survive switching to another recipe and back.
+const recipes = ref<RecipeInput[]>([])
+const selectedIndex = ref(0)
+const isMulti = computed(() => recipes.value.length > 1)
+const draft = computed<RecipeInput | null>({
+  get: () => recipes.value[selectedIndex.value] ?? null,
+  set: value => { recipes.value = value ? replaceAt(recipes.value, selectedIndex.value, value) : []; if (!value) selectedIndex.value = 0 }
+})
+const clearDrafts = () => { recipes.value = []; selectedIndex.value = 0 }
+const selectRecipe = (next: number) => { selectedIndex.value = switchTo(recipes.value.length, selectedIndex.value, next) }
 const targetLang = ref('el'), translating = ref(false), translateError = ref(''), translateNote = ref('')
 onMounted(() => { targetLang.value = readTranslateLang() })
 const provenance = ref('')
@@ -54,22 +65,22 @@ const compareView = ref<'source' | 'parsed'>('source')
 const draftHeading = ref<HTMLElement>()
 let controller: AbortController | undefined
 onBeforeUnmount(() => controller?.abort())
-watch(kind, () => { source.value = ''; photoDataUrl.value = ''; photoError.value = ''; captionsUnavailable.value = false; draft.value = null; original.value = null; error.value = ''; messages.value = [] })
+watch(kind, () => { source.value = ''; photoDataUrl.value = ''; photoError.value = ''; captionsUnavailable.value = false; clearDrafts(); original.value = null; error.value = ''; messages.value = [] })
 async function generate() {
   if (translating.value || saving.value || busy.value) return
   translateError.value = ''; translateNote.value = ''
-  controller = new AbortController(); busy.value = true; error.value = ''; draft.value = null; original.value = null; messages.value = []
+  controller = new AbortController(); busy.value = true; error.value = ''; clearDrafts(); original.value = null; messages.value = []
   const input = source.value, inputKind = kind.value, photo = kind.value === 'ocr' ? photoDataUrl.value : ''
   captionsUnavailable.value = false
   try {
     const body = kind.value === 'url' ? { kind: kind.value, url: source.value } : kind.value === 'video' ? { kind: kind.value, videoUrl: source.value } : kind.value === 'ocr' ? { kind: kind.value, ...(photo ? { image: photo } : {}), text: source.value || undefined } : { kind: kind.value, prompt: source.value }
     const response = await fetch('/api/ai/recipe/stream', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify(body), signal: controller.signal })
     await readRecipeStream(response, (event, raw) => {
-      const data = raw as { message?: string, recipe?: RecipeInput, warnings?: string[], provenance?: string, mode?: string, sourceText?: string, captionsUnavailable?: boolean }
+      const data = raw as ImportComplete & { message?: string, warnings?: string[], provenance?: string, mode?: string, sourceText?: string, captionsUnavailable?: boolean }
       if (data.message) messages.value = [...messages.value.slice(-9), data.message]
-      if (event === 'complete' && data.recipe) { draft.value = photo && !data.recipe.imageUrl ? { ...data.recipe, imageUrl: photo } : data.recipe; captionsUnavailable.value = !!data.captionsUnavailable; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}`; original.value = { input, text: data.sourceText || input, kind: inputKind, photo }; compareView.value = 'source'; revealDraft() }
+      if (event === 'complete' && (data.recipe || data.recipes?.length)) { recipes.value = importedRecipes(data, photo); selectedIndex.value = 0; captionsUnavailable.value = !!data.captionsUnavailable; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}`; original.value = { input, text: data.sourceText || input, kind: inputKind, photo }; compareView.value = 'source'; revealDraft() }
     })
-  } catch (cause) { draft.value = null; error.value = controller.signal.aborted ? 'Import cancelled.' : cause instanceof Error ? cause.message : 'Import failed. Try again.' }
+  } catch (cause) { clearDrafts(); error.value = controller.signal.aborted ? 'Import cancelled.' : cause instanceof Error ? cause.message : 'Import failed. Try again.' }
   finally { busy.value = false }
 }
 // Bring the finished draft into view and tell screen readers it arrived; it isn't in the cookbook yet.
@@ -84,6 +95,16 @@ async function save() {
   try { const recipe = await $fetch<{ id: string }>('/api/recipes', { method: 'POST', body: draft.value }); await navigateTo('/recipes/' + recipe.id) }
   catch { error.value = 'Could not save this draft. It is still here; try again.' }
   finally { saving.value = false }
+}
+async function saveAllDrafts() {
+  if (!isMulti.value || saving.value || translating.value) return
+  saving.value = true; error.value = ''
+  try {
+    const { saved, failed, remaining } = await saveAllRecipes(recipes.value, recipe => $fetch<{ id: string }>('/api/recipes', { method: 'POST', body: recipe }))
+    if (!failed) { await navigateTo('/recipes'); return }
+    recipes.value = remaining; selectedIndex.value = Math.min(selectedIndex.value, remaining.length - 1)
+    error.value = `Saved ${saved} of ${saved + failed}. ${failed === 1 ? 'The other recipe is' : 'The others are'} still here; try again.`
+  } finally { saving.value = false }
 }
 async function translateDraft() {
   if (!draft.value || translating.value || saving.value || busy.value) return
@@ -192,8 +213,15 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
         <UIcon name="i-lucide-file-pen-line" class="mt-0.5 size-6 flex-none" aria-hidden="true" />
         <div>
           <h2 ref="draftHeading" tabindex="-1" class="text-xl">Your draft is ready — not saved yet</h2>
-          <p class="mt-1 text-sm">Nothing is in your cookbook until you save. Look it over, fix the title if needed, then press <strong>Save to Cookbook</strong> at the bottom of the screen.</p>
+          <p v-if="isMulti" class="mt-1 text-sm">Nothing is in your cookbook until you save. Review each recipe, fix titles if needed, then save this one or all {{ recipes.length }} with the buttons at the bottom of the screen.</p>
+          <p v-else class="mt-1 text-sm">Nothing is in your cookbook until you save. Look it over, fix the title if needed, then press <strong>Save to Cookbook</strong> at the bottom of the screen.</p>
         </div>
+      </div>
+      <div v-if="isMulti" class="mt-6" data-testid="recipe-switcher">
+        <label class="block text-sm font-semibold" for="recipe-switcher-select">We found {{ recipes.length }} recipes. Choose one to review.</label>
+        <select id="recipe-switcher-select" class="field mt-2 min-h-11" :value="selectedIndex" :disabled="busy || saving || translating" @change="selectRecipe(Number(($event.target as HTMLSelectElement).value))">
+          <option v-for="(item, i) in recipes" :key="i" :value="i">Recipe {{ i + 1 }} of {{ recipes.length }}: {{ item.title || 'Untitled' }}</option>
+        </select>
       </div>
       <p class="meta-label mt-6">Review your draft · {{ provenance }}</p>
       <p v-if="captionsUnavailable" role="note" class="notice mt-4"><UIcon name="i-lucide-info" class="mr-1 align-text-bottom" aria-hidden="true" />This video doesn’t have captions, so Heirloom built the recipe from the creator’s cooking notes and timestamps. Steps and amounts that were pieced together are tagged as inferred — give them a quick check before you save.</p>
@@ -218,8 +246,12 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
       <h2 class="mt-6">Ingredients</h2><ul class="mt-4 space-y-3"><li v-for="(ingredient, i) in draft.ingredients" :key="i">{{ ingredient.amount }} {{ ingredient.unit }} {{ ingredient.name }}<p class="text-sm">{{ ingredient.notes }}</p></li></ul>
       <h2 class="mt-6">Method &amp; food science</h2><ol class="mt-4 space-y-5"><li v-for="step in draft.steps" :key="step.stepNumber"><p>{{ step.stepNumber }}. {{ step.instruction }}</p><p v-if="step.durationMinutes || (step.heatLevel && step.heatLevel !== 'none')" class="mt-2 flex flex-wrap gap-2 text-sm font-semibold"><span v-if="step.durationMinutes" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 border-sage/50 bg-sage/10 text-sage-ink"><UIcon :name="step.timerRequired ? 'i-lucide-timer' : 'i-lucide-clock'" aria-hidden="true" />{{ minutesLabel(step.durationMinutes) }}{{ step.timerRequired ? ' timer' : '' }}</span><span v-if="step.heatLevel && step.heatLevel !== 'none'" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 border-terracotta/40 bg-terracotta/10 text-terracotta-ink"><UIcon name="i-lucide-flame" aria-hidden="true" />{{ step.heatLevel.replace('-', '–') }} heat</span></p><p v-if="step.scienceWhy" class="mt-2 text-sm text-sage-ink">{{ step.scienceWhy }}</p></li></ol>
       <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border md:bottom-0">
-        <p class="text-sm"><strong>Not saved yet.</strong> You can refine quantities, steps and family notes later with Edit recipe.</p>
-        <button class="button-primary" :disabled="busy || saving || translating || !draft.title.trim()" v-stable-action="saveState" :data-state="saveState" :aria-busy="saving" @click="save">{{ saveLabel('Save to Cookbook', 'Saving…') }}</button>
+        <p class="text-sm"><strong>Not saved yet.</strong> {{ isMulti ? 'Save This Recipe skips the others.' : 'You can refine quantities, steps and family notes later with Edit recipe.' }}</p>
+        <div v-if="isMulti" class="flex flex-wrap gap-3">
+          <button class="button-secondary" data-testid="save-one" :disabled="busy || saving || translating || !draft.title.trim()" :aria-busy="saving" @click="save">Save This Recipe</button>
+          <button class="button-primary" data-testid="save-all" :disabled="busy || saving || translating || recipes.some(item => !item.title.trim())" :aria-busy="saving" @click="saveAllDrafts">{{ saving ? 'Saving…' : `Save All (${recipes.length})` }}</button>
+        </div>
+        <button v-else class="button-primary" :disabled="busy || saving || translating || !draft.title.trim()" v-stable-action="saveState" :data-state="saveState" :aria-busy="saving" @click="save">{{ saveLabel('Save to Cookbook', 'Saving…') }}</button>
       </div>
     </article>
   </section>
