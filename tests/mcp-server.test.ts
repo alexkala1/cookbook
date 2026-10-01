@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest'
-import { db } from '../server/db/index'
+import { describe, expect, it, vi } from 'vitest'
+import { fileURLToPath } from 'node:url'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { db } from '../server/db'
 import { recipes } from '../server/db/schema'
 import { listRecipes, getRecipe, saveRecipe } from '../server/utils/recipes'
 import { listPantry, savePantry, pantryMatches } from '../server/utils/pantry'
+import { seedStarterRecipes } from '../server/utils/seed'
+
+// Hermetic: an in-memory database, the committed migrations and the starter recipes, never a developer's heirloom.db.
+vi.mock('../server/db', async () => { vi.stubEnv('DATABASE_URL', ':memory:'); return vi.importActual('../server/db') })
+migrate(db, { migrationsFolder: fileURLToPath(new URL('../server/db/migrations', import.meta.url)) })
+seedStarterRecipes()
 
 describe('Heirloom MCP Server core capabilities', () => {
   it('lists existing recipes from the database', () => {
