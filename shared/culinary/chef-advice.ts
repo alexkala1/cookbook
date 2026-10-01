@@ -10,7 +10,7 @@ export type SwapLookup = (ingredient: string) => SwapOption[]
 
 const DAY = 86400000
 const SOON_DAYS = 3
-const storageTip = { fridge: 'Cook it tonight, or freeze it in portions.', freezer: 'Thaw it in the fridge and make it the centrepiece.', pantry: 'Build a simple meal around it before it turns.' } as const
+const storageTip = { fridge: 'Cook it tonight, or freeze it in portions.', freezer: 'Thaw it in the fridge and make it the centrepiece.', pantry: 'Build a simple meal around it before it turns.', spices: 'Use it to season a meal while its aroma is at its best.' } as const
 
 /** Deterministic, offline advice: ready matches, swaps for near-matches, and use-it-up tips for stock nearing its date. */
 export function chefAdvice(matches: PantryMatch[], stock: PantryItem[], swapsFor: SwapLookup, now = Date.now()): ChefAdvice {

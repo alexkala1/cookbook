@@ -4,7 +4,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { db } from '../db'
 import { pantryItems, recipes, ingredients } from '../db/schema'
-import { ingredientKey, matchPantry, normalizePantryName, pantryQuantity, storageLocations } from '../../shared/culinary/pantry'
+import { estimateShelfLifeDays, ingredientKey, matchPantry, normalizePantryName, pantryQuantity, storageLocations } from '../../shared/culinary/pantry'
 import { validate } from './validation'
 
 export const pantryInput = z.object({
@@ -24,15 +24,16 @@ export function savePantry(body: unknown) {
     // Normalize legacy names too: SQLite's built-in lower() only handles ASCII.
     const existing = tx.select().from(pantryItems).where(eq(pantryItems.storageLocation, item.storageLocation)).all().filter(row => normalizePantryName(row.name) === normalizedName)
     let quantity = item.quantity
-    let expiresAt = item.expiresAt ?? null
+    const now = Date.now()
+    let expiresAt = item.expiresAt === undefined ? now + estimateShelfLifeDays(item.name, item.storageLocation) * 86400000 : item.expiresAt
     for (const row of existing) {
       const converted = pantryQuantity(row.quantity, row.unit, item.unit)
       if (converted === null) throw createError({ statusCode: 409, statusMessage: 'Cannot merge incompatible units. Use the existing item unit.' })
       quantity += converted
-      if (row.expiresAt !== null) expiresAt = expiresAt === null ? row.expiresAt : Math.min(expiresAt, row.expiresAt)
+      if (row.quantity > 0 && row.expiresAt !== null) expiresAt = expiresAt === null ? row.expiresAt : Math.min(expiresAt, row.expiresAt)
     }
     if (!Number.isFinite(quantity) || quantity > 1000000) throw createError({ statusCode: 400, statusMessage: 'Merged quantity is too large' })
-    const now = Date.now(), first = existing[0]
+    const first = existing[0]
     const value = { ...item, normalizedName, quantity, expiresAt, updatedAt: now }
     if (!first) return tx.insert(pantryItems).values({ ...value, id: randomUUID(), createdAt: now }).returning().get()
     for (const row of existing.slice(1)) tx.delete(pantryItems).where(eq(pantryItems.id, row.id)).run()

@@ -3,6 +3,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { db } from '../db'
 import { cookLogs, ingredients, pantryItems, recipeEquipment, recipes, steps } from '../db/schema'
+import { storageLocations } from '../../shared/culinary/pantry'
 import { cookLogInputSchema } from './cook-logs'
 import { recipeCreateSchema, validate } from './validation'
 
@@ -26,7 +27,7 @@ const pantrySchema = z.object({
   id, name: z.string().min(1).max(200), normalizedName: z.string().min(1).max(200),
   quantity: z.number().finite().nonnegative().max(1_000_000),
   unit: z.string().min(1).max(40),
-  storageLocation: z.enum(['pantry', 'fridge', 'freezer']),
+  storageLocation: z.enum(storageLocations),
   expiresAt: z.number().int().nonnegative().nullable(),
   createdAt: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative()
 }).strict()

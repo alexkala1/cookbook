@@ -45,6 +45,15 @@ function populate() {
 }
 
 describe('JSON cookbook backup', () => {
+  it('round-trips spices stock and its expiry without dropping the new location', () => {
+    savePantry({ name: 'Oregano', quantity: 50, unit: 'g', storageLocation: 'spices' })
+    const backup = exportBackup()
+    expect(backupSchema.safeParse(backup).success).toBe(true)
+    db.delete(tables.pantryItems).run()
+    importBackup(backup)
+    expect(exportBackup().pantry).toEqual(backup.pantry)
+    expect(backup.pantry[0]).toMatchObject({ storageLocation: 'spices', expiresAt: expect.any(Number) })
+  })
   it('exports empty databases as a formatted versioned attachment', async () => {
     const response = await request()
     expect(response.status).toBe(200)

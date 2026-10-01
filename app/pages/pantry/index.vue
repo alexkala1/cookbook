@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PANTRY_STAPLES, pantryStepForUnit, storageLocations, type PantryItem, type PantryDraft, type PantryMatch } from '#shared/culinary/pantry'
+import { PANTRY_STAPLES, estimateShelfLifeDays, isLowStock, pantryStepForUnit, storageLocations, type PantryItem, type PantryDraft, type PantryMatch } from '#shared/culinary/pantry'
 import type { ChefAdvice } from '#shared/culinary/chef-advice'
 useSeoMeta({ title: 'Your pantry — Heirloom' })
 
@@ -7,6 +7,8 @@ const { requestHeaders, ready: byokReady } = useByokSettings()
 
 const { data: items, error: loadError, refresh } = await useFetch<PantryItem[]>('/api/pantry')
 const location = ref('all')
+const lowStockOnly = ref(false)
+const lowStockCount = computed(() => (items.value ?? []).filter(item => (location.value === 'all' || item.storageLocation === location.value) && isLowStock(item)).length)
 const busy = ref(false)
 const message = ref('')
 const receipt = ref('')
@@ -19,7 +21,7 @@ onMounted(() => {
 })
 
 const visible = computed(() =>
-  (items.value ?? []).filter(item => location.value === 'all' || item.storageLocation === location.value)
+  (items.value ?? []).filter(item => (location.value === 'all' || item.storageLocation === location.value) && (!lowStockOnly.value || isLowStock(item)))
 )
 const counts = computed<Record<string, number>>(() => {
   const all = items.value ?? []
@@ -28,6 +30,20 @@ const counts = computed<Record<string, number>>(() => {
 const form = reactive<PantryDraft>({ name: '', quantity: 1, unit: 'item', storageLocation: 'pantry' })
 const expiry = ref('')
 const drafts = ref<PantryDraft[]>([])
+const explicitDraftDates = new WeakSet<PantryDraft>()
+function draftDate(draft: PantryDraft) {
+  if (draft.expiresAt == null) return ''
+  const date = new Date(draft.expiresAt)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+function setDraftDate(draft: PantryDraft, event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  draft.expiresAt = value ? new Date(value + 'T23:59:59').getTime() : null
+  explicitDraftDates.add(draft)
+}
+function updateDraftEstimate(draft: PantryDraft) {
+  if (!explicitDraftDates.has(draft)) draft.expiresAt = Date.now() + estimateShelfLifeDays(draft.name, draft.storageLocation) * 86400000
+}
 const matches = ref<PantryMatch[] | null>(null)
 type ChefAnswer = ChefAdvice & { mode: 'live' | 'fallback' }
 const advice = ref<ChefAnswer | null>(null)
@@ -56,12 +72,13 @@ async function act(action: () => Promise<void>) {
 async function save(values: PantryDraft[]) {
   await $fetch('/api/pantry', { method: 'POST', body: values })
   await refresh()
+  now.value = Date.now()
   matches.value = null
 }
 
 function add() {
   void act(async () => {
-    await save([{ ...form, expiresAt: expiry.value ? new Date(expiry.value + 'T23:59:59').getTime() : null }])
+    await save([{ ...form, expiresAt: expiry.value ? new Date(expiry.value + 'T23:59:59').getTime() : undefined }])
     form.name = ''
     expiry.value = ''
     message.value = 'Added to your pantry.'
@@ -81,8 +98,7 @@ function adjustQuantity(item: PantryItem, delta: number) {
       method: 'PATCH',
       body: { delta }
     })
-    item.quantity = updated.quantity
-    item.updatedAt = updated.updatedAt
+    items.value = (items.value ?? []).map(row => row.id === updated.id ? updated : row)
     matches.value = null
     advice.value = null
   })
@@ -160,9 +176,9 @@ function expiryLabel(item: PantryItem) {
       <label>Unit<input v-model="form.unit" class="field" required maxlength="40" placeholder="item, g, kg, ml"
       /></label>
       <label>Storage location<select v-model="form.storageLocation" class="field">
-          <option v-for="place in storageLocations" :key="place" :value="place">{{ place }}</option>
+          <option v-for="place in storageLocations" :key="place" :value="place">{{ place.charAt(0).toUpperCase() + place.slice(1) }}</option>
         </select></label>
-      <label>Expiry date (optional)<input v-model="expiry" class="field" type="date" /></label>
+      <label>Expiry date (optional)<input v-model="expiry" class="field" type="date" /><span class="mt-1 block text-xs text-muted">Leave blank for a shelf-life estimate. Use the package date when available.</span></label>
       <button
         class="button-primary self-end"
         :disabled="busy"
@@ -181,6 +197,7 @@ function expiryLabel(item: PantryItem) {
           :aria-pressed="location === place"
           @click="location = place"
         >{{ place }} <span class="num">({{ counts[place] }})</span></button>
+        <button type="button" class="filter-pill min-h-11" :aria-pressed="lowStockOnly" @click="lowStockOnly = !lowStockOnly">Low stock <span class="num">({{ lowStockCount }})</span></button>
       </div>
       <div class="flex flex-wrap gap-3">
         <button
@@ -257,7 +274,7 @@ function expiryLabel(item: PantryItem) {
       </section>
     </details>
 
-    <p v-if="!visible.length" class="empty-state mt-6">{{ location === 'all' ? 'Nothing here yet. Add an ingredient above.' : 'Nothing in the ' + location + ' yet. Add an ingredient above, or pick another shelf.' }}</p>
+    <p v-if="!visible.length" class="empty-state mt-6">{{ lowStockOnly ? 'No low-stock items on this shelf.' : location === 'all' ? 'Nothing here yet. Add an ingredient above.' : 'Nothing in the ' + location + ' yet. Add an ingredient above, or pick another shelf.' }}</p>
 
     <ul class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Pantry inventory">
       <li v-for="item in visible" :key="item.id" class="row-panel min-w-0 break-words">
@@ -268,6 +285,7 @@ function expiryLabel(item: PantryItem) {
             <span class="font-serif text-2xl font-bold tabular-nums">{{ Number(item.quantity.toFixed(3)) }}</span>
             <span class="ml-1 text-muted">{{ item.unit }}</span>
             <span v-if="item.quantity <= 0" class="ml-2 rounded bg-terracotta/10 px-1.5 py-0.5 text-xs font-semibold text-terracotta-ink">Out of stock</span>
+            <span v-else-if="isLowStock(item)" class="ml-2 rounded bg-terracotta/10 px-1.5 py-0.5 text-xs font-semibold text-terracotta-ink">Low stock</span>
           </div>
           <div class="inline-flex items-center gap-1 rounded-lg border border-rule bg-paper p-0.5 shadow-sm" role="group" :aria-label="'Adjust quantity for ' + item.name">
             <button
@@ -322,6 +340,7 @@ function expiryLabel(item: PantryItem) {
         }}</NuxtLink>
         <p class="mt-2 font-semibold">{{ match.completeness }}% in stock</p>
         <p class="mt-2">In stock: {{ match.in_stock.map(item => item.name).join(', ') || 'None' }}</p>
+        <p v-if="match.in_stock.some(item => item.lowStock)" class="mt-2 font-semibold text-terracotta-ink">Low stock: {{ match.in_stock.filter(item => item.lowStock).map(item => item.name).join(', ') }}</p>
         <ul class="mt-2">
           <li v-for="(item, i) in match.missing" :key="i">Missing: {{ item.name }} · {{ item.reason }}</li>
         </ul>
@@ -359,13 +378,14 @@ function expiryLabel(item: PantryItem) {
       >
         <fieldset v-for="(draft, i) in drafts" :key="i" class="grid gap-3 border-t border-rule pt-4 sm:grid-cols-2">
           <legend>Item {{ i + 1 }}</legend>
-          <label>Name<input v-model="draft.name" class="field" required maxlength="200" /></label>
+          <label>Name<input v-model="draft.name" class="field" required maxlength="200" @change="updateDraftEstimate(draft)" /></label>
           <label>Quantity<input v-model.number="draft.quantity" class="field" type="number" min="0.001" step="any" required
           /></label>
           <label>Unit<input v-model="draft.unit" class="field" required maxlength="40" /></label>
-          <label>Storage location<select v-model="draft.storageLocation" class="field">
-              <option v-for="place in storageLocations" :key="place">{{ place }}</option>
+          <label>Storage location<select v-model="draft.storageLocation" class="field" @change="updateDraftEstimate(draft)">
+              <option v-for="place in storageLocations" :key="place" :value="place">{{ place.charAt(0).toUpperCase() + place.slice(1) }}</option>
             </select></label>
+          <label>Estimated expiry date<input class="field" type="date" :value="draftDate(draft)" @change="setDraftDate(draft, $event)" /><span class="mt-1 block text-xs text-muted">Adjust to the package date, or clear to leave unset.</span></label>
           <button type="button" class="text-action justify-self-start" @click="drafts.splice(i, 1)">Discard
             item
             {{ i + 1 }}</button>

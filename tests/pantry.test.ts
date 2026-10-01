@@ -42,7 +42,7 @@ it('adds, lists, merges compatible quantities, separates locations and deletes',
   expect((await request('/' + first[0].id, 'DELETE')).status).toBe(404)
 })
 it('sorts soonest expiry first, unknown dates last, then location', async () => {
-  await request('', 'POST', [{ name: 'Unknown' }, { name: 'Later', expiresAt: 2000 }, { name: 'Soon', expiresAt: 1000 }, { name: 'Frozen', storageLocation: 'freezer', expiresAt: 1000 }])
+  await request('', 'POST', [{ name: 'Unknown', expiresAt: null }, { name: 'Later', expiresAt: 2000 }, { name: 'Soon', expiresAt: 1000 }, { name: 'Frozen', storageLocation: 'freezer', expiresAt: 1000 }])
   expect((await (await request()).json()).map((row: PantryItem) => row.name)).toEqual(['Frozen', 'Soon', 'Later', 'Unknown'])
   await request('', 'POST', { name: 'Soon', expiresAt: 3000 })
   expect(db.select().from(pantryItems).all().find(row => row.name === 'Soon')?.expiresAt).toBe(1000)
@@ -106,7 +106,7 @@ it.each([['milk', 'fridge'], ['frozen peas', 'freezer'], ['rice', 'pantry'], ['�
 it.each(['lamb chops', 'ground beef', 'frozen lamb'])('infers fridge for %s from chasapis regardless of name', name => {
   expect(inferStorage(name, 'chasapis')).toBe('fridge')
 })
-it.each([['lamb chops', 'pantry'], ['ground beef', 'fridge'], ['frozen lamb', 'freezer']])('keeps name-based storage for %s outside chasapis', (name, expected) => {
+it.each([['lamb chops', 'fridge'], ['ground beef', 'fridge'], ['frozen lamb', 'freezer']])('keeps name-based storage for %s outside chasapis', (name, expected) => {
   expect(inferStorage(name)).toBe(expected)
   expect(inferStorage(name, 'other')).toBe(expected)
   expect(inferStorage(name, '')).toBe(expected)
@@ -114,14 +114,40 @@ it.each([['lamb chops', 'pantry'], ['ground beef', 'fridge'], ['frozen lamb', 'f
 it('parses receipt text with counts, weights, Greek names and excludes payment lines', async () => {
   const text = '2 x Milk 1.50\nRice 500 g 2.49\nFrozen peas 3.20\nΓάλα 1,80\nTOTAL 9.00\nVAT 1.00\nΣΥΝΟΛΟ 9,00\n26/09/2026\nCARD 9.00'
   expect(parseReceipt(text)).toEqual([
-    { name: 'Milk', quantity: 2, unit: 'item', storageLocation: 'fridge', expiresAt: null },
-    { name: 'Rice', quantity: 500, unit: 'g', storageLocation: 'pantry', expiresAt: null },
-    { name: 'Frozen peas', quantity: 1, unit: 'item', storageLocation: 'freezer', expiresAt: null },
-    { name: 'Γάλα', quantity: 1, unit: 'item', storageLocation: 'fridge', expiresAt: null }
+    { name: 'Milk', quantity: 2, unit: 'item', storageLocation: 'fridge', expiresAt: expect.any(Number) },
+    { name: 'Rice', quantity: 500, unit: 'g', storageLocation: 'pantry', expiresAt: expect.any(Number) },
+    { name: 'Frozen peas', quantity: 1, unit: 'item', storageLocation: 'freezer', expiresAt: expect.any(Number) },
+    { name: 'Γάλα', quantity: 1, unit: 'item', storageLocation: 'fridge', expiresAt: expect.any(Number) }
   ])
   const response = await request('/receipt', 'POST', { text })
   expect(response.status).toBe(200); expect((await response.json()).items).toHaveLength(4)
   expect(db.select().from(pantryItems).all()).toHaveLength(0)
   expect((await request('/receipt', 'POST', { text: '' })).status).toBe(400)
   expect((await request('/receipt', 'POST', { text: 'x'.repeat(30001) })).status).toBe(400)
+})
+it('persists spices and estimates expiry for restocking while respecting explicit dates', async () => {
+  const before = Date.now()
+  const rows = await (await request('', 'POST', [
+    { name: 'Oregano', quantity: 50, unit: 'g', storageLocation: 'spices' },
+    { name: 'Milk', storageLocation: 'fridge' },
+    { name: 'Rice', expiresAt: null },
+    { name: 'Eggs', storageLocation: 'fridge', expiresAt: 1234 }
+  ])).json()
+  const after = Date.now()
+  expect(rows[0].expiresAt).toBeGreaterThanOrEqual(before + 365 * 86400000)
+  expect(rows[0].expiresAt).toBeLessThanOrEqual(after + 365 * 86400000)
+  expect(rows[0].storageLocation).toBe('spices')
+  expect(rows[1].expiresAt).toBeGreaterThanOrEqual(before + 7 * 86400000)
+  expect(rows[1].expiresAt).toBeLessThanOrEqual(after + 7 * 86400000)
+  expect(rows[2].expiresAt).toBeNull()
+  expect(rows[3].expiresAt).toBe(1234)
+  await request('', 'POST', { name: 'Oregano', quantity: 50, unit: 'g', storageLocation: 'spices' })
+  expect(db.select().from(pantryItems).all().find(row => row.name === 'Oregano')).toMatchObject({ quantity: 100, expiresAt: rows[0].expiresAt })
+})
+it('assigns fresh expiry when replenishing an empty item instead of inheriting its old date', async () => {
+  const [item] = await (await request('', 'POST', { name: 'Milk', storageLocation: 'fridge', expiresAt: 1 })).json()
+  await request('/' + item.id, 'PATCH', { delta: -1 })
+  const [restocked] = await (await request('', 'POST', { name: 'Milk', storageLocation: 'fridge' })).json()
+  expect(restocked).toMatchObject({ id: item.id, quantity: 1 })
+  expect(restocked.expiresAt).toBeGreaterThan(Date.now())
 })
