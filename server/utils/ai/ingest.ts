@@ -90,7 +90,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   const capModelSource = (text: string) => {
     const limit = client.provider === 'groq' ? 8000 : client.provider === 'ollama' ? 12000 : 25000
     if (client.provider === 'groq' && (text.length > limit || estimateTokens(text) > 4600)) {
-      onWarning('Source notes were trimmed to fit Groq free-tier limits. Review final steps.')
+      if (client.mode === 'live') onWarning('Source notes were trimmed to fit Groq free-tier limits. Review final steps.')
       text = text.slice(0, limit)
       // Token estimates increase monotonically with each source character.
       let low = 0, high = text.length
@@ -101,7 +101,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
       }
       return text.slice(0, low)
     }
-    if (client.provider === 'ollama' && text.length > limit) onWarning('Source notes were trimmed to fit Ollama context limits. Review final steps.')
+    if (client.provider === 'ollama' && client.mode === 'live' && text.length > limit) onWarning('Source notes were trimmed to fit Ollama context limits. Review final steps.')
     return text.slice(0, limit)
   }
   let source = '', title = '', sourceUrl: string | undefined, draftSource = ''
@@ -205,9 +205,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
       try {
         progress(`Extracting ${chapter.title}`)
         const transcript = windowTranscript(cues, chapter)
-        if (!transcript) missingTranscript.push(chapter.title)
         const scopedSource = [chapter.sourceText, transcript].filter(Boolean).join('\n\n')
-        sources.push(`${chapter.title}\n${scopedSource}`)
         const structured = client.mode === 'fallback' ? structuredDraft(scopedSource, chapter.title) : null
         const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', capModelSource(`Chapter: ${chapter.title}\n${scopedSource}`.replace(/\s+/g, ' ').trim()), () => fallbackRecipe(scopedSource, chapter.title), signal, undefined, onWarning)
         const sanitized = { ...recipe, originalSaltType: null }
@@ -215,7 +213,10 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
         delete sanitized.rating
         delete sanitized.isFavorite
         recipes.push(recipeCreateSchema.parse(enrichScience({ ...sanitized, title: chapter.title, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: `${sourceUrl}&t=${chapter.startSeconds}s` })))
+        sources.push(`${chapter.title}\n${scopedSource}`)
+        if (!transcript) missingTranscript.push(chapter.title)
       } catch (error) {
+        if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' })
         if (!recipes.length) throw error
         onWarning(`Chapter "${chapter.title}" could not be completed (${error instanceof Error ? error.message : String(error)}). Earlier chapters were preserved.`)
         break
