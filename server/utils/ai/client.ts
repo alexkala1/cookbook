@@ -10,7 +10,7 @@ export function humanizeProviderError(provider: string, status: number, rawMessa
     return `Your ${name} API key was rejected (HTTP ${status}). Please verify your key in Settings.`
   }
   if (status === 404 || lowerMsg.includes('does not exist') || lowerMsg.includes('not have access') || lowerMsg.includes('model_not_found')) {
-    const tip = provider === 'groq' ? ' Active options on Groq include openai/gpt-oss-120b and llama-3.1-8b-instant.' : ''
+    const tip = provider === 'groq' ? ' Active options on Groq include openai/gpt-oss-120b, openai/gpt-oss-20b, and llama-3.3-70b-versatile.' : ''
     return `The model "${model || 'selected'}" is not available on your ${name} plan.${tip} Please choose an active model in Settings.`
   }
   if (status === 429 || lowerMsg.includes('rate limit') || lowerMsg.includes('quota') || lowerMsg.includes('too many requests')) {
@@ -88,7 +88,7 @@ export function aiClient(event: H3Event) {
         if (key) headers.Authorization = 'Bearer ' + key
         body = {
           model,
-          ...(provider !== 'ollama' ? { max_tokens: 6000 } : { options: { num_predict: 6000 } }),
+          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? 2048 : 6000 } : { options: { num_predict: 6000 } }),
           messages: [
             { role: 'system', content: system },
             {

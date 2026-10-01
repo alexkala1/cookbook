@@ -58,6 +58,10 @@ it.each(['openai', 'anthropic', 'gemini', 'groq', 'ollama'])('uses request-scope
   expect(url).not.toContain('secret-test')
   expect(init.body).not.toContain('secret-test')
   expect(JSON.stringify(init.headers)).toContain('secret-test')
+  const sent = JSON.parse(init.body as string)
+  if (provider === 'groq') expect(sent.max_tokens).toBe(2048)
+  if (provider === 'openai' || provider === 'anthropic') expect(sent.max_tokens).toBe(6000)
+  if (provider === 'ollama') expect(sent.options.num_predict).toBe(6000)
 })
 it('sanitizes provider errors instead of leaking keys or returning a fake success', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('secret-test') }))

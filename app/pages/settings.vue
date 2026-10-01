@@ -7,7 +7,7 @@ const recommendedModels: Record<(typeof byokProviders)[number], string[]> = {
   gemini: ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash'],
   openai: ['gpt-4o-mini', 'gpt-4o'],
   anthropic: ['claude-3-5-haiku-20241022', 'claude-3-7-sonnet-20250219'],
-  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'],
+  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile', 'qwen/qwen3.8-27b'],
   ollama: ['llama3.2', 'mistral', 'qwen2.5']
 }
 
