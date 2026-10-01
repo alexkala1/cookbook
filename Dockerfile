@@ -28,7 +28,7 @@ COPY --from=build /app/.output/server/package.json ./package.json
 COPY --from=build /app/server/db/migrations ./server/db/migrations
 COPY docker/migrate.mjs ./.output/server/migrate.mjs
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/heirloom-entrypoint
-RUN mkdir -p /app/data && chown node:node /app/data
+RUN mkdir -p /app/data && chown node:node /app/data && chmod 700 /app/data
 
 USER node
 VOLUME ["/app/data"]

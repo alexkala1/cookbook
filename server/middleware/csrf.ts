@@ -11,7 +11,12 @@ export default defineEventHandler(event => {
   const authority = host?.match(/^(\[[a-f0-9:]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/i)
   const allowedHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
   for (const publicHost of (process.env.HEIRLOOM_PUBLIC_HOST ?? '').split(',')) {
-    const name = publicHost.trim().toLowerCase()
+    const configured = publicHost.trim().toLowerCase()
+    // Accept exact HTTP(S) origins without URL-normalizing alternate IP spellings.
+    // Paths, credentials, queries, wildcards and invalid ports never add a host.
+    const origin = configured.match(/^https?:\/\/(\[[a-f0-9:]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?\/?$/)
+    if (configured.includes('://') && (!origin || (origin[2] !== undefined && (Number(origin[2]) < 1 || Number(origin[2]) > 65535)))) continue
+    const name = origin?.[1] ?? configured
     if (name) allowedHosts.add(name)
   }
   const hostname = authority?.[1]!.toLowerCase() ?? ''

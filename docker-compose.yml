@@ -8,13 +8,12 @@ services:
       - "127.0.0.1:${HEIRLOOM_PORT:-3000}:3000"
     environment:
       DATABASE_URL: /app/data/heirloom.db
-      HEIRLOOM_PUBLIC_HOST: ${HEIRLOOM_PUBLIC_HOST:-}
+      HEIRLOOM_PUBLIC_HOST: ${HEIRLOOM_PUBLIC_HOST:-http://localhost:3000}
     volumes:
-      - type: bind
-        source: ./data
+      # New volumes inherit /app/data ownership from the non-root image.
+      - type: volume
+        source: heirloom-data
         target: /app/data
-        bind:
-          create_host_path: false
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -24,3 +23,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  heirloom-data:
