@@ -3,6 +3,13 @@ import { z } from 'zod'
 
 const providers = ['openai', 'anthropic', 'gemini', 'groq', 'ollama'] as const
 
+export function extractJson(raw: string): string {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced) return fenced[1]!.trim()
+  const first = raw.indexOf('{'), last = raw.lastIndexOf('}')
+  return first >= 0 && last >= first ? raw.slice(first, last + 1) : raw.trim()
+}
+
 export function humanizeProviderError(provider: string, status: number, rawMessage: string, model: string): string {
   const name = provider.charAt(0).toUpperCase() + provider.slice(1)
   const lowerMsg = (rawMessage || '').toLowerCase()
@@ -88,7 +95,7 @@ export function aiClient(event: H3Event) {
         if (key) headers.Authorization = 'Bearer ' + key
         body = {
           model,
-          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? 2048 : 6000 } : { options: { num_predict: 6000 } }),
+          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? 4096 : 6000 } : { options: { num_predict: 6000 } }),
           messages: [
             { role: 'system', content: system },
             {
@@ -104,6 +111,7 @@ export function aiClient(event: H3Event) {
         }
       }
 
+      const name = provider.charAt(0).toUpperCase() + provider.slice(1)
       try {
         // Both attempts share the original deadline and cancellation signal.
         const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
@@ -149,6 +157,12 @@ export function aiClient(event: H3Event) {
         }
 
         const data = JSON.parse(text)
+        if (data.choices?.[0]?.finish_reason === 'length') {
+          throw createError({
+            statusCode: 422,
+            statusMessage: 'The recipe draft was cut off because it exceeded the model’s response limit. Try importing with shorter notes or a smaller section.'
+          })
+        }
         const content =
           provider === 'anthropic'
             ? data.content
@@ -160,12 +174,23 @@ export function aiClient(event: H3Event) {
               : provider === 'ollama'
                 ? data.message?.content
                 : data.choices?.[0]?.message?.content
-        return schema.parse(JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, '')))
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(extractJson(content))
+        } catch {
+          console.error('[aiClient] JSON parse failed:', content)
+          throw createError({ statusCode: 502, statusMessage: `${name} returned an unreadable response that could not be parsed as JSON. Please retry.` })
+        }
+        const parseResult = schema.safeParse(parsed)
+        if (!parseResult.success) {
+          console.error('[aiClient] Schema validation failed:', parseResult.error.format())
+          throw createError({ statusCode: 502, statusMessage: `${name} generated a draft that did not match the expected recipe structure. Please retry.` })
+        }
+        return parseResult.data
       } catch (err: any) {
-        if (err && typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+        if (err && typeof err.statusCode === 'number' && typeof err.statusMessage === 'string') {
           throw err
         }
-        const name = provider.charAt(0).toUpperCase() + provider.slice(1)
         const errMsg = (err?.message || '').toLowerCase()
         const errCode = String(err?.cause?.code || err?.code || '').toLowerCase()
         if (err?.name === 'TimeoutError' || err?.name === 'AbortError' || errMsg.includes('timeout') || errMsg.includes('timed out')) {
@@ -187,6 +212,7 @@ export function aiClient(event: H3Event) {
           })
         }
         // Never attach upstream exceptions, response bodies, or request headers.
+        console.error('[aiClient] Unexpected error:', err)
         throw createError({
           statusCode: 502,
           statusMessage: 'AI provider failed or returned an invalid draft. Check model and credentials, then retry.'

@@ -2,11 +2,113 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, defineEventHandler, toWebHandler } from 'h3'
 import stream from '../server/api/ai/recipe/stream.post'
 import csrf from '../server/middleware/csrf'
-import { aiClient } from '../server/utils/ai/client'
+import { aiClient, humanizeProviderError } from '../server/utils/ai/client'
 import { recipeCreateSchema } from '../server/utils/validation'
 import { readRecipeStream } from '../app/utils/sse'
 afterEach(() => vi.unstubAllGlobals())
 const headers = { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }
+const recipe = { title: 'Soup', description: 'Warm' }
+const failure = (status = 400, message = 'Failed to generate JSON', code?: string) => new Response(JSON.stringify({ error: { message, code } }), { status })
+const success = (content = '```json\n' + JSON.stringify(recipe) + '\n```') => new Response(JSON.stringify({ choices: [{ message: { content } }] }))
+function request(provider = 'groq', signal?: AbortSignal) {
+  const handle = toWebHandler(createApp().use(defineEventHandler(event => aiClient(event).generate(recipeCreateSchema, 'Make soup', 'Soup notes', () => recipe, signal))))
+  return handle(new Request('http://localhost/', { headers: { 'x-byok-key': 'test-key', 'x-byok-model': 'test-model', 'x-byok-provider': provider } }))
+}
+
+it.each([
+  ['Failed to generate JSON', undefined],
+  ['json_validate_failed', undefined],
+  ['Grammar rejected output', 'json_validate_failed']
+])('retries a Groq JSON grammar error (%s) without response_format', async (message, code) => {
+  const fetchSpy = vi.fn().mockResolvedValueOnce(failure(400, message, code)).mockResolvedValueOnce(success())
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await request()
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual(recipe)
+  expect(fetchSpy).toHaveBeenCalledTimes(2)
+  const first = fetchSpy.mock.calls[0]![1] as RequestInit, second = fetchSpy.mock.calls[1]![1] as RequestInit
+  const body = JSON.parse(first.body as string)
+  expect(body.response_format).toEqual({ type: 'json_object' })
+  delete body.response_format
+  expect(JSON.parse(second.body as string)).toEqual(body)
+  expect(body.max_tokens).toBe(4096)
+  expect(second.signal).toBe(first.signal)
+  expect(second.headers).toEqual(first.headers)
+})
+
+it('retries only once and preserves the actionable error', async () => {
+  const fetchSpy = vi.fn().mockImplementation(async () => failure())
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await request()
+  expect(response.status).toBe(400)
+  expect((await response.json()).statusMessage).toContain('qwen/qwen3.8-27b')
+  expect(fetchSpy).toHaveBeenCalledTimes(2)
+})
+
+it.each([['openai', 400, 'Failed to generate JSON'], ['groq', 429, 'Failed to generate JSON'], ['groq', 400, 'model not available'], ['groq', 401, 'json_validate_failed']])('does not retry unrelated %s HTTP %s errors', async (provider, status, message) => {
+  const fetchSpy = vi.fn().mockResolvedValue(failure(status, message))
+  vi.stubGlobal('fetch', fetchSpy)
+  expect((await request(provider)).status).toBe(status)
+  expect(fetchSpy).toHaveBeenCalledTimes(1)
+})
+
+it('still validates the retry output against the recipe schema', async () => {
+  const fetchSpy = vi.fn().mockResolvedValueOnce(failure()).mockResolvedValueOnce(success('{"title":42}'))
+  vi.stubGlobal('fetch', fetchSpy)
+  expect((await request()).status).toBe(502)
+  expect(fetchSpy).toHaveBeenCalledTimes(2)
+})
+
+it('does not retry after caller cancellation', async () => {
+  const controller = new AbortController()
+  const fetchSpy = vi.fn(async () => { controller.abort(); return failure() })
+  vi.stubGlobal('fetch', fetchSpy)
+  expect((await request('groq', controller.signal)).status).toBe(504)
+  expect(fetchSpy).toHaveBeenCalledTimes(1)
+})
+
+it('lists the requested developer models in both actionable Groq tips', () => {
+  for (const message of [humanizeProviderError('groq', 404, '', 'old-model'), humanizeProviderError('groq', 400, 'json_validate_failed', 'old-model')]) {
+    expect(message).toContain('openai/gpt-oss-120b')
+    expect(message).toContain('qwen/qwen3.8-27b')
+    expect(message).not.toMatch(/llama|gpt-oss-20b/)
+  }
+})
+it.each([
+  '  Here is your recipe:\n```json\n' + JSON.stringify(recipe) + '\n```\nEnjoy!  ',
+  'Result:\n```\n' + JSON.stringify(recipe) + '\n```\nDone.',
+  'Here is your recipe: ' + JSON.stringify(recipe) + ' Enjoy!'
+])('extracts JSON from fenced or prose-wrapped provider output', async content => {
+  vi.stubGlobal('fetch', vi.fn(async () => success(content)))
+  const response = await request()
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual(recipe)
+})
+it.each([500, 502, 503])('preserves actionable provider HTTP %s errors through SSE', async status => {
+  vi.stubGlobal('fetch', vi.fn(async () => failure(status, 'Service temporarily unavailable')))
+  const handle = toWebHandler(createApp().use(stream))
+  const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test', 'x-byok-provider': 'groq' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Make lemon chicken' }) }))
+  await expect(readRecipeStream(response, vi.fn())).rejects.toThrow(`Groq error (${status}): Service temporarily unavailable`)
+})
+it.each([JSON.stringify(recipe), '{"title":"Soup'])('rejects token-truncated output before accepting or parsing it', async content => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content } }] }))))
+  const response = await request()
+  expect(response.status).toBe(422)
+  expect((await response.json()).statusMessage).toContain('exceeded the model’s response limit')
+})
+it.each([
+  ['not JSON', '[aiClient] JSON parse failed:', 'could not be parsed as JSON'],
+  ['{"title":42}', '[aiClient] Schema validation failed:', 'expected recipe structure']
+])('distinguishes invalid JSON from invalid recipe structure (%s)', async (content, logMessage, publicMessage) => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    vi.stubGlobal('fetch', vi.fn(async () => success(content)))
+    const response = await request()
+    expect(response.status).toBe(502)
+    expect((await response.json()).statusMessage).toContain(publicMessage)
+    expect(log).toHaveBeenCalledWith(logMessage, expect.anything())
+  } finally { log.mockRestore() }
+})
 it('streams ordered public progress, draft chunk and validated completion', async () => {
   const fetchSpy = vi.fn(); vi.stubGlobal('fetch', fetchSpy)
   const handle = toWebHandler(createApp().use(csrf).use(stream))
@@ -59,7 +161,7 @@ it.each(['openai', 'anthropic', 'gemini', 'groq', 'ollama'])('uses request-scope
   expect(init.body).not.toContain('secret-test')
   expect(JSON.stringify(init.headers)).toContain('secret-test')
   const sent = JSON.parse(init.body as string)
-  if (provider === 'groq') expect(sent.max_tokens).toBe(2048)
+  if (provider === 'groq') expect(sent.max_tokens).toBe(4096)
   if (provider === 'openai' || provider === 'anthropic') expect(sent.max_tokens).toBe(6000)
   if (provider === 'ollama') expect(sent.options.num_predict).toBe(6000)
 })
