@@ -127,14 +127,15 @@ describe('multi-recipe backend contracts', () => {
     expect(result.recipes[0].heirloomNotes).not.toContain('tarragon')
     expect(result.recipes[1].heirloomNotes).toContain('tarragon')
   })
-  it('does not emit a partial completion when a later chapter provider request fails', async () => {
+  it('streams preserved chapters when a later chapter provider request fails', async () => {
     fixture()
     const fetchSpy = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: 'Sauce', description: '' }) } }] }))).mockResolvedValueOnce(new Response('upstream failure', { status: 502 }))
     vi.stubGlobal('fetch', fetchSpy)
     const response = await toWebHandler(createApp().use(stream))(new Request('http://localhost', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-byok-key': 'test', 'x-byok-model': 'test' }, body: JSON.stringify({ kind: 'video', videoUrl: 'MNcu0JX_EMI' }) }))
     const output = await response.text()
-    expect(output).toContain('event: error')
-    expect(output).not.toContain('event: complete')
+    expect(output).not.toContain('event: error')
+    expect(output).toContain('event: complete')
+    expect(output).toContain('Earlier chapters were preserved.')
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
   it('exposes the batch in the video route while retaining legacy recipe fields', async () => {

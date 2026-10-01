@@ -117,7 +117,7 @@ export function aiClient(event: H3Event) {
         if (key) headers.Authorization = 'Bearer ' + key
         body = {
           model,
-          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? groqTokens : 6000 } : { options: { num_predict: 6000 } }),
+          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? groqTokens : 6000 } : { options: { num_ctx: 16384, num_predict: 4096 } }),
           messages: [
             { role: 'system', content: system },
             {
@@ -179,7 +179,11 @@ export function aiClient(event: H3Event) {
         }
 
         const data = JSON.parse(text)
-        const isTruncated = data.choices?.[0]?.finish_reason === 'length'
+        const isTruncated =
+          data.choices?.[0]?.finish_reason === 'length' ||
+          data.stop_reason === 'max_tokens' ||
+          data.done_reason === 'length' ||
+          data.candidates?.[0]?.finishReason === 'MAX_TOKENS'
         const truncationError = () => createError({ statusCode: 422, statusMessage: 'The recipe draft was cut off because it exceeded the model’s response limit. Try importing with shorter notes or a smaller section.' })
         const content =
           provider === 'anthropic'

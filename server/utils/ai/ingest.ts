@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { createError, type H3Event } from 'h3'
 import { load } from 'cheerio'
-import { aiClient } from './client'
+import { aiClient, estimateTokens } from './client'
 import { safeFetch } from './safe-fetch'
 import { extractHtml, extractJsonLd, extractPageRecipe, fallbackRecipe, structuredDraft } from './normalize'
 import { enrichScience } from './science'
@@ -88,10 +88,20 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   const draftWarnings = new Set<string>()
   const onWarning = (message: string) => { draftWarnings.add(message) }
   const capModelSource = (text: string) => {
-    const limit = client.provider === 'groq' ? 8000 : 25000
-    if (client.provider === 'groq' && client.mode === 'live' && text.length > limit) {
+    const limit = client.provider === 'groq' ? 8000 : client.provider === 'ollama' ? 12000 : 25000
+    if (client.provider === 'groq' && (text.length > limit || estimateTokens(text) > 4600)) {
       onWarning('Source notes were trimmed to fit Groq free-tier limits. Review final steps.')
+      text = text.slice(0, limit)
+      // Token estimates increase monotonically with each source character.
+      let low = 0, high = text.length
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2)
+        if (estimateTokens(text.slice(0, mid)) <= 4600) low = mid
+        else high = mid - 1
+      }
+      return text.slice(0, low)
     }
+    if (client.provider === 'ollama' && text.length > limit) onWarning('Source notes were trimmed to fit Ollama context limits. Review final steps.')
     return text.slice(0, limit)
   }
   let source = '', title = '', sourceUrl: string | undefined, draftSource = ''
@@ -163,7 +173,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
               context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },
               videoId
             }),
-            signal
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000)
           })).json()
           const androidTracks = androidResp?.captions?.playerCaptionsTracklistRenderer?.captionTracks
           const androidTrack = Array.isArray(androidTracks) ? androidTracks.find(item => item.languageCode === ((request.kind === 'video' ? request.language : undefined) || 'en')) || androidTracks[0] : undefined
@@ -186,22 +196,30 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   }
   if (captionsUnavailable) task += ' Reconstruct the method in order from the creator’s description and ingredient lists. Tag any step or amount you infer rather than read with [Inferred from description]. Keep steps clear and concise.'
   const recipeChapters = chapters.filter(chapter => chapter.isRecipe)
+  const chaptersToExtract = recipeChapters.slice(0, 8)
+  if (recipeChapters.length > 8) onWarning(`Imported the first 8 of ${recipeChapters.length} chapters. Additional recipes can be imported individually.`)
   if (recipeChapters.length >= 2) {
     const recipes: RecipeInput[] = [], sources: string[] = [], missingTranscript: string[] = []
-    for (const chapter of recipeChapters) {
+    for (const chapter of chaptersToExtract) {
       if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' })
-      progress(`Extracting ${chapter.title}`)
-      const transcript = windowTranscript(cues, chapter)
-      if (!transcript) missingTranscript.push(chapter.title)
-      const scopedSource = [chapter.sourceText, transcript].filter(Boolean).join('\n\n')
-      sources.push(`${chapter.title}\n${scopedSource}`)
-      const structured = client.mode === 'fallback' ? structuredDraft(scopedSource, chapter.title) : null
-      const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', capModelSource(`Chapter: ${chapter.title}\n${scopedSource}`.replace(/\s+/g, ' ').trim()), () => fallbackRecipe(scopedSource, chapter.title), signal, undefined, onWarning)
-      const sanitized = { ...recipe, originalSaltType: null }
-      delete sanitized.imageUrl
-      delete sanitized.rating
-      delete sanitized.isFavorite
-      recipes.push(recipeCreateSchema.parse(enrichScience({ ...sanitized, title: chapter.title, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: `${sourceUrl}&t=${chapter.startSeconds}s` })))
+      try {
+        progress(`Extracting ${chapter.title}`)
+        const transcript = windowTranscript(cues, chapter)
+        if (!transcript) missingTranscript.push(chapter.title)
+        const scopedSource = [chapter.sourceText, transcript].filter(Boolean).join('\n\n')
+        sources.push(`${chapter.title}\n${scopedSource}`)
+        const structured = client.mode === 'fallback' ? structuredDraft(scopedSource, chapter.title) : null
+        const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', capModelSource(`Chapter: ${chapter.title}\n${scopedSource}`.replace(/\s+/g, ' ').trim()), () => fallbackRecipe(scopedSource, chapter.title), signal, undefined, onWarning)
+        const sanitized = { ...recipe, originalSaltType: null }
+        delete sanitized.imageUrl
+        delete sanitized.rating
+        delete sanitized.isFavorite
+        recipes.push(recipeCreateSchema.parse(enrichScience({ ...sanitized, title: chapter.title, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: `${sourceUrl}&t=${chapter.startSeconds}s` })))
+      } catch (error) {
+        if (!recipes.length) throw error
+        onWarning(`Chapter "${chapter.title}" could not be completed (${error instanceof Error ? error.message : String(error)}). Earlier chapters were preserved.`)
+        break
+      }
     }
     const warnings = ['Recipes were extracted separately by chapter. Review inferred quantities and cooking times.']
     if (missingTranscript.length) warnings.push(`Timed captions are unavailable for: ${missingTranscript.join(', ')}. These drafts use only their own description sections. Missing details are inferred; review before cooking.`)

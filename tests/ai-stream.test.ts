@@ -1,12 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, defineEventHandler, toWebHandler } from 'h3'
 import stream from '../server/api/ai/recipe/stream.post'
+import translate from '../server/api/ai/recipe/translate.post'
+import { ingest } from '../server/utils/ai/ingest'
+import * as sourceFetch from '../server/utils/ai/safe-fetch'
 import csrf from '../server/middleware/csrf'
 import { aiClient, estimateTokens, humanizeProviderError } from '../server/utils/ai/client'
 import { recipeCreateSchema } from '../server/utils/validation'
 import { readRecipeStream } from '../app/utils/sse'
 import { repairTruncatedJson, sanitizeAiDraft } from '../server/utils/ai/sanitize-draft'
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 const headers = { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }
 it('cleans common recipe deviations without mutating source or weakening the API schema', () => {
   const raw = {
@@ -91,7 +94,7 @@ it('estimates Greek tokens conservatively and keeps requested Groq tokens within
   expect((await request('groq', undefined, 'α'.repeat(8000))).status).toBe(413)
   expect(fetchSpy).toHaveBeenCalledTimes(2)
 })
-it.each(['openai', 'anthropic', 'gemini', 'ollama'])('allows 25,000 source characters for %s', async provider => {
+it.each(['openai', 'anthropic', 'gemini', 'ollama'])('caps source characters for %s', async provider => {
   const content = JSON.stringify(recipe)
   const payload = provider === 'anthropic' ? { content: [{ type: 'text', text: content }] }
     : provider === 'gemini' ? { candidates: [{ content: { parts: [{ text: content }] } }] }
@@ -103,7 +106,11 @@ it.each(['openai', 'anthropic', 'gemini', 'ollama'])('allows 25,000 source chara
   await readRecipeStream(response, (event, data) => { if (event === 'complete') completion = data as typeof completion })
   const sent = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
   const source = provider === 'anthropic' ? sent.messages[0].content : provider === 'gemini' ? sent.contents[0].parts[0].text : sent.messages[1].content
-  expect(source).toHaveLength(25000)
+  expect(source).toHaveLength(provider === 'ollama' ? 12000 : 25000)
+  if (provider === 'ollama') {
+    expect(completion!.warnings).toContain('Source notes were trimmed to fit Ollama context limits. Review final steps.')
+    expect(sent.options).toEqual({ num_ctx: 16384, num_predict: 4096 })
+  }
   expect(completion!.warnings.join()).not.toContain('Groq free-tier')
 })
 it('surfaces a warning when ingestion salvages a truncated draft', async () => {
@@ -121,6 +128,110 @@ function request(provider = 'groq', signal?: AbortSignal, source = 'Soup notes')
   const handle = toWebHandler(createApp().use(defineEventHandler(event => aiClient(event).generate(recipeCreateSchema, 'Make soup', source, () => recipe, signal))))
   return handle(new Request('http://localhost/', { headers: { 'x-byok-key': 'test-key', 'x-byok-model': 'test-model', 'x-byok-provider': provider } }))
 }
+
+const liveHeaders = { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test' }
+function ingestRequest(input: unknown, provider = 'openai', signal?: AbortSignal) {
+  return toWebHandler(createApp().use(defineEventHandler(event => ingest(event, input, signal))))(
+    new Request('http://localhost', { headers: { ...liveHeaders, 'x-byok-provider': provider } })
+  )
+}
+function chapterFixture(count: number) {
+  const description = Array.from({ length: count }, (_, i) => `00:${String(i).padStart(2, '0')} Soup ${i + 1}\nIngredients for soup ${i + 1}`).join('\n')
+  vi.spyOn(sourceFetch, 'safeFetch').mockResolvedValue('ytInitialPlayerResponse = ' + JSON.stringify({ videoDetails: { title: 'Soups', shortDescription: description } }) + ';')
+}
+it.each([6900, 7500, 19000])('trims %s Greek characters before the Groq token guard', async length => {
+  const fetchSpy = vi.fn(async () => success())
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await ingestRequest({ kind: 'prompt', prompt: 'α'.repeat(length) }, 'groq')
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  const sent = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+  expect(sent.messages[1].content).toHaveLength(6900)
+  expect(estimateTokens(sent.messages[1].content)).toBeLessThanOrEqual(4600)
+  expect(estimateTokens(sent.messages[0].content + sent.messages[1].content) + sent.max_tokens).toBeLessThanOrEqual(7500)
+  expect(result.warnings.includes('Source notes were trimmed to fit Groq free-tier limits. Review final steps.')).toBe(length > 6900)
+})
+it.each([8, 10])('extracts at most eight of %s recipe chapters', async count => {
+  chapterFixture(count)
+  const fetchSpy = vi.fn(async () => success())
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await ingestRequest({ kind: 'video', videoUrl: 'MNcu0JX_EMI' })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result.count).toBe(8)
+  expect(result.recipes.map((draft: { title: string }) => draft.title)).toEqual(Array.from({ length: 8 }, (_, i) => `Soup ${i + 1}`))
+  expect(fetchSpy).toHaveBeenCalledTimes(8)
+  expect(result.warnings.includes(`Imported the first 8 of ${count} chapters. Additional recipes can be imported individually.`)).toBe(count > 8)
+})
+it('preserves completed chapters and stops after a later provider failure', async () => {
+  chapterFixture(3)
+  const fetchSpy = vi.fn().mockResolvedValueOnce(success()).mockResolvedValueOnce(failure(429, 'Rate limit'))
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await ingestRequest({ kind: 'video', videoUrl: 'MNcu0JX_EMI' })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result).toMatchObject({ isMulti: true, count: 1, recipe: { title: 'Soup 1' }, recipes: [{ title: 'Soup 1' }] })
+  expect(result.warnings.join()).toMatch(/Chapter "Soup 2" could not be completed \(Openai rate limit reached.*Earlier chapters were preserved\./)
+  expect(fetchSpy).toHaveBeenCalledTimes(2)
+})
+it('rethrows a provider failure before any chapter completes', async () => {
+  chapterFixture(3)
+  const fetchSpy = vi.fn(async () => failure(401, 'Unauthorized'))
+  vi.stubGlobal('fetch', fetchSpy)
+  expect((await ingestRequest({ kind: 'video', videoUrl: 'MNcu0JX_EMI' })).status).toBe(401)
+  expect(fetchSpy).toHaveBeenCalledTimes(1)
+})
+
+function providerPayload(provider: string, content: string, truncated: boolean) {
+  if (provider === 'anthropic') return { stop_reason: truncated ? 'max_tokens' : 'end_turn', content: [{ type: 'text', text: content }] }
+  if (provider === 'gemini') return { candidates: [{ finishReason: truncated ? 'MAX_TOKENS' : 'STOP', content: { parts: [{ text: content }] } }] }
+  if (provider === 'ollama') return { done_reason: truncated ? 'length' : 'stop', message: { content } }
+  return { choices: [{ finish_reason: truncated ? 'length' : 'stop', message: { content } }] }
+}
+it.each(['openai', 'groq', 'anthropic', 'gemini', 'ollama'])('warns on valid truncated %s drafts and accepts normal completion', async provider => {
+  for (const truncated of [true, false]) {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(providerPayload(provider, JSON.stringify(recipe), truncated)))))
+    const warning = vi.fn()
+    const response = await toWebHandler(createApp().use(defineEventHandler(event => aiClient(event).generate(recipeCreateSchema, 'Make soup', 'Soup', () => recipe, undefined, undefined, warning))))(new Request('http://localhost', { headers: { ...liveHeaders, 'x-byok-provider': provider } }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual(recipe)
+    expect(warning).toHaveBeenCalledTimes(truncated ? 1 : 0)
+  }
+})
+it.each(['anthropic', 'gemini', 'ollama'])('repairs partial %s drafts and rejects unrepairable truncation with 422', async provider => {
+  for (const [content, status] of [['{"title":"Soup","steps":[{"instruction":"Simmer."}', 200], ['{"title":42', 422]] as const) {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(providerPayload(provider, content, true)))))
+    expect((await request(provider)).status).toBe(status)
+  }
+})
+it.each(['openai', 'groq', 'anthropic', 'ollama'])('rejects truncated %s translations before enforcing structure invariants', async provider => {
+  const original = recipeCreateSchema.parse({ ...recipe, steps: [{ stepNumber: 1, instruction: 'Simmer.' }, { stepNumber: 2, instruction: 'Serve.' }] })
+  for (const truncated of [true, false]) {
+    const translated = truncated ? { ...recipe, steps: [{ stepNumber: 1, instruction: 'Σιγοβράστε.' }] } : original
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(providerPayload(provider, JSON.stringify(translated), truncated)))))
+    const response = await toWebHandler(createApp().use(translate))(new Request('http://localhost', { method: 'POST', headers: { ...liveHeaders, 'x-byok-provider': provider }, body: JSON.stringify({ recipe: original, targetLanguage: 'el' }) }))
+    expect(response.status).toBe(truncated ? 422 : 200)
+    if (truncated) expect((await response.json()).statusMessage).toBe('The recipe translation was cut off because it exceeded the model’s response limit. Try translating a shorter recipe or smaller section.')
+  }
+})
+it.each([false, true])('bounds InnerTube fallback and preserves caller cancellation (signal: %s)', async hasSignal => {
+  const controller = new AbortController(), deadline = new AbortController()
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
+  vi.spyOn(sourceFetch, 'safeFetch').mockResolvedValue('ytInitialPlayerResponse = ' + JSON.stringify({ videoDetails: { title: 'Soup', shortDescription: 'Make soup' } }) + '; "INNERTUBE_API_KEY":"test_key"')
+  let requestSignal: AbortSignal | undefined
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+    requestSignal = init.signal as AbortSignal
+    if (hasSignal) controller.abort()
+    else deadline.abort()
+    requestSignal.throwIfAborted()
+    return new Response('{}')
+  }))
+  const response = await toWebHandler(createApp().use(defineEventHandler(event => ingest(event, { kind: 'video', videoUrl: 'MNcu0JX_EMI' }, hasSignal ? controller.signal : undefined))))(new Request('http://localhost'))
+  expect(timeout).toHaveBeenCalledWith(10000)
+  expect(requestSignal?.aborted).toBe(true)
+  expect(response.status).toBe(hasSignal ? 499 : 200)
+  if (!hasSignal) expect((await response.json()).recipe.title).toBe('Soup')
+})
 
 it.each([
   ['Failed to generate JSON', undefined],
@@ -292,7 +403,7 @@ it.each(['openai', 'anthropic', 'gemini', 'groq', 'ollama'])('uses request-scope
   const sent = JSON.parse(init.body as string)
   if (provider === 'groq') expect(sent.max_tokens).toBe(2048)
   if (provider === 'openai' || provider === 'anthropic') expect(sent.max_tokens).toBe(6000)
-  if (provider === 'ollama') expect(sent.options.num_predict).toBe(6000)
+  if (provider === 'ollama') expect(sent.options).toEqual({ num_ctx: 16384, num_predict: 4096 })
 })
 it('sanitizes provider errors instead of leaking keys or returning a fake success', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('secret-test') }))
