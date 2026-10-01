@@ -5,13 +5,77 @@ import csrf from '../server/middleware/csrf'
 import { aiClient, humanizeProviderError } from '../server/utils/ai/client'
 import { recipeCreateSchema } from '../server/utils/validation'
 import { readRecipeStream } from '../app/utils/sse'
+import { sanitizeAiDraft } from '../server/utils/ai/sanitize-draft'
 afterEach(() => vi.unstubAllGlobals())
 const headers = { Host: 'localhost', Origin: 'http://localhost', 'Content-Type': 'application/json' }
+it('cleans common recipe deviations without mutating source or weakening the API schema', () => {
+  const raw = {
+    title: ' Soup ', description: ' Warm ', difficulty: 'medium', recipeType: 'dinner', tags: ['soup'], author: 'Chef', prepTime: 10,
+    servings: '4 servings', prepTimeMinutes: '10.5 min', cookTimeMinutes: -3, totalTimeMinutes: '30 minutes', sourceUrl: 'javascript:alert(1)',
+    ingredients: [{ name: ' salt ', amount: 'to taste', unit: null, extra: true }, { amount: '2.5 cups', unit: ' cup ', gramsEquivalent: '250', notes: ' note ' }],
+    steps: [{ stepNumber: 9, instruction: ' Simmer. ', heatLevel: 'med-high', durationMinutes: '20 min', timerRequired: true, scienceWhy: ' Gelatin softens. ', extra: true }],
+    equipment: [{ name: ' pot ', isEssential: true, substituteTool: ' pan ', extra: true }]
+  }
+  expect(recipeCreateSchema.safeParse(raw).success).toBe(false)
+  const cleaned = recipeCreateSchema.parse(sanitizeAiDraft(raw))
+  expect(cleaned).toMatchObject({ title: 'Soup', recipeType: 'food', difficulty: 'intermediate', servings: 4, prepTimeMinutes: 10, cookTimeMinutes: 0, totalTimeMinutes: 30, sourceUrl: null,
+    ingredients: [{ name: 'salt', amount: 0, unit: 'item', sortOrder: 1 }, { name: 'Ingredient', amount: 2.5, unit: 'cup', gramsEquivalent: 250, sortOrder: 2 }],
+    steps: [{ stepNumber: 1, instruction: 'Simmer.', heatLevel: 'medium-high', durationMinutes: 20 }], equipment: [{ name: 'pot', substituteTool: 'pan' }] })
+  expect(cleaned).not.toHaveProperty('author')
+  expect(cleaned).not.toHaveProperty('tags')
+  expect(raw.steps[0]!.stepNumber).toBe(9)
+  expect(raw.ingredients[0]).toHaveProperty('extra')
+})
+it('handles heat aliases, invalid values and non-object input', () => {
+  for (const value of [null, 42, 'bad', []]) expect(sanitizeAiDraft(value)).toBe(value)
+  const cleaned = recipeCreateSchema.parse(sanitizeAiDraft({ ...recipe, difficulty: 'expert', recipeType: 'baking', servings: 0,
+    ingredients: [{ name: '', amount: -1, unit: '' }],
+    steps: ['med', 'moderate', 'med-high', 'medium high', 'med-low', 'medium low', 'invalid'].map(heatLevel => ({ instruction: 'Stir.', heatLevel })) }))
+  expect(cleaned.difficulty).toBe('advanced')
+  expect(cleaned.servings).toBe(1)
+  expect(cleaned.steps!.map(step => step.heatLevel)).toEqual(['medium', 'medium', 'medium-high', 'medium-high', 'medium-low', 'medium-low', undefined])
+  expect(cleaned.ingredients![0]).toMatchObject({ name: 'Ingredient', amount: 0, unit: 'item' })
+})
+it('accepts a fixable AI draft after strict parsing fails', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => success(JSON.stringify({ ...recipe, difficulty: 'moderate', recipeType: 'dinner', author: 'Chef', ingredients: [{ name: 'salt', amount: 'to taste' }] }))))
+  const response = await request()
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ difficulty: 'intermediate', recipeType: 'food', ingredients: [{ amount: 0, unit: 'item' }] })
+})
+it('shrinks the Groq completion budget and rejects prompts too large for the minimum budget', async () => {
+  const fetchSpy = vi.fn(async () => success())
+  vi.stubGlobal('fetch', fetchSpy)
+  expect((await request()).status).toBe(200)
+  const first = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+  const source = 'x'.repeat(Math.floor(6000 * 3.2 - first.messages[0].content.length))
+  expect((await request('groq', undefined, source)).status).toBe(200)
+  const second = JSON.parse((fetchSpy.mock.calls[1] as unknown as [string, RequestInit])[1].body as string)
+  expect(second.max_tokens).toBe(1500)
+  const rejected = await request('groq', undefined, 'x'.repeat(30000))
+  expect(rejected.status).toBe(413)
+  expect((await rejected.json()).statusMessage).toContain('shortening the notes')
+  expect(fetchSpy).toHaveBeenCalledTimes(2)
+})
+it('humanizes token-limit errors without exposing organization details', () => {
+  expect(humanizeProviderError('groq', 413, 'Request too large for organization private-id', 'test')).toContain('Try importing a smaller section')
+  expect(humanizeProviderError('groq', 400, 'reduce your message size', 'test')).not.toContain('private-id')
+})
+it('compacts and caps model-facing ingest notes at 12,000 characters', async () => {
+  const fetchSpy = vi.fn(async () => success())
+  vi.stubGlobal('fetch', fetchSpy)
+  const handle = toWebHandler(createApp().use(stream))
+  const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Soup  notes\n\n' + 'x'.repeat(19000) }) }))
+  await readRecipeStream(response, vi.fn())
+  const sent = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+  expect(sent.messages[1].content).toHaveLength(12000)
+  expect(sent.messages[1].content).toMatch(/^Soup notes x/)
+  expect(sent.messages[1].content).not.toMatch(/\s{2,}/)
+})
 const recipe = { title: 'Soup', description: 'Warm' }
 const failure = (status = 400, message = 'Failed to generate JSON', code?: string) => new Response(JSON.stringify({ error: { message, code } }), { status })
 const success = (content = '```json\n' + JSON.stringify(recipe) + '\n```') => new Response(JSON.stringify({ choices: [{ message: { content } }] }))
-function request(provider = 'groq', signal?: AbortSignal) {
-  const handle = toWebHandler(createApp().use(defineEventHandler(event => aiClient(event).generate(recipeCreateSchema, 'Make soup', 'Soup notes', () => recipe, signal))))
+function request(provider = 'groq', signal?: AbortSignal, source = 'Soup notes') {
+  const handle = toWebHandler(createApp().use(defineEventHandler(event => aiClient(event).generate(recipeCreateSchema, 'Make soup', source, () => recipe, signal))))
   return handle(new Request('http://localhost/', { headers: { 'x-byok-key': 'test-key', 'x-byok-model': 'test-model', 'x-byok-provider': provider } }))
 }
 
@@ -31,7 +95,7 @@ it.each([
   expect(body.response_format).toEqual({ type: 'json_object' })
   delete body.response_format
   expect(JSON.parse(second.body as string)).toEqual(body)
-  expect(body.max_tokens).toBe(4096)
+  expect(body.max_tokens).toBe(2048)
   expect(second.signal).toBe(first.signal)
   expect(second.headers).toEqual(first.headers)
 })
@@ -161,7 +225,7 @@ it.each(['openai', 'anthropic', 'gemini', 'groq', 'ollama'])('uses request-scope
   expect(init.body).not.toContain('secret-test')
   expect(JSON.stringify(init.headers)).toContain('secret-test')
   const sent = JSON.parse(init.body as string)
-  if (provider === 'groq') expect(sent.max_tokens).toBe(4096)
+  if (provider === 'groq') expect(sent.max_tokens).toBe(2048)
   if (provider === 'openai' || provider === 'anthropic') expect(sent.max_tokens).toBe(6000)
   if (provider === 'ollama') expect(sent.options.num_predict).toBe(6000)
 })

@@ -187,7 +187,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
       const scopedSource = [chapter.sourceText, transcript].filter(Boolean).join('\n\n')
       sources.push(`${chapter.title}\n${scopedSource}`)
       const structured = client.mode === 'fallback' ? structuredDraft(scopedSource, chapter.title) : null
-      const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', `Chapter: ${chapter.title}\n${scopedSource}`.slice(0, 30000), () => fallbackRecipe(scopedSource, chapter.title), signal)
+      const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', `Chapter: ${chapter.title}\n${scopedSource}`.replace(/\s+/g, ' ').trim().slice(0, 12000), () => fallbackRecipe(scopedSource, chapter.title), signal)
       const sanitized = { ...recipe, originalSaltType: null }
       delete sanitized.imageUrl
       delete sanitized.rating
@@ -202,7 +202,9 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   // Without a model, prefer the source's own ingredients and numbered method over the generic template.
   const structured = !extracted && client.mode === 'fallback' ? (draftSource ? structuredDraft(draftSource, title || undefined) : null) || structuredDraft(source, title || undefined) : null
   const promptSource = request.kind === 'video' && draftSource && draftSource !== source ? `=== VIDEO DESCRIPTION ===\n${draftSource}\n\n=== VIDEO TRANSCRIPT ===\n${source}` : source
-  const recipe = extracted || structured || await client.generate(recipeCreateSchema, task, promptSource.slice(0, 30000), () => fallbackRecipe(source, title || undefined), signal, image)
+  // Keep original line breaks for deterministic section parsing; compact only model input.
+  const modelSource = request.kind === 'ocr' ? promptSource : promptSource.replace(/\s+/g, ' ').trim()
+  const recipe = extracted || structured || await client.generate(recipeCreateSchema, task, modelSource.slice(0, 12000), () => fallbackRecipe(source, title || undefined), signal, image)
   const sanitized = { ...recipe, originalSaltType: extracted?.originalSaltType ?? null }
   if (!extracted) {
     delete sanitized.imageUrl

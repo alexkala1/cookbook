@@ -1,5 +1,7 @@
 import { createError, getHeader, type H3Event } from 'h3'
 import { z } from 'zod'
+import { recipeCreateSchema } from '../validation'
+import { sanitizeAiDraft } from './sanitize-draft'
 
 const providers = ['openai', 'anthropic', 'gemini', 'groq', 'ollama'] as const
 
@@ -13,6 +15,9 @@ export function extractJson(raw: string): string {
 export function humanizeProviderError(provider: string, status: number, rawMessage: string, model: string): string {
   const name = provider.charAt(0).toUpperCase() + provider.slice(1)
   const lowerMsg = (rawMessage || '').toLowerCase()
+  if (status === 413 || lowerMsg.includes('request too large') || lowerMsg.includes('reduce your message size')) {
+    return `${name} request is too large for the model’s token allowance. Try importing a smaller section or shortening the notes, then retry.`
+  }
   if (status === 401 || status === 403 || lowerMsg.includes('invalid api key') || lowerMsg.includes('unauthorized') || lowerMsg.includes('forbidden')) {
     return `Your ${name} API key was rejected (HTTP ${status}). Please verify your key in Settings.`
   }
@@ -68,6 +73,12 @@ export function aiClient(event: H3Event) {
         'Never claim safety from sensory cues. Do not include private reasoning. ' +
         task
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const estimatedPromptTokens = Math.ceil((system.length + (typeof source === 'string' ? source.length : 0)) / 3.2)
+      const groqTokens = Math.min(2048, Math.max(1024, 7500 - estimatedPromptTokens))
+      // Leave headroom below the free-tier 8,000 TPM allowance; estimates are approximate.
+      if (provider === 'groq' && estimatedPromptTokens + groqTokens > 7500) {
+        throw createError({ statusCode: 413, statusMessage: humanizeProviderError(provider, 413, '', model) })
+      }
       let url: string
       let body: Record<string, unknown>
       if (provider === 'anthropic') {
@@ -95,7 +106,7 @@ export function aiClient(event: H3Event) {
         if (key) headers.Authorization = 'Bearer ' + key
         body = {
           model,
-          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? 4096 : 6000 } : { options: { num_predict: 6000 } }),
+          ...(provider !== 'ollama' ? { max_tokens: provider === 'groq' ? groqTokens : 6000 } : { options: { num_predict: 6000 } }),
           messages: [
             { role: 'system', content: system },
             {
@@ -181,7 +192,11 @@ export function aiClient(event: H3Event) {
           console.error('[aiClient] JSON parse failed:', content)
           throw createError({ statusCode: 502, statusMessage: `${name} returned an unreadable response that could not be parsed as JSON. Please retry.` })
         }
-        const parseResult = schema.safeParse(parsed)
+        let parseResult = schema.safeParse(parsed)
+        if (!parseResult.success && Object.is(schema, recipeCreateSchema)) {
+          const retry = schema.safeParse(sanitizeAiDraft(parsed))
+          if (retry.success) parseResult = retry
+        }
         if (!parseResult.success) {
           console.error('[aiClient] Schema validation failed:', parseResult.error.format())
           throw createError({ statusCode: 502, statusMessage: `${name} generated a draft that did not match the expected recipe structure. Please retry.` })
