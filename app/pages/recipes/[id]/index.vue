@@ -371,6 +371,7 @@ function saved(value: RecipeDetail) {
           </li>
         </ol>
       </section>
+      <RecipeStorageReheatingCard :recipe="recipe" class="mt-8" />
       <div class="grid gap-12 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <aside class="min-w-0">
           <h2>Ingredients</h2>

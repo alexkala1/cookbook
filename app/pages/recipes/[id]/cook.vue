@@ -578,7 +578,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <button v-if="index < steps.length - 1" class="kitchen-button step-next" @click="navigate('next')">Next<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
           <button v-else class="kitchen-button step-next" @click="finishCooking">Done</button>
         </nav>
-        <dialog ref="finishDialog" class="m-auto w-[min(92vw,32rem)] rounded-xl border border-k-accent bg-k-paper p-6 text-k-ink backdrop:bg-black/50" aria-labelledby="finish-title">
+        <dialog ref="finishDialog" class="m-auto max-h-[90dvh] w-[min(92vw,32rem)] overflow-y-auto rounded-xl border border-k-accent bg-k-paper p-6 text-k-ink backdrop:bg-black/50" aria-labelledby="finish-title">
           <h2 id="finish-title" class="text-3xl">Finished cooking?</h2>
           <template v-if="finishState !== 'done'">
             <fieldset class="mt-4" :disabled="finishState === 'busy'">
@@ -609,6 +609,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
             </div>
             <button class="kitchen-button mt-6" autofocus @click="leaveKitchen">Back to recipe</button>
           </template>
+          <RecipeStorageReheatingCard v-if="recipe" :recipe="recipe" heading="Leftovers & Reheating" kitchen class="mt-6" />
         </dialog>
         <p v-if="index === steps.length - 1" class="mt-4 text-xl">Final step. Check your active timers before
           leaving.</p>
