@@ -5,10 +5,11 @@ import IconChasapis from './icons/market/IconChasapis.vue'
 import IconFournos from './icons/market/IconFournos.vue'
 import IconSupermarket from './icons/market/IconSupermarket.vue'
 import { marketSections, sectionInfo, type MenuCourse, type MarketSection } from '#shared/culinary/grocery'
-import { inferStorage, type PantryDraft } from '#shared/culinary/pantry'
+import { inferStorage, type PantryDraft, type PantryItem } from '#shared/culinary/pantry'
 import { shoppingListText, routeShoppingList, type MarketShoppingList, type ShoppingMode } from '../utils/shopping-list'
 import { formatWhatsAppMarketList, encodeMarketPayload, generateMarketQrSvg } from '../utils/market-share'
 import { formatPriceBadge, type PriceBadge } from '../utils/market-prices'
+import { applyPantryStock } from '../utils/pantry-stock'
 import type { PriceResponse } from '../../server/utils/market-prices'
 
 const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[]; servings?: number; servingsNoun?: string; autoGenerate?: boolean; importedList?: MarketShoppingList }>()
@@ -16,6 +17,12 @@ const props = defineProps<{ courses: { recipeId: string; course: MenuCourse }[];
 const list = ref<MarketShoppingList | null>(props.importedList ?? null)
 const checked = ref<string[]>([])
 const mode = ref<ShoppingMode>('market')
+// Optional: subtract what the pantry already holds. Off unless the cook opts in (remembered on this device).
+const pantryKey = 'heirloom-market-deduct-pantry'
+const deductPantry = ref(false)
+const pantryStock = ref<PantryItem[] | null>(null)
+const pantryLoading = ref(false)
+const pantryMessage = ref('')
 const destinations = ref<Record<string, MarketSection>>({})
 // The cook's own walking order through the shops, remembered on this device.
 const orderKey = 'heirloom-market-destination-order'
@@ -23,6 +30,7 @@ const sectionOrder = ref<MarketSection[]>([...marketSections])
 const orderNote = ref('')
 onMounted(() => {
   if (props.autoGenerate) void generate()
+  try { if (localStorage.getItem(pantryKey) === '1') void setDeduct(true) } catch { /* Storage blocked: stay off. */ }
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(orderKey) ?? 'null')
     if (Array.isArray(saved)) {
@@ -32,7 +40,12 @@ onMounted(() => {
   } catch { /* Storage blocked or unreadable: keep the default order. */ }
 })
 watch(sectionOrder, value => { try { localStorage.setItem(orderKey, JSON.stringify(value)) } catch { /* Order simply won't persist. */ } })
-const routedList = computed(() => list.value ? routeShoppingList(list.value, destinations.value, mode.value, sectionOrder.value) : null)
+const stocked = computed(() => list.value && deductPantry.value && pantryStock.value ? applyPantryStock(list.value, pantryStock.value) : null)
+const covered = computed(() => stocked.value?.covered ?? [])
+const routedList = computed(() => {
+  const base = stocked.value?.list ?? list.value
+  return base ? routeShoppingList(base, destinations.value, mode.value, sectionOrder.value) : null
+})
 
 // Swap with the neighbouring stop that is actually on screen, so every click visibly moves the section.
 async function moveSection(section: MarketSection, direction: -1 | 1) {
@@ -54,7 +67,9 @@ const copying = ref(false)
 const copyError = ref('')
 const { state: copyState, label: copyLabel } = useActionFeedback(copying, copyError)
 const summary = computed(() => routedList.value ? shoppingListText(routedList.value, checked.value) : '')
-const itemCount = computed(() => list.value?.destinations.reduce((count, store) => count + store.items.length, 0) ?? 0)
+const itemCount = computed(() => routedList.value?.destinations.reduce((count, store) => count + store.items.length, 0) ?? 0)
+// Ticks on items the pantry now covers are not counted: only what is still on the list matters.
+const checkedCount = computed(() => { const visible = new Set(routedList.value?.destinations.flatMap(store => store.items.map(item => item.id))); return checked.value.filter(id => visible.has(id)).length })
 let controller: AbortController | undefined
 let disposed = false
 const priceController = new AbortController()
@@ -98,6 +113,26 @@ async function moveItem(id: string, destination: MarketSection) {
   document.getElementById('destination-' + id)?.focus()
 }
 
+function rememberDeduct(on: boolean) { try { localStorage.setItem(pantryKey, on ? '1' : '0') } catch { /* The choice simply won't persist. */ } }
+async function setDeduct(on: boolean, box?: HTMLInputElement) {
+  pantryMessage.value = ''
+  if (!on) { deductPantry.value = false; rememberDeduct(false); return }
+  pantryLoading.value = true
+  try {
+    const rows = await $fetch<PantryItem[]>('/api/pantry', { signal: priceController.signal })
+    if (disposed) return
+    pantryStock.value = rows
+    deductPantry.value = true
+    rememberDeduct(true)
+    if (!rows.length) pantryMessage.value = 'Your pantry is empty, so nothing was deducted. Add stock on the Pantry page.'
+  } catch {
+    if (disposed) return
+    deductPantry.value = false
+    if (box) box.checked = false
+    pantryMessage.value = 'Couldn’t read your pantry, so nothing was deducted. Please try again.'
+  } finally { if (!disposed) pantryLoading.value = false }
+}
+
 async function generate() {
   if (busy.value || copying.value) return
   busy.value = true
@@ -123,18 +158,41 @@ async function generate() {
   } finally { if (!disposed) busy.value = false }
 }
 
-const vendorBadge: Record<MarketSection, { icon: Component, category: string, tone: string }> = {
-  laiki: { icon: IconLaiki, category: 'Fresh produce', tone: 'border-olive/40 bg-olive/10 text-olive-ink' },
-  chasapis: { icon: IconChasapis, category: 'Meat & poultry', tone: 'border-terracotta/40 bg-terracotta/10 text-terracotta-ink' },
-  fournos: { icon: IconFournos, category: 'Bread & pastry', tone: 'border-rule bg-paper-3 text-ink' },
-  supermarket: { icon: IconSupermarket, category: 'Pantry & dairy', tone: 'border-sage/50 bg-sage/10 text-sage-ink' }
+const vendorIcon: Record<MarketSection, Component> = { laiki: IconLaiki, chasapis: IconChasapis, fournos: IconFournos, supermarket: IconSupermarket }
+
+// Desktop and phones get different chrome (inline counter + Copy vs a sticky bottom bar), and only one of them is ever in the DOM.
+// Starts false so server and first client render agree; updated after mount.
+const phone = ref(false)
+onMounted(() => {
+  const query = window.matchMedia('(max-width: 47.99rem)')
+  phone.value = query.matches
+  const update = (event: MediaQueryListEvent) => { phone.value = event.matches }
+  query.addEventListener('change', update)
+  onBeforeUnmount(() => query.removeEventListener('change', update))
+})
+
+// Share actions live in one menu (same pattern as the recipe More menu); Esc or an outside click closes it.
+const shareMenu = ref<HTMLDetailsElement>()
+function closeShare(focusSummary = false) {
+  if (!shareMenu.value?.open) return
+  shareMenu.value.open = false
+  if (focusSummary) shareMenu.value.querySelector('summary')?.focus()
 }
+onClickOutside(shareMenu, () => closeShare())
+
+// Secondary advice sits behind a per-item Details toggle so the list stays scannable.
+const detailsOpen = ref<Record<string, boolean>>({})
+type RowItem = NonNullable<typeof routedList.value>['destinations'][number]['items'][number]
+const hasDetails = (item: RowItem) => !!(item.counterPhrase || item.packageSizeToBuy || item.surplusLeftoverTip || item.note || item.prepNotes.length)
 
 // Print only this list (see the unscoped print styles below), then restore the page.
 function printList() {
   const root = document.documentElement
+  // A printed list cannot be expanded, so Prepare ahead opens for printing and is restored afterwards.
+  const closed = [...document.querySelectorAll<HTMLDetailsElement>('.market-prepare:not([open])')]
+  for (const details of closed) details.open = true
   root.dataset.print = 'market'
-  window.addEventListener('afterprint', () => { delete root.dataset.print }, { once: true })
+  window.addEventListener('afterprint', () => { delete root.dataset.print; for (const details of closed) details.open = false }, { once: true })
   window.print()
 }
 
@@ -227,26 +285,32 @@ async function copy() {
       <h2 id="market-heading">Market shopping list</h2>
       <button v-if="!importedList" type="button" class="button-primary market-action" :disabled="busy || copying" v-stable-action="state" :data-state="state" :aria-busy="busy" @click="generate">{{ label('Generate Market Shopping List', 'Generating…') }}</button>
     </div>
-    <p class="mt-4">Grouped for your chosen courses{{ servings ? ' and ' + servings + ' ' + (servingsNoun ?? 'guests') : ', using each recipe’s servings' }}. Check your pantry before buying; stock is not subtracted.</p>
     <p v-if="error" role="alert" class="mt-4 rounded-lg border border-error bg-paper p-4 text-error">{{ error }}</p>
-    <div v-if="list && routedList" class="mt-6 space-y-6">
-      <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2">
-        <button class="filter-pill" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
-        <button class="filter-pill" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
-      </div>
-      <p v-if="mode === 'supermarket'" class="text-sm">All items are grouped into supermarket aisles. Return to Market Route to edit destinations; your custom route and checkmarks are kept.</p>
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <p role="status" class="num">{{ checked.length }} of {{ itemCount }} items checked</p>
-        <div class="flex flex-wrap gap-3 print:hidden">
-          <button v-if="pendingRestock.length" type="button" class="button-primary min-h-11 inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
-          <button type="button" class="button-secondary" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
-          <button type="button" class="button-secondary min-h-11 min-w-11 inline-flex items-center gap-2" :disabled="busy" @click="shareWhatsApp"><UIcon name="i-lucide-share-2" aria-hidden="true" />Share on WhatsApp</button>
-          <button type="button" class="button-secondary min-h-11 min-w-11 inline-flex items-center gap-2" :disabled="busy" @click="openQrModal"><UIcon name="i-lucide-qr-code" aria-hidden="true" />Send to phone</button>
-          <button type="button" class="button-secondary" :disabled="busy" @click="printList"><UIcon name="i-lucide-printer" aria-hidden="true" />Print or save PDF</button>
+    <div v-if="list && routedList" class="mt-4 space-y-4">
+      <p class="text-sm text-muted print:hidden">{{ servings ? 'For ' + servings + ' ' + (servingsNoun ?? 'guests') + '. ' : '' }}{{ deductPantry ? 'Pantry stock is subtracted.' : 'Pantry stock isn’t subtracted.' }} Checkmarks reset if you regenerate.</p>
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 print:hidden">
+        <div role="group" aria-label="Shopping mode" class="flex flex-wrap gap-2">
+          <button class="filter-pill" :aria-pressed="mode === 'market'" @click="mode = 'market'">Market Route</button>
+          <button class="filter-pill" :aria-pressed="mode === 'supermarket'" @click="mode = 'supermarket'">One-Stop Supermarket</button>
         </div>
+        <label class="inline-flex min-h-11 items-center gap-2 font-semibold"><input type="checkbox" :checked="deductPantry" :disabled="pantryLoading || busy" @change="setDeduct(($event.target as HTMLInputElement).checked, $event.target as HTMLInputElement)">Deduct pantry stock</label>
+      </div>
+      <p v-if="pantryMessage" role="status" class="text-sm print:hidden">{{ pantryMessage }}</p>
+      <div class="flex flex-wrap items-center gap-3 print:hidden">
+        <p v-if="!phone" role="status" class="num">{{ checkedCount }} of {{ itemCount }} items checked</p>
+        <button v-if="pendingRestock.length" type="button" class="button-primary min-h-11 inline-flex items-center gap-2" :disabled="restocking || busy" v-stable-action="restockState" :data-state="restockState" :aria-busy="restocking" @click="restockPantry"><UIcon name="i-lucide-archive" aria-hidden="true" />{{ restockLabel('Restock pantry (' + pendingRestock.length + ')', 'Restocking…') }}</button>
+        <button v-if="!phone" type="button" class="button-secondary min-h-11" :disabled="copying || busy" v-stable-action="copyState" :data-state="copyState" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
+        <details ref="shareMenu" class="market-share" @keydown.esc="closeShare(true)">
+          <summary class="button-secondary min-h-11 inline-flex items-center gap-2"><UIcon name="i-lucide-share-2" aria-hidden="true" />Share<UIcon name="i-lucide-chevron-down" aria-hidden="true" /></summary>
+          <div class="market-share__panel">
+            <button type="button" class="market-share__item" :disabled="busy" @click="closeShare(); shareWhatsApp()"><UIcon name="i-lucide-message-circle" aria-hidden="true" />Share on WhatsApp</button>
+            <button type="button" class="market-share__item" :disabled="busy" @click="closeShare(); openQrModal()"><UIcon name="i-lucide-qr-code" aria-hidden="true" />Send to phone</button>
+            <button type="button" class="market-share__item" :disabled="busy" @click="closeShare(); printList()"><UIcon name="i-lucide-printer" aria-hidden="true" />Print or save PDF</button>
+          </div>
+        </details>
       </div>
       <p v-if="copyState === 'success'" role="status">Shopping list copied.</p>
-      <p role="status" class="print:hidden">{{ shareNote }}</p>
+      <p v-if="shareNote" role="status" class="print:hidden">{{ shareNote }}</p>
       <dialog ref="qrDialog" class="m-auto w-[min(92vw,28rem)] rounded-xl border border-rule bg-paper p-6 text-ink shadow-2xl backdrop:bg-black/50 print:hidden" aria-labelledby="qr-heading">
         <h3 id="qr-heading" class="font-serif text-2xl">Scan with your phone</h3>
         <p class="mt-2 text-sm text-muted">Point your phone camera at the code below to take this list with you. Interactive checkboxes work offline at the market.</p>
@@ -269,55 +333,69 @@ async function copy() {
         <p role="alert" class="text-error">{{ copyError }}</p>
         <label class="block">Shopping list text<textarea :value="summary" readonly rows="8" class="field mt-2" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
       </div>
-      <p class="text-sm print:hidden">Checkoffs last while this list is open. Regenerating, changing the dinner inputs or leaving this page clears them. Copy the list to take it with you.</p>
-      <section v-if="list.prepAlerts.length" aria-label="Prepare ahead" class="rounded-lg border border-rule bg-paper-2 p-5">
-        <h3>Prepare ahead</h3>
-        <ul class="mt-3 list-disc space-y-3 pl-5">
+      <details v-if="list.prepAlerts.length" class="market-prepare rounded-lg border border-rule bg-paper-2 px-4">
+        <summary class="flex min-h-11 cursor-pointer items-center font-semibold">Prepare ahead ({{ list.prepAlerts.length }})</summary>
+        <ul class="list-disc space-y-3 pb-4 pl-5 pt-1">
           <li v-for="(alert, index) in list.prepAlerts" :key="index"><strong>{{ alert.recipeTitle }}:</strong> {{ alert.text }}</li>
         </ul>
-      </section>
-      <p v-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
-      <p v-if="mode === 'market' && routedList.destinations.length > 1" class="text-sm print:hidden">Order the stops to match how you walk the shops; we’ll remember it on this device.</p>
+      </details>
+      <p v-if="!itemCount && covered.length" role="status">Everything on this list is already in your pantry.</p>
+      <p v-else-if="!itemCount" role="status">No shopping items were found. Add measured ingredients to your recipes, then rebuild the schedule and generate again.</p>
       <p role="status" class="sr-only">{{ orderNote }}</p>
       <section v-for="(destination, stop) in routedList.destinations" :key="destination.section" :aria-labelledby="'market-' + destination.section" class="min-w-0">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h3 :id="'market-' + destination.section" class="flex min-w-0 items-center gap-3 text-2xl">
-            <component :is="vendorBadge[destination.section].icon" class="size-8 flex-none" />
-            <span>{{ destination.name }}</span>
-          </h3>
-          <div v-if="mode === 'market' && routedList.destinations.length > 1" class="market-reorder flex gap-2 print:hidden" role="group" :aria-label="'Reorder ' + destination.name">
-            <button :id="'move-up-' + destination.section" type="button" class="button-secondary min-h-11" :disabled="stop === 0" :aria-label="'Move ' + destination.name + ' up'" @click="moveSection(destination.section, -1)"><UIcon name="i-lucide-arrow-up" aria-hidden="true" />Move up</button>
-            <button :id="'move-down-' + destination.section" type="button" class="button-secondary min-h-11" :disabled="stop === routedList.destinations.length - 1" :aria-label="'Move ' + destination.name + ' down'" @click="moveSection(destination.section, 1)"><UIcon name="i-lucide-arrow-down" aria-hidden="true" />Move down</button>
+        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <div class="flex min-w-0 items-center gap-3">
+            <component :is="vendorIcon[destination.section]" class="size-8 flex-none" />
+            <div class="min-w-0">
+              <h3 :id="'market-' + destination.section" class="text-xl leading-tight">{{ destination.name }}</h3>
+              <p class="text-sm text-muted"><span lang="el">{{ destination.localizedName }}</span> · <span>{{ destination.items.length }} item{{ destination.items.length === 1 ? '' : 's' }}</span></p>
+            </div>
+          </div>
+          <div v-if="mode === 'market' && routedList.destinations.length > 1" class="market-reorder flex gap-1 print:hidden" role="group" :aria-label="'Reorder ' + destination.name">
+            <button :id="'move-up-' + destination.section" type="button" class="button-secondary min-h-11 min-w-11" :disabled="stop === 0" :aria-label="'Move ' + destination.name + ' up'" @click="moveSection(destination.section, -1)"><UIcon name="i-lucide-arrow-up" aria-hidden="true" /></button>
+            <button :id="'move-down-' + destination.section" type="button" class="button-secondary min-h-11 min-w-11" :disabled="stop === routedList.destinations.length - 1" :aria-label="'Move ' + destination.name + ' down'" @click="moveSection(destination.section, 1)"><UIcon name="i-lucide-arrow-down" aria-hidden="true" /></button>
           </div>
         </div>
-        <p class="mt-2 inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border px-3 py-1 text-sm font-semibold" :class="vendorBadge[destination.section].tone">
-          <span lang="el">{{ destination.localizedName }}</span><span class="font-normal">· {{ vendorBadge[destination.section].category }}</span>
-        </p>
-        <ul class="mt-4 divide-y divide-rule border-y border-rule">
-          <li v-for="(item, index) in destination.items" :key="item.id" class="py-5">
-            <h4 v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="mb-4 font-semibold">{{ item.aisle }}</h4>
-            <label class="flex min-h-11 items-start gap-3">
-              <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
-              <span class="min-w-0 pt-2 font-semibold" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
-            </label>
-            <label class="market-destination mt-3 block max-w-sm">Shop at
-              <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field mt-2" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
+        <ul class="mt-2 divide-y divide-rule border-y border-rule">
+          <li v-for="(item, index) in destination.items" :key="item.id" class="market-item py-1">
+            <h4 v-if="item.aisle && item.aisle !== destination.items[index - 1]?.aisle" class="mb-1 mt-3 text-sm font-semibold text-muted">{{ item.aisle }}</h4>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-0">
+              <label class="flex min-h-11 min-w-0 flex-1 basis-52 items-center gap-3">
+                <input v-model="checked" type="checkbox" :value="item.id" :aria-label="'Bought: ' + item.name" />
+                <span class="min-w-0 font-semibold" :class="{ 'line-through': checked.includes(item.id) }"><span class="num">{{ item.amount }} {{ item.unit }}</span> {{ item.name }}</span>
+              </label>
+              <span v-if="destination.section === 'supermarket'" class="market-price min-h-6 print:hidden" data-testid="market-price-slot">
+                <span v-if="priceBadges[item.id]" data-testid="market-price" class="market-price__badge inline-flex max-w-full items-center gap-1 rounded-full border border-sage/50 bg-sage/10 px-2.5 py-0.5 text-xs font-semibold text-sage-ink" :title="priceBadges[item.id]!.label" :aria-label="priceBadges[item.id]!.label"><UIcon name="i-lucide-tag" class="size-3.5 flex-none" aria-hidden="true" /><span lang="el" class="truncate">{{ priceBadges[item.id]!.text }}</span></span>
+              </span>
+              <span v-if="item.pantryNote" class="text-sm text-muted print:hidden">{{ item.pantryNote }}</span>
+              <select :id="'destination-' + item.id" :value="destination.section" :aria-label="'Destination for ' + item.name" :disabled="mode === 'supermarket'" class="field market-destination !mt-0 min-h-11 !w-auto max-w-40 py-1 text-sm" @change="moveItem(item.id, ($event.target as HTMLSelectElement).value as MarketSection)">
                 <option v-for="section in marketSections" :key="section" :value="section">{{ sectionInfo[section].name }}</option>
               </select>
-            </label>
-            <div class="ml-0 mt-3 space-y-2 sm:ml-14">
+              <button v-if="hasDetails(item)" type="button" class="market-details-toggle button-secondary min-h-11 print:hidden" :aria-expanded="!!detailsOpen[item.id]" :aria-controls="'details-' + item.id" :aria-label="'Details for ' + item.name" @click="detailsOpen[item.id] = !detailsOpen[item.id]">Details<UIcon :name="detailsOpen[item.id] ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" aria-hidden="true" /></button>
+            </div>
+            <div v-if="hasDetails(item)" v-show="detailsOpen[item.id]" :id="'details-' + item.id" class="market-item__details mb-3 ml-8 space-y-2 text-sm">
               <p v-if="item.counterPhrase"><strong>At the counter:</strong> <span lang="el">{{ item.counterPhrase }}</span></p>
               <p v-if="item.packageSizeToBuy"><strong>Buy:</strong> {{ item.packageSizeToBuy }}</p>
               <p v-if="item.surplusLeftoverTip"><strong>Surplus:</strong> {{ item.surplusLeftoverTip }}</p>
               <p v-if="item.note">{{ item.note }}</p>
-              <p v-for="(note, index) in item.prepNotes" :key="index"><strong>Prep:</strong> {{ note }}</p>
-            </div>
-            <div v-if="destination.section === 'supermarket'" class="market-price ml-0 mt-2 min-h-6 sm:ml-14 print:hidden" data-testid="market-price-slot">
-              <span v-if="priceBadges[item.id]" data-testid="market-price" class="market-price__badge inline-flex max-w-full items-center gap-1 rounded-full border border-sage/50 bg-sage/10 px-2.5 py-0.5 text-xs font-semibold text-sage-ink" :title="priceBadges[item.id]!.label" :aria-label="priceBadges[item.id]!.label"><UIcon name="i-lucide-tag" class="size-3.5 flex-none" aria-hidden="true" /><span lang="el" class="truncate">{{ priceBadges[item.id]!.text }}</span></span>
+              <p v-for="(note, noteIndex) in item.prepNotes" :key="noteIndex"><strong>Prep:</strong> {{ note }}</p>
             </div>
           </li>
         </ul>
       </section>
+      <details v-if="covered.length" class="market-covered rounded-lg border border-rule bg-paper-2 px-4 print:hidden">
+        <summary class="flex min-h-11 cursor-pointer items-center font-semibold">Already in your pantry ({{ covered.length }})</summary>
+        <ul class="divide-y divide-rule pb-2">
+          <li v-for="row in covered" :key="row.id" class="flex flex-wrap items-baseline justify-between gap-x-3 py-2">
+            <span class="font-semibold">{{ row.name }}</span>
+            <span class="text-sm text-muted">{{ row.amount > 0 ? 'need ' + row.amount + ' ' + row.unit + ' · ' : '' }}have {{ row.have }}</span>
+          </li>
+        </ul>
+      </details>
+      <div v-if="itemCount && phone" data-testid="market-sticky-bar" class="market-sticky sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 flex items-center justify-between gap-3 border-t border-rule bg-paper/95 px-4 py-2 backdrop-blur print:hidden">
+        <p role="status" class="num">{{ checkedCount }} of {{ itemCount }} items checked</p>
+        <button type="button" class="button-primary min-h-11" :disabled="copying || busy" :aria-busy="copying" @click="copy">{{ copyLabel('Copy shopping list', 'Copying…') }}</button>
+      </div>
     </div>
   </section>
 </template>
@@ -330,6 +408,15 @@ async function copy() {
 .market-price__badge { animation: market-price-in .2s ease-out; }
 @keyframes market-price-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .market-price__badge { animation: none; } }
+.market-share { position: relative; }
+.market-share > summary { list-style: none; cursor: pointer; }
+.market-share > summary::-webkit-details-marker { display: none; }
+.market-share[open] > summary { background: var(--color-paper-3); }
+.market-share__panel { position: absolute; z-index: 20; top: calc(100% + .5rem); left: 0; display: grid; min-width: 15rem; border: 1px solid var(--color-rule); border-radius: .75rem; background: var(--color-paper); padding: .375rem; box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+.market-share__item { display: flex; min-height: 44px; align-items: center; gap: .625rem; border-radius: .5rem; padding: .5rem .75rem; text-align: left; font-size: .9375rem; font-weight: 600; white-space: nowrap; }
+.market-share__item:active { background: var(--color-paper-3); }
+.market-share__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.market-share__item:disabled { opacity: .55; cursor: not-allowed; }
 .restock-notice a { display: inline-flex; min-height: 44px; align-items: center; }
 </style>
 
@@ -338,6 +425,8 @@ async function copy() {
 @media print {
   html[data-print='market'] body *:not(:has(.market-shopping), .market-shopping, .market-shopping *) { display: none !important; }
   html[data-print='market'] .market-shopping { border: 0; padding: 0; }
-  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-restock-notice, .market-reorder, .market-destination, [role='alert']) { display: none !important; }
+  /* A printed list cannot be expanded, so the per-item advice always prints. */
+  html[data-print='market'] .market-item__details { display: block !important; }
+  html[data-print='market'] .market-shopping :is(button, [role='group'], .market-share, .market-sticky, .market-restock-notice, .market-reorder, .market-destination, [role='alert']) { display: none !important; }
 }
 </style>

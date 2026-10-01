@@ -10,7 +10,7 @@ export type MarketShoppingList = {
     section: MarketSection
     name: string
     localizedName: string
-    items: (GroceryItem & { id: string; aisle?: string })[]
+    items: (GroceryItem & { id: string; aisle?: string; pantryNote?: string })[]
   }[]
 }
 

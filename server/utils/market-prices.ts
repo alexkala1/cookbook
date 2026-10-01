@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { http2Get } from './http2-get'
 
 export type PriceProduct = { id: string, name: string, brand: string, minPrice: number, retailers: { retailer: string, displayName: string, price: number }[] }
 export type PriceResponse = { available: boolean, query: string, products: PriceProduct[] }
@@ -42,10 +43,8 @@ async function fetchUpstream(query: string): Promise<PriceResponse> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const response = await fetch(url.toString(), { headers: { 'User-Agent': userAgent, Accept: 'application/json' }, signal: controller.signal })
-    if (!response.ok) return unavailable(query)
-    const body = await response.text()
-    if (body.length > MAX_BODY) return unavailable(query)
+    const { status, body } = await http2Get(url.toString(), { headers: { 'User-Agent': userAgent, Accept: 'application/json' }, signal: controller.signal, maxBytes: MAX_BODY })
+    if (status < 200 || status >= 300) return unavailable(query)
     const parsed = upstreamSchema.safeParse(JSON.parse(body))
     if (!parsed.success) return unavailable(query)
     const tokens = fold(query).split(/\s+/).filter(token => token.length >= 2)
