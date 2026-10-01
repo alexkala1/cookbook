@@ -60,6 +60,14 @@ describe('chapter boundaries', () => {
 })
 
 describe('multi-recipe backend contracts', () => {
+  it('surfaces Groq trimming and salvage warnings across chapter drafts without duplicates', async () => {
+    fixture('00:18 Peppercorn Sauce\n' + 'x'.repeat(9000) + '\n05:32 Entrecote Sauce')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{"title":"Sauce","description":"Warm","steps":[{"instruction":"Simmer."}' } }] }))))
+    const result = await importVideo({ 'x-byok-provider': 'groq', 'x-byok-key': 'test', 'x-byok-model': 'test' })
+    expect(result.count).toBe(2)
+    expect(result.warnings).toContain('Source notes were trimmed to fit Groq free-tier limits. Review final steps.')
+    expect(result.warnings.filter((warning: string) => warning.includes('cut off by the model'))).toEqual(["The draft was cut off by the model's response limit. Review and complete the remaining steps."])
+  })
   it.each(['video', 'url'] as const)('extracts separate offline %s drafts and deep links', async kind => {
     fixture()
     const result = await importVideo({}, kind)

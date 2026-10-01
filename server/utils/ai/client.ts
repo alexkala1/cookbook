@@ -5,6 +5,15 @@ import { repairTruncatedJson, sanitizeAiDraft } from './sanitize-draft'
 
 const providers = ['openai', 'anthropic', 'gemini', 'groq', 'ollama'] as const
 
+export function estimateTokens(str: string): number {
+  let ascii = 0, nonAscii = 0
+  for (let i = 0; i < str.length; i++) {
+    if (str.charCodeAt(i) < 128) ascii++
+    else nonAscii++
+  }
+  return Math.ceil(ascii / 3.2 + nonAscii / 1.5)
+}
+
 export function extractJson(raw: string): string {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced) return fenced[1]!.trim()
@@ -53,6 +62,7 @@ export function aiClient(event: H3Event) {
   const live = provider === 'ollama' ? !!model : !!key
 
   return {
+    provider,
     mode: live ? ('live' as const) : ('fallback' as const),
     async generate<T>(
       schema: z.ZodType<T>,
@@ -60,7 +70,8 @@ export function aiClient(event: H3Event) {
       source: string,
       fallback: () => T,
       signal?: AbortSignal,
-      image?: { data: string, mimeType: string }
+      image?: { data: string, mimeType: string },
+      onWarning: (message: string) => void = () => {}
     ): Promise<T> {
       if (!live) return schema.parse(fallback())
       if (!model) throw createError({ statusCode: 400, statusMessage: 'Choose an AI model in Settings' })
@@ -73,7 +84,7 @@ export function aiClient(event: H3Event) {
         'Never claim safety from sensory cues. Do not include private reasoning. ' +
         task
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const estimatedPromptTokens = Math.ceil((system.length + (typeof source === 'string' ? source.length : 0)) / 3.2)
+      const estimatedPromptTokens = estimateTokens(system + source)
       const groqTokens = Math.min(2048, Math.max(1024, 7500 - estimatedPromptTokens))
       // Leave headroom below the free-tier 8,000 TPM allowance; estimates are approximate.
       if (provider === 'groq' && estimatedPromptTokens + groqTokens > 7500) {
@@ -204,6 +215,7 @@ export function aiClient(event: H3Event) {
           if (isTruncated) throw truncationError()
           throw createError({ statusCode: 502, statusMessage: `${name} generated a draft that did not match the expected recipe structure. Please retry.` })
         }
+        if (isTruncated) onWarning("The draft was cut off by the model's response limit. Review and complete the remaining steps.")
         return parseResult.data
       } catch (err: any) {
         if (err && typeof err.statusCode === 'number' && typeof err.statusMessage === 'string') {

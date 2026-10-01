@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, defineEventHandler, toWebHandler } from 'h3'
 import stream from '../server/api/ai/recipe/stream.post'
 import csrf from '../server/middleware/csrf'
-import { aiClient, humanizeProviderError } from '../server/utils/ai/client'
+import { aiClient, estimateTokens, humanizeProviderError } from '../server/utils/ai/client'
 import { recipeCreateSchema } from '../server/utils/validation'
 import { readRecipeStream } from '../app/utils/sse'
 import { repairTruncatedJson, sanitizeAiDraft } from '../server/utils/ai/sanitize-draft'
@@ -65,13 +65,54 @@ it('compacts and caps ingest notes at 8,000 characters with a full Groq generati
   vi.stubGlobal('fetch', fetchSpy)
   const handle = toWebHandler(createApp().use(stream))
   const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test', 'x-byok-provider': 'groq' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Soup  notes\n\n' + 'x'.repeat(19000) }) }))
-  await readRecipeStream(response, vi.fn())
+  let completion: { warnings: string[] } | undefined
+  await readRecipeStream(response, (event, data) => { if (event === 'complete') completion = data as typeof completion })
+  expect(completion!.warnings).toContain('Source notes were trimmed to fit Groq free-tier limits. Review final steps.')
   const sent = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
   expect(sent.messages[1].content).toHaveLength(8000)
   expect(sent.max_tokens).toBe(2048)
   expect(sent.messages[0].content).toContain('science and cues are enriched automatically')
   expect(sent.messages[1].content).toMatch(/^Soup notes x/)
   expect(sent.messages[1].content).not.toMatch(/\s{2,}/)
+})
+it('estimates Greek tokens conservatively and keeps requested Groq tokens within 7,500', async () => {
+  expect(estimateTokens('x'.repeat(32))).toBe(10)
+  expect(estimateTokens('α'.repeat(15))).toBe(10)
+  expect(estimateTokens('x'.repeat(32) + 'α'.repeat(15))).toBe(20)
+  const fetchSpy = vi.fn(async () => success())
+  vi.stubGlobal('fetch', fetchSpy)
+  expect((await request()).status).toBe(200)
+  const first = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+  const source = 'α'.repeat(Math.floor((6000 - estimateTokens(first.messages[0].content)) * 1.5))
+  expect((await request('groq', undefined, source)).status).toBe(200)
+  const second = JSON.parse((fetchSpy.mock.calls[1] as unknown as [string, RequestInit])[1].body as string)
+  expect(estimateTokens(second.messages[0].content + source) + second.max_tokens).toBeLessThanOrEqual(7500)
+  expect(second.max_tokens).toBeLessThan(2048)
+  expect((await request('groq', undefined, 'α'.repeat(8000))).status).toBe(413)
+  expect(fetchSpy).toHaveBeenCalledTimes(2)
+})
+it.each(['openai', 'anthropic', 'gemini', 'ollama'])('allows 25,000 source characters for %s', async provider => {
+  const content = JSON.stringify(recipe)
+  const payload = provider === 'anthropic' ? { content: [{ type: 'text', text: content }] }
+    : provider === 'gemini' ? { candidates: [{ content: { parts: [{ text: content }] } }] }
+      : provider === 'ollama' ? { message: { content } } : { choices: [{ message: { content } }] }
+  const fetchSpy = vi.fn(async () => new Response(JSON.stringify(payload)))
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await toWebHandler(createApp().use(stream))(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test', 'x-byok-provider': provider }, body: JSON.stringify({ kind: 'ocr', text: 'x'.repeat(29000) }) }))
+  let completion: { warnings: string[] } | undefined
+  await readRecipeStream(response, (event, data) => { if (event === 'complete') completion = data as typeof completion })
+  const sent = JSON.parse((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+  const source = provider === 'anthropic' ? sent.messages[0].content : provider === 'gemini' ? sent.contents[0].parts[0].text : sent.messages[1].content
+  expect(source).toHaveLength(25000)
+  expect(completion!.warnings.join()).not.toContain('Groq free-tier')
+})
+it('surfaces a warning when ingestion salvages a truncated draft', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{"title":"Soup","description":"Warm","steps":[{"instruction":"Simmer."}' } }] }))))
+  const response = await toWebHandler(createApp().use(stream))(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Make a soup recipe' }) }))
+  let completion: { warnings: string[], recipe: unknown } | undefined
+  await readRecipeStream(response, (event, data) => { if (event === 'complete') completion = data as typeof completion })
+  expect(completion!.warnings).toContain("The draft was cut off by the model's response limit. Review and complete the remaining steps.")
+  expect(recipeCreateSchema.safeParse(completion!.recipe).success).toBe(true)
 })
 const recipe = { title: 'Soup', description: 'Warm' }
 const failure = (status = 400, message = 'Failed to generate JSON', code?: string) => new Response(JSON.stringify({ error: { message, code } }), { status })

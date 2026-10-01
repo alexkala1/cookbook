@@ -21,6 +21,7 @@ it('flags captionless videos and asks for a concise method from the description'
   const system = JSON.parse(fetchMock.mock.calls[0]![1].body).messages[0].content as string
   expect(system).toContain('Reconstruct the method in order from the creator’s description and ingredient lists')
   expect(system).toContain('Keep steps clear and concise')
+  expect(system).toContain('Tag any step or amount you infer rather than read with [Inferred from description]')
   expect(system).toContain('science and cues are enriched automatically')
 })
 
