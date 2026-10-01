@@ -5,7 +5,7 @@ import { aiClient } from './client'
 import { safeFetch } from './safe-fetch'
 import { extractHtml, extractJsonLd, extractPageRecipe, fallbackRecipe, structuredDraft } from './normalize'
 import { enrichScience } from './science'
-import { recipeCreateSchema, validate } from '../validation'
+import { recipeCreateSchema, validate, type RecipeInput } from '../validation'
 
 export const ingestSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('url'), url: z.string().url().max(2000) }).strict(),
@@ -50,6 +50,38 @@ function playerData(html: string): Record<string, any> | null {
   }
   return null
 }
+export interface VideoChapter { title: string, startSeconds: number, endSeconds: number, sourceText: string, isRecipe: boolean }
+export interface TranscriptCue { startSeconds: number, text: string }
+
+export function extractVideoChapters(description: string): VideoChapter[] {
+  const matches = [...description.matchAll(/(?:^|\n)[ \t]*(\d{1,2}:\d{2}(?::\d{2})?)[ \t]+[-–—]?[ \t]*(.+)/g)]
+  const chapters = matches.flatMap((match, index) => {
+    const parts = match[1]!.split(':').map(Number)
+    if (parts.slice(1).some(value => value >= 60)) return []
+    const startSeconds = parts.reduce((seconds, part) => seconds * 60 + part, 0)
+    const title = match[2]!.trim().slice(0, 200)
+    const isRecipe = !/^(?:intro(?:duction)?|outro|sponsor(?:ed|ship)?|ad(?:vertisement)?|subscribe|taste[ -]?test(?:ing)?|tasting|conclusion|thanks|thank you|credits|welcome|equipment|ingredients|prep(?:aration)?)(?:\b|$)/i.test(title)
+      && !/^(?:whisk|mix|chop|dice|mince|stir|pour|add|season|melt|knead|roll|fold|simmer|blend|serve|assemble|assembly|plating)(?:\b|$)|^(?:bake|roast|cook|fry|grill)\s+(?:at|for|until|the)\b/i.test(title)
+    return [{ title, startSeconds, endSeconds: Infinity, isRecipe, sourceText: description.slice(match.index! + match[0].length, matches[index + 1]?.index ?? description.length).trim() }]
+  }).sort((a, b) => a.startSeconds - b.startSeconds)
+  const unique = chapters.filter((chapter, index) => index === 0 || chapter.startSeconds !== chapters[index - 1]!.startSeconds)
+  return unique.map((chapter, index) => ({ ...chapter, endSeconds: unique[index + 1]?.startSeconds ?? Infinity }))
+}
+
+export function parseTranscriptCues(captions: string): TranscriptCue[] {
+  const $ = load(captions, { xml: true })
+  return $('text, p').toArray().flatMap(el => {
+    const node = $(el), raw = node.attr('start') ?? node.attr('t')
+    const startSeconds = raw === undefined || !raw.trim() ? NaN : Number(raw) / (node.attr('start') !== undefined ? 1 : 1000)
+    const text = node.text().trim()
+    return Number.isFinite(startSeconds) && startSeconds >= 0 && text ? [{ startSeconds, text }] : []
+  }).sort((a, b) => a.startSeconds - b.startSeconds)
+}
+
+export function windowTranscript(cues: readonly TranscriptCue[], chapter: Pick<VideoChapter, 'startSeconds' | 'endSeconds'>): string {
+  return cues.filter(cue => cue.startSeconds >= chapter.startSeconds && cue.startSeconds < chapter.endSeconds).map(cue => cue.text).join(' ')
+}
+
 export async function ingest(event: H3Event, input: unknown, signal?: AbortSignal, progress: (message: string) => void = () => {}) {
   const request = validate(ingestSchema, input)
   const client = aiClient(event)
@@ -58,6 +90,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
   let provenance = 'Conversational memory'
   let image: { data: string, mimeType: string } | undefined
   let captionsUnavailable = false
+  let chapters: VideoChapter[] = [], cues: TranscriptCue[] = []
   let task = 'Normalize a recipe from the source. Include ingredients, ordered steps, equipment, scienceWhy and sensory cues. Mark all inferred measurements. Do not invent a transcript.'
   progress('Reading the source')
   if (request.kind === 'prompt') source = request.prompt
@@ -94,6 +127,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     title = player?.videoDetails?.title || ''
     source = player?.videoDetails?.shortDescription || ''
     if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') source = ''
+    chapters = extractVideoChapters(source)
     provenance = 'Video description & timestamps (captions unavailable)'
     captionsUnavailable = true
     draftSource = source
@@ -102,6 +136,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     if (track?.baseUrl) {
       try {
         const captions = await safeFetch(track.baseUrl, signal)
+        cues = parseTranscriptCues(captions)
         const $ = load(captions, { xml: true })
         const transcript = $('text, p').map((_i, el) => $(el).text()).get().join(' ')
         if (transcript.trim()) { source = transcript; provenance = 'Video captions'; captionsUnavailable = false }
@@ -125,6 +160,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
           const androidTrack = Array.isArray(androidTracks) ? androidTracks.find(item => item.languageCode === ((request.kind === 'video' ? request.language : undefined) || 'en')) || androidTracks[0] : undefined
           if (androidTrack?.baseUrl) {
             const captions = await safeFetch(androidTrack.baseUrl, signal)
+            cues = parseTranscriptCues(captions)
             const $ = load(captions, { xml: true })
             const transcript = $('text, p').map((_i, el) => $(el).text()).get().join(' ')
             if (transcript.trim()) { source = transcript; provenance = 'Video captions'; captionsUnavailable = false }
@@ -140,6 +176,28 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Video has no accessible title, captions, or description. Paste your notes in Memory instead.' })
   }
   if (captionsUnavailable) task += ' This video has no captions track, so the source is the creator\u2019s description. Reconstruct the method in order from its timestamp/chapter lines and the method, notes and ingredient lists it contains, and take proportions only from amounts the creator lists. Tag every step or amount you infer rather than read, by starting its notes with [Inferred from description]. Never present inferred detail as something the creator said.'
+  const recipeChapters = chapters.filter(chapter => chapter.isRecipe)
+  if (recipeChapters.length >= 2) {
+    const recipes: RecipeInput[] = [], sources: string[] = [], missingTranscript: string[] = []
+    for (const chapter of recipeChapters) {
+      if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' })
+      progress(`Extracting ${chapter.title}`)
+      const transcript = windowTranscript(cues, chapter)
+      if (!transcript) missingTranscript.push(chapter.title)
+      const scopedSource = [chapter.sourceText, transcript].filter(Boolean).join('\n\n')
+      sources.push(`${chapter.title}\n${scopedSource}`)
+      const structured = client.mode === 'fallback' ? structuredDraft(scopedSource, chapter.title) : null
+      const recipe = structured || await client.generate(recipeCreateSchema, task + ' Extract only this chapter’s dish. Never borrow ingredients or steps from other dishes. If source detail is missing, mark inferred details clearly.', `Chapter: ${chapter.title}\n${scopedSource}`.slice(0, 30000), () => fallbackRecipe(scopedSource, chapter.title), signal)
+      const sanitized = { ...recipe, originalSaltType: null }
+      delete sanitized.imageUrl
+      delete sanitized.rating
+      delete sanitized.isFavorite
+      recipes.push(recipeCreateSchema.parse(enrichScience({ ...sanitized, title: chapter.title, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: `${sourceUrl}&t=${chapter.startSeconds}s` })))
+    }
+    const warnings = ['Recipes were extracted separately by chapter. Review inferred quantities and cooking times.']
+    if (missingTranscript.length) warnings.push(`Timed captions are unavailable for: ${missingTranscript.join(', ')}. These drafts use only their own description sections. Missing details are inferred; review before cooking.`)
+    return { recipe: recipes[0]!, recipes, isMulti: true, count: recipes.length, sourceText: sources.join('\n\n').slice(0, 20000), mode: client.mode, provenance: `${provenance} · chapter-scoped recipes`, captionsUnavailable, warnings }
+  }
   progress('Preserving measurements and identifying gaps')
   // Without a model, prefer the source's own ingredients and numbered method over the generic template.
   const structured = !extracted && client.mode === 'fallback' ? (draftSource ? structuredDraft(draftSource, title || undefined) : null) || structuredDraft(source, title || undefined) : null
@@ -152,5 +210,5 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     delete sanitized.isFavorite
   }
   const draft = recipeCreateSchema.parse(enrichScience({ ...sanitized, sourceType: request.kind === 'ocr' ? 'handwritten_ocr' : request.kind, sourceUrl: sourceUrl || null }))
-  return { recipe: draft, sourceText: source.slice(0, 20000), mode: extracted ? 'extracted' as const : client.mode, provenance: structured ? provenance + ' · parsed sections' : provenance, captionsUnavailable, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : structured ? 'No AI model was needed: ingredients and steps came straight from the source’s own sections. Check lines marked “as needed” and any estimates.' : client.mode === 'fallback' ? 'No AI key is set, so this is a basic starting draft rather than the full recipe. Fill in the details before you rely on it, or add a key in AI settings for a fuller import.' : 'Drafted by AI: double-check any quantities and cooking times it inferred.'] }
+  return { recipe: draft, recipes: [draft], isMulti: false, count: 1, sourceText: source.slice(0, 20000), mode: extracted ? 'extracted' as const : client.mode, provenance: structured ? provenance + ' · parsed sections' : provenance, captionsUnavailable, warnings: [extracted ? 'Review parsed quantities, especially ranges and missing measures.' : structured ? 'No AI model was needed: ingredients and steps came straight from the source’s own sections. Check lines marked “as needed” and any estimates.' : client.mode === 'fallback' ? 'No AI key is set, so this is a basic starting draft rather than the full recipe. Fill in the details before you rely on it, or add a key in AI settings for a fuller import.' : 'Drafted by AI: double-check any quantities and cooking times it inferred.'] }
 }

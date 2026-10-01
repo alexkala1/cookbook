@@ -30,6 +30,7 @@ export default defineEventHandler(async event => {
       const result = await ingest(event, input, abort.signal, message => send('thought', { message }))
       if (abort.signal.aborted) return
       send('recipe_chunk', { title: result.recipe.title, ingredients: result.recipe.ingredients })
+      // Completion includes every chapter draft; recipe_chunk remains the first recipe.
       send('complete', result)
     } catch (error) {
       const failure = error as { statusCode?: unknown, statusMessage?: unknown } | null
