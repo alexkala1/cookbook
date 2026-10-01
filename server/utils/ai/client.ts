@@ -10,14 +10,14 @@ export function humanizeProviderError(provider: string, status: number, rawMessa
     return `Your ${name} API key was rejected (HTTP ${status}). Please verify your key in Settings.`
   }
   if (status === 404 || lowerMsg.includes('does not exist') || lowerMsg.includes('not have access') || lowerMsg.includes('model_not_found')) {
-    const tip = provider === 'groq' ? ' Active options on Groq include openai/gpt-oss-120b, openai/gpt-oss-20b, and llama-3.3-70b-versatile.' : ''
+    const tip = provider === 'groq' ? ' Active options on Groq include openai/gpt-oss-120b and qwen/qwen3.8-27b.' : ''
     return `The model "${model || 'selected'}" is not available on your ${name} plan.${tip} Please choose an active model in Settings.`
   }
   if (status === 429 || lowerMsg.includes('rate limit') || lowerMsg.includes('quota') || lowerMsg.includes('too many requests')) {
     return `${name} rate limit reached (HTTP 429). Please wait 30–60 seconds before trying again, or check your quota in your provider console.`
   }
   if (status === 400 && (lowerMsg.includes('generate json') || lowerMsg.includes('json_validate_failed') || lowerMsg.includes('failed to generate json'))) {
-    const tip = provider === 'groq' ? ' Try using openai/gpt-oss-120b in Settings.' : ''
+    const tip = provider === 'groq' ? ' Try using openai/gpt-oss-120b or qwen/qwen3.8-27b in Settings.' : ''
     return `${name} was unable to format this recipe into valid JSON.${tip} You can also try shortening the notes.`
   }
   if (rawMessage && rawMessage.trim() && !lowerMsg.includes('provider request failed')) {
@@ -62,7 +62,7 @@ export function aiClient(event: H3Event) {
         task
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       let url: string
-      let body: unknown
+      let body: Record<string, unknown>
       if (provider === 'anthropic') {
         url = 'https://api.anthropic.com/v1/messages'
         headers['x-api-key'] = key
@@ -105,23 +105,30 @@ export function aiClient(event: H3Event) {
       }
 
       try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-          redirect: 'error',
-          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
-        })
-
-        if (!response.ok) {
+        // Both attempts share the original deadline and cancellation signal.
+        const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000)
+        let response: Response
+        for (let attempt = 0; ; attempt++) {
+          requestSignal.throwIfAborted()
+          response = await fetch(url, {
+            method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: requestSignal
+          })
+          if (response.ok) break
           let msg = 'Provider request failed'
+          let code = ''
           try {
             const errData = await response.json()
             msg = errData?.error?.message || errData?.message || msg
+            code = typeof errData?.error?.code === 'string' ? errData.error.code : ''
             if (errData?.error?.failed_generation) {
               console.error(`[${provider}] failed_generation:`, errData.error.failed_generation)
             }
           } catch {}
+          if (provider === 'groq' && attempt === 0 && response.status === 400 && /failed to generate json|json_validate_failed/i.test(`${msg} ${code}`)) {
+            // Keep the JSON prompt and validation, but bypass Groq's grammar engine once.
+            delete body.response_format
+            continue
+          }
           throw createError({
             statusCode: response.status >= 400 && response.status < 500 ? response.status : 502,
             statusMessage: humanizeProviderError(provider, response.status, msg, model)
@@ -160,7 +167,7 @@ export function aiClient(event: H3Event) {
         }
         const name = provider.charAt(0).toUpperCase() + provider.slice(1)
         const errMsg = (err?.message || '').toLowerCase()
-        const errCode = (err?.cause?.code || err?.code || '').toLowerCase()
+        const errCode = String(err?.cause?.code || err?.code || '').toLowerCase()
         if (err?.name === 'TimeoutError' || err?.name === 'AbortError' || errMsg.includes('timeout') || errMsg.includes('timed out')) {
           throw createError({
             statusCode: 504,
