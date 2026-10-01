@@ -33,6 +33,13 @@ describe('milestones', () => {
   })
 })
 
+describe('chefBriefing beverages', () => {
+  it('names a Greek drink for the starter and the main, in serving order', () => {
+    const line = chefBriefing(sunday(), 1, { names: [], audit: null }).find(l => l.startsWith('Pour'))
+    expect(line).toBe('Pour a round Malagousia for the starter, followed by a bold Naoussa Xinomavro with the Arni me Patates.')
+  })
+})
+
 describe('chefBriefing', () => {
   const noGuests = { names: [], audit: null }
   it('opens with the sit-down time and the longest-runway dish', () => {

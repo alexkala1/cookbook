@@ -1,5 +1,6 @@
 import type { Bottleneck, ConductorCourse, TimelineEvent } from '#shared/culinary/conductor'
 import type { DietaryAudit } from '#shared/culinary/dietary'
+import { recommendPairingForMenu } from '#shared/culinary/beverage-pairings'
 
 export type BriefingServe = { course: ConductorCourse, recipeId: string, recipeTitle: string, offset: number, clock: string, dayOffset: number }
 export type BriefingPlan = { serves: BriefingServe[], timeline: TimelineEvent[], bottlenecks: Bottleneck[] }
@@ -33,6 +34,25 @@ export function milestones(plan: BriefingPlan): Milestone[] {
   for (const serve of plan.serves) out.push({ key: 'serve-' + serve.recipeId + serve.course, clock: serve.clock, dayOffset: serve.dayOffset, start: serve.offset, kind: 'serve', text: `Serve the ${courseNames[serve.course]}: ${serve.recipeTitle}` })
   const order = { start: 0, oven: 1, serve: 2 }
   return out.sort((a, b) => a.start - b.start || order[a.kind] - order[b.kind])
+}
+
+/** One sentence of Greek drink pairings for the plated courses, in serving order; null when nothing is plated. */
+export function beverageBriefing(serves: BriefingServe[]): string | null {
+  const plated = serves.filter(serve => serve.course !== 'beverage' && serve.course !== 'side').sort((a, b) => a.offset - b.offset)
+  if (!plated.length) return null
+  const paired = recommendPairingForMenu(plated.map(serve => ({ title: serve.recipeTitle, course: serve.course })))
+  const parts: string[] = []
+  const seen = new Set<string>()
+  paired.forEach(item => {
+    const drink = item.pairing.beverage
+    const where = item.course === 'appetizer' ? 'for the starter' : `with ${item.course === 'dessert' ? 'the dessert' : 'the ' + item.title}`
+    // Same drink for consecutive courses: say it once.
+    if (seen.has(drink.id)) return
+    seen.add(drink.id)
+    const phrase = drink.phrase.replace(/^a glass of /, '')
+    parts.push(`${!parts.length ? 'Pour' : parts.length === 1 ? 'followed by' : 'then'} ${phrase} ${where}`)
+  })
+  return parts.join(', ') + '.'
 }
 
 /** Plain-English strategy for the host: where to begin, what the oven is doing, what needs attention. */
@@ -72,6 +92,8 @@ export function chefBriefing(plan: BriefingPlan, ovens: number, guests: Briefing
         : `No ingredient flags for ${list(guests.names)}. Still confirm labels and cross-contact with them.`)
     }
   }
+  const drinks = beverageBriefing(plan.serves)
+  if (drinks) lines.push(drinks)
   if (events.some(event => event.dayOffset < 0)) lines.push('Some prep happens the day before, so start with the first lines of the schedule.')
   return lines
 }

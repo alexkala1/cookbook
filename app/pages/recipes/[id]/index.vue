@@ -2,6 +2,7 @@
 import type { KitchenProfile, RecipeDetail } from '../../../../shared/types/recipe'
 import { convertSalt, isPlainSalt, scaleIngredients, saltDensities, saltLabels } from '../../../utils/units'
 import type { SaltType } from '../../../utils/units'
+import { recommendPairingForRecipe } from '#shared/culinary/beverage-pairings'
 import { evaluateCocktail } from '#shared/culinary/cocktails'
 import { suggestMetric, applyMetric, flourBasis } from '#shared/culinary/densities'
 import { OFFLINE_DRAFT_DESCRIPTION, stripPromotional } from '#shared/culinary/structured-recipe'
@@ -177,6 +178,7 @@ async function applyConversions() {
   } catch { metricError.value = 'Could not apply conversions. Your original measures are unchanged. Try again.' }
   finally { metricBusy.value = false; busy.value = false }
 }
+const beveragePairing = computed(() => recipe.value && !['drink', 'cocktail'].includes(recipe.value.recipeType) ? recommendPairingForRecipe({ title: recipe.value.title, ingredients: recipe.value.ingredients, tags: [recipe.value.cuisine ?? '', recipe.value.recipeType] }) : null)
 const thermodynamics = computed(() => recipe.value && ['drink', 'cocktail'].includes(recipe.value.recipeType) ? evaluateCocktail(recipe.value.ingredients, recipe.value.title + ' ' + recipe.value.steps.map(step => step.instruction).join(' ')) : null)
 const safeServings = computed(() => Number.isFinite(servings.value) && servings.value > 0 && servings.value <= 1000 ? servings.value : recipe.value?.servings ?? 4)
 const servingPresets = computed(() => [0.5, 1, 2, 3].map(factor => ({ label: factor === 0.5 ? '½×' : factor + '×', value: Number(((recipe.value?.servings ?? 4) * factor).toFixed(2)) })))
@@ -249,6 +251,7 @@ function saved(value: RecipeDetail) {
         <p v-if="isOfflineDraft" class="draft-badge mt-6"><UIcon name="i-lucide-info" aria-hidden="true" />Imported draft · review quantities before cooking</p>
         <p v-else-if="recipe.description" class="mt-6 max-w-2xl whitespace-pre-line break-words text-lg">{{ recipe.description }}</p>
         <p v-if="safety?.allergens?.length" class="allergen-tag mt-4"><UIcon name="i-lucide-shield-alert" class="size-4 flex-none" aria-hidden="true" />Contains: {{ safety.allergens.join(', ') }}</p>
+        <p v-if="beveragePairing" class="allergen-tag mt-4" data-testid="beverage-pairing"><UIcon name="i-lucide-wine" class="size-4 flex-none" aria-hidden="true" /><span><strong>Greek pairing:</strong> {{ beveragePairing.beverage.name }} ({{ beveragePairing.beverage.greekName }}), {{ beveragePairing.beverage.region }} · {{ beveragePairing.beverage.servingTempC }} °C. {{ beveragePairing.beverage.tastingNotes }} Non-alcoholic: {{ beveragePairing.nonAlcoholic.name }}.</span></p>
         <p class="mt-6">{{ recipe.totalTimeMinutes }} min · {{ recipe.difficulty }} · {{ recipe.rating == null ? 'Not rated yet' : recipe.rating + ' / 5' }}</p>
         <div v-if="thermodynamics" class="notice mt-6"><p>{{ thermodynamics.technique }} · Dilution {{ thermodynamics.dilutionPercent.join('–') }}% · {{ thermodynamics.glassware }} · Estimated cooling {{ thermodynamics.temperatureDropC.join('–') }} °C</p><p class="mt-2 text-sm">{{ thermodynamics.note }}</p></div>
         <div class="mt-8 flex flex-wrap items-center gap-3">
