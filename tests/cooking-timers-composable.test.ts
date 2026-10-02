@@ -17,7 +17,8 @@ beforeEach(() => {
   vi.stubGlobal('computed', computed)
   vi.stubGlobal('onMounted', (callback: () => void) => { mount = callback })
   vi.stubGlobal('onBeforeUnmount', (callback: () => void) => { unmount = callback })
-  vi.stubGlobal('document', new EventTarget())
+  vi.stubGlobal('document', Object.assign(new EventTarget(), { hidden: false, title: 'Heirloom' }))
+  vi.stubGlobal('navigator', { vibrate: vi.fn() })
   vi.stubGlobal('window', new EventTarget())
   vi.stubGlobal('sessionStorage', {
     getItem: (key: string) => stored.get(key) ?? null,
@@ -202,4 +203,92 @@ it('restores paused timers without counting removed time against them', () => {
   const paused = { ...cooking.timers.value[0]! }
   cooking.remove(paused); vi.advanceTimersByTime(4000); cooking.restore(paused)
   expect(cooking.timers.value[0]).toEqual(paused)
+})
+
+it('preserves milliseconds across repeated pause cycles and a paused reload', () => {
+  let cooking = useCookingTimers('recipe')
+  mount(); cooking.start('Rest', 2)
+  let timer = cooking.timers.value[0]!
+  vi.advanceTimersByTime(125)
+  cooking.toggle(timer)
+  expect(timer).toMatchObject({ remaining: 2, remainingMs: 1875, state: 'paused' })
+  unmount()
+  cooking = useCookingTimers('recipe'); mount()
+  timer = cooking.timers.value[0]!
+  expect(timer.remainingMs).toBe(1875)
+  for (let cycle = 0; cycle < 3; cycle++) {
+    cooking.toggle(timer)
+    vi.advanceTimersByTime(125)
+    cooking.toggle(timer)
+  }
+  expect(timer.remainingMs).toBe(1500)
+  cooking.toggle(timer)
+  expect(timer.deadline).toBe(initialTime.getTime() + 2000)
+  vi.advanceTimersByTime(1500)
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(timer.state).toBe('finished')
+})
+
+it('resumes legacy paused timers that have no millisecond field', () => {
+  stored.set('heirloom:timers:v1:recipe', JSON.stringify({ version: 1, timers: [{ id: 1, name: 'Rest', duration: 60, remaining: 20, deadline: initialTime.getTime(), state: 'paused' }] }))
+  const cooking = useCookingTimers('recipe'); mount()
+  cooking.toggle(cooking.timers.value[0]!)
+  expect(cooking.timers.value[0]).toMatchObject({ remainingMs: 20000, deadline: initialTime.getTime() + 20000, state: 'running' })
+})
+
+it('vibrates once on completion and flashes the hidden title until visible', () => {
+  const cooking = useCookingTimers('recipe'); mount()
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  cooking.start('Rest', 1)
+  vi.advanceTimersByTime(1000)
+  expect(navigator.vibrate).toHaveBeenCalledExactlyOnceWith([300, 150, 300, 150, 300])
+  expect(document.title).toBe('⏰ Timer finished!')
+  vi.advanceTimersByTime(1000)
+  expect(document.title).toBe('Heirloom')
+  vi.advanceTimersByTime(1000)
+  expect(document.title).toBe('⏰ Timer finished!')
+  Object.defineProperty(document, 'hidden', { value: false })
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(document.title).toBe('Heirloom')
+  vi.advanceTimersByTime(2000)
+  expect(document.title).toBe('Heirloom')
+  expect(navigator.vibrate).toHaveBeenCalledTimes(1)
+})
+
+it('resumes suspended audio when becoming visible and tolerates denied resume', async () => {
+  const audio = { state: 'suspended', resume: vi.fn().mockResolvedValue(undefined), close: vi.fn().mockResolvedValue(undefined) }
+  vi.stubGlobal('AudioContext', class { constructor() { return audio } })
+  const cooking = useCookingTimers('recipe'); mount()
+  await cooking.enableSound()
+  audio.resume.mockClear()
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(audio.resume).not.toHaveBeenCalled()
+  audio.resume.mockRejectedValue(new Error('Audio denied'))
+  Object.defineProperty(document, 'hidden', { value: false })
+  document.dispatchEvent(new Event('visibilitychange'))
+  await Promise.resolve()
+  expect(audio.resume).toHaveBeenCalledTimes(1)
+})
+
+it('restores the title and cleans up flashing, ticks and listeners on unmount', () => {
+  const documentRemove = vi.spyOn(document, 'removeEventListener')
+  const windowRemove = vi.spyOn(window, 'removeEventListener')
+  const cooking = useCookingTimers('recipe'); mount()
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  cooking.start('Rest', 1); vi.advanceTimersByTime(1000)
+  expect(document.title).toBe('⏰ Timer finished!')
+  unmount()
+  expect(document.title).toBe('Heirloom')
+  expect(vi.getTimerCount()).toBe(0)
+  expect(documentRemove).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
+  expect(windowRemove).toHaveBeenCalledWith('pagehide', expect.any(Function))
+})
+
+it('still completes when vibration is unavailable or denied', () => {
+  vi.stubGlobal('navigator', { vibrate: () => { throw new Error('Denied') } })
+  const cooking = useCookingTimers('recipe'); mount()
+  cooking.start('Rest', 1); vi.advanceTimersByTime(1000)
+  expect(cooking.alerts.value).toEqual(['Rest finished'])
+  expect(cooking.timers.value[0]!.state).toBe('finished')
 })

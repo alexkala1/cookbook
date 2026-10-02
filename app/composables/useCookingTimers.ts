@@ -8,6 +8,8 @@ export function useCookingTimers(recipeId: string) {
   const sound = ref('Sound not enabled')
   let audio: AudioContext | undefined
   let interval: ReturnType<typeof setInterval> | undefined
+  let titleInterval: ReturnType<typeof setInterval> | undefined
+  let originalTitle: string | undefined
   let nextId = 0
   let disposed = false
   let hydrated = false
@@ -55,16 +57,46 @@ export function useCookingTimers(recipeId: string) {
     }
   }
 
+  function restoreTitle() {
+    clearInterval(titleInterval)
+    titleInterval = undefined
+    if (originalTitle !== undefined) document.title = originalTitle
+    originalTitle = undefined
+  }
+
+  function alertFinished(timer: CookingTimer) {
+    alerts.value.push(`${timer.name} finished`)
+    chime()
+    try {
+      if (typeof navigator !== 'undefined') navigator.vibrate?.([300, 150, 300, 150, 300])
+    } catch { /* Some browsers deny vibration in background tabs. */ }
+    if (document.hidden && titleInterval === undefined) {
+      originalTitle = document.title
+      document.title = '⏰ Timer finished!'
+      titleInterval = setInterval(() => {
+        document.title = document.title === '⏰ Timer finished!' ? originalTitle! : '⏰ Timer finished!'
+      }, 1000)
+    }
+  }
+
+  function visibilityChanged() {
+    if (!document.hidden) {
+      restoreTitle()
+      void audio?.resume().catch(() => {})
+    }
+    tick()
+  }
+
   function tick() {
     let stateChanged = false
     for (const timer of timers.value) {
       if (timer.state !== 'running') continue
       timer.remaining = remainingSeconds(timer, Date.now())
+      timer.remainingMs = Math.max(0, timer.deadline - Date.now())
       if (!timer.remaining) {
         timer.state = 'finished'
         stateChanged = true
-        alerts.value.push(`${timer.name} finished`)
-        chime()
+        alertFinished(timer)
       }
     }
 
@@ -79,6 +111,7 @@ export function useCookingTimers(recipeId: string) {
       name,
       duration,
       remaining: duration,
+      remainingMs: duration * 1000,
       deadline: Date.now() + duration * 1000,
       state: 'running'
     })
@@ -102,8 +135,9 @@ export function useCookingTimers(recipeId: string) {
       timer.state = 'paused'
     } else {
       void enableSound()
-      timer.remaining ||= timer.duration
-      timer.deadline = Date.now() + timer.remaining * 1000
+      timer.remainingMs = (timer.remainingMs ?? timer.remaining * 1000) || timer.duration * 1000
+      timer.remaining = Math.ceil(timer.remainingMs / 1000)
+      timer.deadline = Date.now() + timer.remainingMs
       timer.state = 'running'
     }
 
@@ -112,6 +146,7 @@ export function useCookingTimers(recipeId: string) {
 
   function reset(timer: CookingTimer) {
     timer.remaining = timer.duration
+    timer.remainingMs = timer.duration * 1000
     timer.state = 'idle'
     persist()
   }
@@ -126,10 +161,10 @@ export function useCookingTimers(recipeId: string) {
     const restored = { ...timer }
     if (restored.state === 'running') {
       restored.remaining = remainingSeconds(restored, Date.now())
+      restored.remainingMs = Math.max(0, restored.deadline - Date.now())
       if (!restored.remaining) {
         restored.state = 'finished'
-        alerts.value.push(`${restored.name} finished`)
-        chime()
+        alertFinished(restored)
       }
     }
 
@@ -151,7 +186,7 @@ export function useCookingTimers(recipeId: string) {
     tick()
     persist()
     interval = setInterval(tick, 250)
-    document.addEventListener('visibilitychange', tick)
+    document.addEventListener('visibilitychange', visibilityChanged)
     window.addEventListener('pagehide', persist)
   })
 
@@ -159,7 +194,8 @@ export function useCookingTimers(recipeId: string) {
     persist()
     disposed = true
     clearInterval(interval)
-    document.removeEventListener('visibilitychange', tick)
+    document.removeEventListener('visibilitychange', visibilityChanged)
+    restoreTitle()
     window.removeEventListener('pagehide', persist)
     void audio?.close().catch(() => {})
   })

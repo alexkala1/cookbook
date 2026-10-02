@@ -35,6 +35,20 @@ describe('switching between recipes', () => {
 })
 
 describe('save all', () => {
+  it('waits for each save before starting the next, even after a failure', async () => {
+    let release!: () => void
+    const first = new Promise<void>(resolve => { release = resolve })
+    const sent: string[] = []
+    const saving = saveAllRecipes([recipe('A'), recipe('B'), recipe('C')], async item => {
+      sent.push(item.title)
+      if (item.title === 'A') await first
+      if (item.title === 'B') throw new Error('Failed')
+    })
+    expect(sent).toEqual(['A'])
+    release()
+    expect(await saving).toEqual({ saved: 2, failed: 1, remaining: [recipe('B')] })
+    expect(sent).toEqual(['A', 'B', 'C'])
+  })
   it('saves every recipe, in order, leaving nothing behind', async () => {
     const post = vi.fn(async () => ({ id: 'x' }))
     const result = await saveAllRecipes([recipe('A'), recipe('B'), recipe('C')], post)

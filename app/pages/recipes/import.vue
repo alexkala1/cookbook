@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { RecipeInput } from '../../../server/utils/validation'
-import { readRecipeStream } from '../../utils/sse'
+import { readRecipeStream, streamIdleTimeout } from '../../utils/sse'
+import { downsizePhoto } from '../../utils/import-photo'
 import { importedRecipes, replaceAt, saveAllRecipes, switchTo, type ImportComplete } from '../../utils/multi-recipe-import'
 import { readTranslateLang, writeTranslateLang, translationLanguageOptions } from '../../utils/translation-prefs'
 const { requestHeaders, ready, settings } = useByokSettings()
@@ -8,6 +9,7 @@ const kind = ref<'url' | 'video' | 'ocr' | 'prompt'>('url')
 const tabs = { url: 'Web URL', video: 'Video Link', ocr: 'Scanned Card / Photo OCR', prompt: 'Conversational Memory' } as const
 const source = ref('')
 const busy = ref(false), saving = ref(false), error = ref('')
+const errorStatus = ref<number>()
 const { state: generateState, label: generateLabel } = useActionFeedback(busy, error)
 const { state: saveState, label: saveLabel } = useActionFeedback(saving, error)
 const messages = ref<string[]>([]), warnings = ref<string[]>([])
@@ -32,60 +34,60 @@ const captionsUnavailable = ref(false)
 const photoDataUrl = ref('')
 const photoError = ref('')
 const photoInput = ref<HTMLInputElement>()
-const MAX_PHOTO_EDGE = 1600, MAX_PHOTO_CHARS = 1_400_000
-async function downsize(file: File) {
-  const bitmap = await createImageBitmap(file)
-  try {
-    const scale = Math.min(1, MAX_PHOTO_EDGE / Math.max(bitmap.width, bitmap.height))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('no canvas')
-    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    for (const quality of [0.82, 0.65, 0.5]) {
-      const url = canvas.toDataURL('image/jpeg', quality)
-      if (url.length <= MAX_PHOTO_CHARS) return url
-    }
-    throw new Error('too large')
-  } finally { bitmap.close() }
-}
+const photoBusy = ref(false)
+let photoToken = 0, unmounted = false
 async function pickPhoto(event: Event) {
   const input = event.target as HTMLInputElement, file = input.files?.[0]
+  if (photoBusy.value) { input.value = ''; return }
   photoError.value = ''
   if (!file) return
+  const token = ++photoToken
+  photoBusy.value = true
   try {
-    if (!file.type.startsWith('image/')) throw new Error('not an image')
-    photoDataUrl.value = await downsize(file)
-  } catch { photoDataUrl.value = ''; photoError.value = 'We couldn’t read that photo. Try a JPEG or PNG, or paste the card’s text instead.' }
-  finally { input.value = '' }
+    const photo = await downsizePhoto(file)
+    if (!unmounted && token === photoToken) photoDataUrl.value = photo
+  } catch (cause) {
+    if (!unmounted && token === photoToken) { photoDataUrl.value = ''; photoError.value = cause instanceof Error && cause.message.startsWith('Photo is too large') ? cause.message : 'We couldn’t read that photo. Try a JPEG or PNG, or paste the card’s text instead.' }
+  } finally { if (!unmounted) photoBusy.value = false; input.value = '' }
 }
-function removePhoto() { photoDataUrl.value = ''; photoError.value = ''; photoInput.value?.focus() }
+function removePhoto() { photoToken++; photoDataUrl.value = ''; photoError.value = ''; photoInput.value?.focus() }
 const compareView = ref<'source' | 'parsed'>('source')
 const draftHeading = ref<HTMLElement>()
 let controller: AbortController | undefined
-onBeforeUnmount(() => controller?.abort())
-watch(kind, () => { source.value = ''; photoDataUrl.value = ''; photoError.value = ''; captionsUnavailable.value = false; clearDrafts(); original.value = null; error.value = ''; messages.value = [] })
+let translateController: AbortController | undefined
+let streamIdle: ReturnType<typeof streamIdleTimeout> | undefined
+onBeforeUnmount(() => { unmounted = true; photoToken++; streamIdle?.clear(); controller?.abort(); translateController?.abort() })
+watch(kind, () => { photoToken++; source.value = ''; photoDataUrl.value = ''; photoError.value = ''; captionsUnavailable.value = false; clearDrafts(); original.value = null; error.value = ''; errorStatus.value = undefined; messages.value = [] })
 async function generate() {
-  if (translating.value || saving.value || busy.value) return
+  if (translating.value || saving.value || busy.value || photoBusy.value) return
   translateError.value = ''; translateNote.value = ''
   controller = new AbortController(); busy.value = true; error.value = ''; clearDrafts(); original.value = null; messages.value = []
+  errorStatus.value = undefined
+  const requestController = controller
+  let connectionLost = false
+  streamIdle = streamIdleTimeout(() => { connectionLost = true; requestController.abort() })
   const input = source.value, inputKind = kind.value, photo = kind.value === 'ocr' ? photoDataUrl.value : ''
   captionsUnavailable.value = false
   try {
     const body = kind.value === 'url' ? { kind: kind.value, url: source.value } : kind.value === 'video' ? { kind: kind.value, videoUrl: source.value } : kind.value === 'ocr' ? { kind: kind.value, ...(photo ? { image: photo } : {}), text: source.value || undefined } : { kind: kind.value, prompt: source.value }
     const response = await fetch('/api/ai/recipe/stream', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify(body), signal: controller.signal })
     await readRecipeStream(response, (event, raw) => {
+      if (unmounted || requestController.signal.aborted) return
       const data = raw as ImportComplete & { message?: string, warnings?: string[], provenance?: string, mode?: string, sourceText?: string, captionsUnavailable?: boolean }
       if (data.message) messages.value = [...messages.value.slice(-9), data.message]
       if (event === 'complete' && (data.recipe || data.recipes?.length)) { recipes.value = importedRecipes(data, photo); selectedIndex.value = 0; captionsUnavailable.value = !!data.captionsUnavailable; warnings.value = data.warnings || []; provenance.value = `${data.provenance} · ${data.mode}`; original.value = { input, text: data.sourceText || input, kind: inputKind, photo }; compareView.value = 'source'; revealDraft() }
-    })
-  } catch (cause) { clearDrafts(); error.value = controller.signal.aborted ? 'Import cancelled.' : cause instanceof Error ? cause.message : 'Import failed. Try again.' }
-  finally { busy.value = false }
+    }, () => streamIdle?.activity())
+  } catch (cause) {
+    if (!unmounted) {
+      clearDrafts(); errorStatus.value = (cause as { status?: number })?.status
+      error.value = connectionLost ? 'Connection lost. Try again.' : requestController.signal.aborted ? 'Import cancelled.' : cause instanceof Error ? cause.message : 'Import failed. Try again.'
+    }
+  } finally { streamIdle?.clear(); streamIdle = undefined; if (!unmounted) busy.value = false }
 }
 // Bring the finished draft into view and tell screen readers it arrived; it isn't in the cookbook yet.
 async function revealDraft() {
   await nextTick()
+  if (unmounted) return
   draftHeading.value?.focus({ preventScroll: true })
   draftHeading.value?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 }
@@ -109,21 +111,24 @@ async function saveAllDrafts() {
 async function translateDraft() {
   if (!draft.value || translating.value || saving.value || busy.value) return
   translating.value = true; translateError.value = ''; translateNote.value = ''
+  translateController = new AbortController()
+  const requestController = translateController
   const language = targetLang.value, currentDraft = draft.value
+  const { imageUrl, ...recipe } = currentDraft
   try {
-    const response = await fetch('/api/ai/recipe/translate', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify({ recipe: currentDraft, targetLanguage: language }) })
+    const response = await fetch('/api/ai/recipe/translate', { method: 'POST', headers: { 'Content-Type': 'application/json', ...requestHeaders() }, body: JSON.stringify({ recipe, targetLanguage: language }), signal: requestController.signal })
     const data = await response.json()
     if (!response.ok) throw new Error(data.statusMessage || data.message || 'Could not translate this draft.')
-    if (draft.value !== currentDraft) return
-    draft.value = data.recipe
+    if (unmounted || requestController.signal.aborted || draft.value !== currentDraft) return
+    draft.value = { ...data.recipe, ...(imageUrl !== undefined ? { imageUrl } : {}) }
     warnings.value = [...warnings.value, ...(data.warnings || [])]
     translateNote.value = 'Translated to ' + translationLanguageOptions.find(item => item.code === language)?.label + '. Numbers and timers are unchanged.'
     writeTranslateLang(language)
-  } catch (cause) { translateError.value = cause instanceof Error ? cause.message : 'Could not translate this draft. Try again.' }
-  finally { translating.value = false }
+  } catch (cause) { if (!unmounted && !requestController.signal.aborted) translateError.value = cause instanceof Error ? cause.message : 'Could not translate this draft. Try again.' }
+  finally { if (!unmounted) translating.value = false; if (translateController === requestController) translateController = undefined }
 }
 const minutesLabel = (minutes: number) => minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`
-const isAiError = computed(() => !!error.value && /settings|model|key|rate limit|quota|groq|openai|anthropic|ollama|provider|timed out/i.test(error.value))
+const isAiError = computed(() => !!error.value && ([401, 422, 424, 429].includes(errorStatus.value ?? 0) || /model|api key|rate limit|quota|groq|openai|anthropic|ollama|provider|context limit/i.test(error.value)))
 const isSourceError = computed(() => !!error.value && /video|website|youtube|url|redirect|blocked|403|404|unplayable/i.test(error.value))
 useSeoMeta({ title: 'Import a recipe — Heirloom' })
 </script>
@@ -136,12 +141,12 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
     </div>
     <form class="mt-6 space-y-5" @submit.prevent="generate">
       <div v-if="kind === 'ocr'">
-        <input ref="photoInput" type="file" accept="image/*" capture="environment" class="sr-only" tabindex="-1" aria-label="Recipe card photo" :disabled="busy || saving" @change="pickPhoto">
+        <input ref="photoInput" type="file" accept="image/*" capture="environment" class="sr-only" tabindex="-1" aria-label="Recipe card photo" :disabled="busy || saving || photoBusy" @change="pickPhoto">
         <div v-if="photoDataUrl" class="row-panel flex flex-wrap items-start gap-4">
           <img :src="photoDataUrl" alt="Photo of your recipe card" class="max-h-64 max-w-full rounded-lg border border-rule object-contain">
           <button type="button" class="button-secondary" :disabled="busy || saving" @click="removePhoto"><UIcon name="i-lucide-trash-2" aria-hidden="true" /> Remove photo</button>
         </div>
-        <button v-else type="button" class="button-secondary inline-flex items-center gap-2" :disabled="busy || saving" @click="photoInput?.click()"><UIcon name="i-lucide-camera" aria-hidden="true" />Take photo or choose card image</button>
+        <button v-else type="button" class="button-secondary inline-flex items-center gap-2" :disabled="busy || saving || photoBusy" @click="photoInput?.click()"><UIcon name="i-lucide-camera" aria-hidden="true" />{{ photoBusy ? 'Reading photo…' : 'Take photo or choose card image' }}</button>
         <p v-if="photoError" role="alert" class="notice mt-3">{{ photoError }}</p>
         <label class="mt-5 block">{{ photoDataUrl ? 'Card text (optional — adds detail to the photo)' : 'Scanned card text' }}
           <textarea v-model="source" class="field mt-2 font-mono text-sm" rows="10" :required="!photoDataUrl" minlength="5" maxlength="30000" :disabled="busy || saving" aria-describedby="ocr-help" placeholder="Yiayia’s Koulourakia&#10;Ingredients&#10;250 g butter…" />
@@ -153,7 +158,7 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
         <input v-else v-model="source" class="field mt-2" :type="kind === 'url' ? 'url' : 'text'" required maxlength="2000" :disabled="busy || saving">
       </label>
       <p class="text-sm">{{ settings.activeProvider === 'ollama' && settings.activeModel ? 'Uses your locally running Ollama model.' : settings.keys[settings.activeProvider] ? 'Uses your selected model. Source text' + (photoDataUrl ? ' and your card photo are' : ' is') + ' sent to that provider.' : 'No AI key set, so you’ll get a basic draft to finish by hand. Add a key for a fuller import.' }} <NuxtLink class="text-action" to="/settings">AI settings</NuxtLink></p>
-      <button class="button-primary" :disabled="busy || saving || translating || !ready" v-stable-action="generateState" :data-state="generateState" :aria-busy="busy">{{ generateLabel('Create recipe draft', 'Creating draft…') }}</button>
+      <button class="button-primary" :disabled="busy || saving || translating || photoBusy || !ready" v-stable-action="generateState" :data-state="generateState" :aria-busy="busy">{{ generateLabel('Create recipe draft', 'Creating draft…') }}</button>
       <button v-if="busy" type="button" class="button-secondary ml-3" @click="controller?.abort()">Cancel</button>
     </form>
     <ol v-if="messages.length" class="row-panel mt-6 space-y-2" aria-live="polite" aria-label="Import progress"><li v-for="(message, i) in messages" :key="i">{{ message }}</li></ol>
@@ -237,6 +242,7 @@ useSeoMeta({ title: 'Import a recipe — Heirloom' })
             </select>
           </label>
           <button type="button" class="button-secondary min-h-11" data-testid="translate-draft" :disabled="translating || busy || saving" @click="translateDraft">{{ translating ? 'Translating…' : 'Translate draft' }}</button>
+          <button v-if="translating" type="button" class="button-secondary min-h-11" @click="translateController?.abort()">Cancel translation</button>
         </div>
         <p v-if="translateError" role="alert" class="notice mt-3">{{ translateError }} <NuxtLink v-if="/settings/i.test(translateError)" to="/settings" class="text-action">Open AI Settings</NuxtLink></p>
         <p class="mt-3 text-sm" aria-live="polite">{{ translateNote }}</p>

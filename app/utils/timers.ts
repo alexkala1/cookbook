@@ -11,7 +11,7 @@ export const QUICK_TIMER_PRESETS: QuickTimerPreset[] = [
   { label: '30m', seconds: 1800, description: 'Rest dough / Cool' },
   { label: '45m', seconds: 2700, description: 'Simmer broth' }
 ]
-export type CookingTimer = { id: number, name: string, duration: number, remaining: number, deadline: number, state: 'running' | 'paused' | 'idle' | 'finished' }
+export type CookingTimer = { id: number, name: string, duration: number, remaining: number, remainingMs?: number, deadline: number, state: 'running' | 'paused' | 'idle' | 'finished' }
 export function remainingSeconds(timer: CookingTimer, now: number) {
   return timer.state === 'running' ? Math.max(0, Math.ceil((timer.deadline - now) / 1000)) : timer.remaining
 }
@@ -33,9 +33,10 @@ export function restoreTimers(raw: string | null): CookingTimer[] {
         || typeof timer.name !== 'string' || timer.name.length > 200
         || !Number.isFinite(timer.duration) || timer.duration <= 0 || timer.duration > 604800
         || !Number.isFinite(timer.remaining) || timer.remaining < 0 || timer.remaining > timer.duration
+        || (timer.remainingMs !== undefined && (!Number.isFinite(timer.remainingMs) || timer.remainingMs < 0 || timer.remainingMs > timer.duration * 1000))
         || !Number.isSafeInteger(timer.deadline) || timer.deadline < 0 || timer.deadline > Date.now() + 604800000
         || !['running', 'paused', 'idle', 'finished'].includes(timer.state)) return false
       ids.add(timer.id); return true
-    }).map((timer: CookingTimer) => ({ id: timer.id, name: timer.name, duration: timer.duration, remaining: timer.remaining, deadline: timer.deadline, state: timer.state }))
+    }).map((timer: CookingTimer) => ({ id: timer.id, name: timer.name, duration: timer.duration, remaining: timer.remaining, ...(timer.remainingMs !== undefined ? { remainingMs: timer.remainingMs } : {}), deadline: timer.deadline, state: timer.state }))
   } catch { return [] }
 }

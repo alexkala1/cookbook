@@ -7,7 +7,8 @@ import { recipeCreateSchema, validate } from '../../../utils/validation'
 export default defineEventHandler(async event => {
   const signal = requestSignal(event)
   const { recipe, targetLanguage } = validate(translateRequest, await readBody(event))
-  const source = JSON.stringify(recipe)
+  const { imageUrl, ...textRecipe } = recipe
+  const source = JSON.stringify(textRecipe)
   if (source.length > 200_000) throw createError({ statusCode: 400, statusMessage: 'Recipe is too large to translate. Maximum allowed size is 200 KB.' })
   if ((getHeader(event, 'x-byok-provider') || '').toLowerCase() === 'gemini') throw createError({ statusCode: 400, statusMessage: 'Gemini is not supported for translation. Choose OpenAI, Anthropic, Groq or Ollama in Settings.' })
   const client = aiClient(event)
@@ -18,5 +19,7 @@ export default defineEventHandler(async event => {
     source, () => { throw createError({ statusCode: 400, statusMessage: 'Add an AI key (or choose Ollama) in Settings to translate recipes.' }) },
     signal, undefined, () => { isTruncated = true })
   if (isTruncated) throw createError({ statusCode: 422, statusMessage: 'The recipe translation was cut off because it exceeded the model’s response limit. Try translating a shorter recipe or smaller section.' })
-  return { ...enforceInvariants(recipe, translated), mode: client.mode, targetLanguage }
+  const result = enforceInvariants(textRecipe, translated)
+  if (imageUrl !== undefined) result.recipe.imageUrl = imageUrl
+  return { ...result, mode: client.mode, targetLanguage }
 })

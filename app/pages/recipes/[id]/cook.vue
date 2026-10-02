@@ -226,10 +226,11 @@ const finishDialog = ref<HTMLDialogElement>()
 const finishState = ref<'ask' | 'busy' | 'done'>('ask')
 const finishError = ref('')
 const deducted = ref<{ name: string, amount: string }[]>([])
+let finishId = ''
 function finishCooking() {
   stopSpeech()
-  finishState.value = 'ask'; finishError.value = ''; deducted.value = []; rating.value = 0; journalNote.value = ''; journalSaved = false
-  finishDialog.value?.showModal()
+  if (!finishId) finishId = crypto.randomUUID()
+  if (!finishDialog.value?.open) finishDialog.value?.showModal()
 }
 // Journal entry for this cook: an optional star rating and note, saved once even if the pantry step needs a retry.
 const rating = ref(0)
@@ -238,6 +239,7 @@ let journalSaved = false
 async function saveJournal() {
   if (journalSaved) return
   await $fetch('/api/recipes/' + id + '/cook-log', { method: 'POST', body: {
+    requestId: finishId,
     servings: Math.max(1, Math.round(servings.value)),
     ...(rating.value ? { rating: rating.value } : {}),
     ...(journalNote.value.trim() ? { notes: journalNote.value.trim() } : {})
@@ -245,13 +247,14 @@ async function saveJournal() {
   journalSaved = true
 }
 async function finishWith(updatePantry: boolean) {
+  if (finishState.value !== 'ask') return
   finishState.value = 'busy'; finishError.value = ''
   try {
     await saveJournal()
   } catch { finishError.value = 'We couldn’t save your journal entry. Try again.'; finishState.value = 'ask'; return }
-  if (!updatePantry) { leaveKitchen(); return }
+  if (!updatePantry) { finishState.value = 'done'; leaveKitchen(); return }
   try {
-    deducted.value = (await $fetch<{ deducted: { name: string, amount: string }[] }>('/api/pantry/deduct', { method: 'POST', body: { recipeId: id, ...(servingsScaled.value ? { servings: servings.value } : {}) } })).deducted
+    deducted.value = (await $fetch<{ deducted: { name: string, amount: string }[] }>('/api/pantry/deduct', { method: 'POST', body: { recipeId: id, requestId: finishId, ...(servingsScaled.value ? { servings: servings.value } : {}) } })).deducted
     finishState.value = 'done'
   } catch { finishError.value = 'Your journal entry is saved, but we couldn’t update your pantry. Try again, or skip for now.'; finishState.value = 'ask' }
 }
@@ -367,7 +370,9 @@ const ovenState = computed(() => {
 const liveTimers = computed(() => timers.value.filter(timer => timer.state !== 'idle').sort((a, b) => a.remaining - b.remaining))
 
 function startStepTimer(seconds: number, number: number) {
-  start(`Step ${index.value + 1}${durations.value.length > 1 ? ' · timer ' + (number + 1) : ''}`, seconds)
+  const name = `Step ${index.value + 1}${durations.value.length > 1 ? ' · timer ' + (number + 1) : ''}`
+  if (timers.value.some(timer => timer.name === name && (timer.state === 'running' || timer.state === 'paused'))) return
+  start(name, seconds)
 }
 
 function keyboard(event: KeyboardEvent) {
@@ -578,7 +583,7 @@ useSeoMeta({ title: () => `Cooking ${recipe.value?.title || 'recipe'} — Heirlo
           <button v-if="index < steps.length - 1" class="kitchen-button step-next" @click="navigate('next')">Next<UIcon name="i-lucide-chevron-right" class="size-7" aria-hidden="true" /></button>
           <button v-else class="kitchen-button step-next" @click="finishCooking">Done</button>
         </nav>
-        <dialog ref="finishDialog" class="m-auto max-h-[90dvh] w-[min(92vw,32rem)] overflow-y-auto rounded-xl border border-k-accent bg-k-paper p-6 text-k-ink backdrop:bg-black/50" aria-labelledby="finish-title">
+        <dialog ref="finishDialog" class="m-auto max-h-[90dvh] w-[min(92vw,32rem)] overflow-y-auto rounded-xl border border-k-accent bg-k-paper p-6 text-k-ink backdrop:bg-black/50" aria-labelledby="finish-title" @cancel="finishState === 'busy' && $event.preventDefault()">
           <h2 id="finish-title" class="text-3xl">Finished cooking?</h2>
           <template v-if="finishState !== 'done'">
             <fieldset class="mt-4" :disabled="finishState === 'busy'">

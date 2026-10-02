@@ -21,11 +21,13 @@ export function replaceAt(recipes: readonly RecipeInput[], index: number, recipe
 }
 
 /**
- * Saves every recipe at once. Recipes that were saved leave the list, so a retry after a failure never saves
- * the same recipe twice; the ones that failed stay for the cook to try again.
+ * Saves recipes sequentially in source order. Successful recipes leave the list;
+ * failed recipes stay for the cook to try again.
  */
 export async function saveAllRecipes(recipes: readonly RecipeInput[], post: (recipe: RecipeInput) => Promise<unknown>): Promise<SaveAllResult> {
-  const results = await Promise.allSettled(recipes.map(recipe => post(recipe)))
-  const remaining = recipes.filter((_, i) => results[i]!.status === 'rejected')
+  const remaining: RecipeInput[] = []
+  for (const recipe of recipes) {
+    try { await post(recipe) } catch { remaining.push(recipe) }
+  }
   return { saved: recipes.length - remaining.length, failed: remaining.length, remaining }
 }
