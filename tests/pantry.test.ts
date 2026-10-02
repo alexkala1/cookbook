@@ -12,7 +12,8 @@ import match from '../server/api/pantry/match.post'
 import receipt from '../server/api/pantry/receipt.post'
 import csrf from '../server/middleware/csrf'
 import { inferStorage, matchPantry, normalizePantryName, parseReceipt, pantryStepForUnit, PANTRY_STAPLES, type PantryItem } from '../shared/culinary/pantry'
-import { pantryInput } from '../server/utils/pantry'
+import { deductForRecipe, pantryInput, savePantry } from '../server/utils/pantry'
+import { saveRecipe } from '../server/utils/recipes'
 
 vi.mock('../server/db', async () => { vi.stubEnv('DATABASE_URL', ':memory:'); return vi.importActual('../server/db') })
 migrate(db, { migrationsFolder: fileURLToPath(new URL('../server/db/migrations', import.meta.url)) })
@@ -21,6 +22,41 @@ function request(path = '', method = 'GET', body?: unknown, origin = 'http://loc
   return handle(new Request('http://localhost/api/pantry' + path, { method, headers: { Host: 'localhost', Origin: origin, 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }))
 }
 beforeEach(() => { db.delete(pantryItems).run(); db.delete(recipes).run() })
+it('rounds fresh pantry quantities and rejects sub-milliquantity stock', async () => {
+  const response = await request('', 'POST', { name: 'Oil', quantity: 0.1234567, unit: 'l' })
+  expect(response.status).toBe(200)
+  expect((await response.json())[0].quantity).toBe(0.123)
+  expect((await request('', 'POST', { name: 'Oil', quantity: 0.0004, unit: 'l' })).status).toBe(400)
+})
+it('deducts and rounds stock under an immediate transaction using transaction-scoped reads', () => {
+  const recipe = saveRecipe({ title: 'Oil recipe', description: '', ingredients: [{ name: 'Oil', amount: 0.1, unit: 'l' }] })
+  savePantry({ name: 'Oil', quantity: 0.3, unit: 'l', expiresAt: null })
+  const globalRead = vi.spyOn(db, 'select').mockImplementation(() => { throw new Error('Stock must be read through the transaction') })
+  const transaction = vi.spyOn(db, 'transaction')
+  try {
+    deductForRecipe(recipe.id)
+    deductForRecipe(recipe.id)
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), { behavior: 'immediate' })
+    expect(globalRead).not.toHaveBeenCalled()
+  } finally { globalRead.mockRestore(); transaction.mockRestore() }
+  expect(db.select().from(pantryItems).get()!.quantity).toBe(0.1)
+  deductForRecipe(recipe.id)
+  expect(db.select().from(pantryItems).all()).toHaveLength(0)
+})
+it('uses the latest stock at transaction entry and deletes sub-0.001 residue', () => {
+  const recipe = saveRecipe({ title: 'Oil recipe', description: '', ingredients: [{ name: 'Oil', amount: 0.2996, unit: 'l' }] })
+  const [item] = savePantry({ name: 'Oil', quantity: 0.1, unit: 'l', expiresAt: null })
+  const original = db.transaction.bind(db)
+  const transaction = vi.spyOn(db, 'transaction').mockImplementation((callback, config) => {
+    db.$client.prepare('UPDATE pantry_items SET quantity = ? WHERE id = ?').run(0.3, item!.id)
+    return original(callback, config)
+  })
+  try { deductForRecipe(recipe.id) } finally { transaction.mockRestore() }
+  expect(db.select().from(pantryItems).all()).toHaveLength(0)
+})
+it.each(['ri\0ce', '\u200b\u200b', '---'])('rejects invalid pantry names over HTTP: %s', async name => {
+  expect((await request('', 'POST', { name })).status).toBe(400)
+})
 it('rounds merged pantry quantities to three decimals after addition and unit conversion', async () => {
   await request('', 'POST', { name: 'Flour', quantity: 0.1, unit: 'kg' })
   const merged = await (await request('', 'POST', { name: 'Flour', quantity: 0.2, unit: 'kg' })).json()
@@ -67,7 +103,7 @@ it('adjusts pantry quantity and persists the updated item without changing its m
   expect(await (await request('/' + item.id, 'PATCH', { delta: -50 })).json()).toMatchObject({ quantity: 200 })
 })
 it.each([
-  [1, 0.23456, 1.235], [0.3, -0.1, 0.2], [1, -1000000, 0], [999999, 1000000, 1000000], [1, 0, 1]
+  [1, 0.23456, 1.235], [0.3, -0.1, 0.2], [1, -1000000, 0], [999999, 1000000, 1000000]
 ])('clamps and rounds %s plus %s to %s', async (quantity, delta, expected) => {
   const [item] = await (await request('', 'POST', { name: 'Olive oil', quantity, unit: 'l' })).json()
   const response = await request('/' + item.id, 'PATCH', { delta })
@@ -77,7 +113,7 @@ it.each([
 })
 it('rejects invalid quantity updates and cross-origin requests without changing stock', async () => {
   const [item] = await (await request('', 'POST', { name: 'Eggs', quantity: 6 })).json()
-  for (const body of [{}, { delta: '1' }, { delta: null }, { delta: 1000001 }, { delta: -1000001 }, { delta: 1, quantity: 99 }, [], null]) {
+  for (const body of [{}, { delta: 0 }, { delta: 0.0004 }, { delta: -0.0004 }, { delta: '1' }, { delta: null }, { delta: 1000001 }, { delta: -1000001 }, { delta: 1, quantity: 99 }, [], null]) {
     expect((await request('/' + item.id, 'PATCH', body)).status).toBe(400)
   }
   expect((await request('/' + item.id, 'PATCH', { delta: 1 }, 'https://evil.example')).status).toBe(403)

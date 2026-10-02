@@ -1,25 +1,31 @@
 import { z } from 'zod'
 import { createError } from 'h3'
+import { photoMimeType } from './image'
 
-const shortText = z.string().trim().min(1).max(200)
-const optionalText = z.string().trim().max(10000).nullable().optional()
+export const clean = (schema: z.ZodString) => z.string().refine(value => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value), 'Control characters are not allowed').pipe(schema)
+export const visibleText = (schema: z.ZodString) => clean(schema).refine(value => /[\p{L}\p{N}]/u.test(value), 'Must contain a letter or digit')
+const shortText = clean(z.string().trim().min(1).max(200))
+const optionalText = clean(z.string().trim().max(10000)).nullable().optional()
 const number = z.number().finite().nonnegative().max(1000000)
 const minutes = number.int().max(100000)
-const webUrl = z.string().max(2000).url().refine(value => /^https?:\/\//i.test(value), 'Use an HTTP or HTTPS URL').nullable().optional()
+const webUrl = clean(z.string().max(2000).url()).refine(value => /^https?:\/\//i.test(value), 'Use an HTTP or HTTPS URL').nullable().optional()
 // A photographed recipe card is kept inline as a small JPEG/PNG/WebP data URL (the importer downsizes it first).
-const cardPhoto = z.string().max(1_500_000).regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/)
+const cardPhoto = z.string().max(1_500_000).regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/).refine(value => {
+  const [prefix, data] = value.split(',')
+  return !!data && prefix === `data:${photoMimeType(data)};base64`
+}, 'Use a JPEG, PNG or WebP photo')
 const imageSource = z.union([webUrl, cardPhoto])
 export const recipeTypes = ['food', 'drink', 'cocktail', 'baking', 'dessert'] as const
 export const difficulties = ['easy', 'intermediate', 'advanced', 'master'] as const
 export const saltTypes = ['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_fine_sea_salt'] as const
 
 const ingredient = z.object({
-  name: shortText, amount: number, unit: shortText.max(40),
+  name: shortText, amount: number, unit: clean(z.string().trim().min(1).max(40)),
   gramsEquivalent: number.nullable().optional(), category: shortText.optional(),
   notes: optionalText, sortOrder: number.int().optional()
 }).strict()
 const step = z.object({
-  stepNumber: z.number().int().min(1).max(500), instruction: z.string().trim().min(1).max(10000),
+  stepNumber: z.number().int().min(1).max(500), instruction: clean(z.string().trim().min(1).max(10000)),
   durationMinutes: minutes.nullable().optional(), timerRequired: z.boolean().optional(),
   heatLevel: z.enum(['none', 'low', 'medium-low', 'medium', 'medium-high', 'high']).nullable().optional(),
   scienceWhy: optionalText, failurePrevention: optionalText,
@@ -31,7 +37,7 @@ const equipment = z.object({ name: shortText, isEssential: z.boolean().optional(
 const orderedSteps = z.array(step).max(500).refine(items => new Set(items.map(item => item.stepNumber)).size === items.length, 'Step numbers must be unique')
 
 export const recipeCreateSchema = z.object({
-  title: shortText, description: z.string().trim().max(10000),
+  title: visibleText(z.string().trim().min(1).max(200)), description: clean(z.string().trim().max(10000)),
   recipeType: z.enum(recipeTypes).optional(),
   originalSaltType: z.enum(saltTypes).nullable().optional(),
   sourceUrl: webUrl, sourceType: z.enum(['url', 'video', 'prompt', 'handwritten_ocr', 'manual']).optional(),

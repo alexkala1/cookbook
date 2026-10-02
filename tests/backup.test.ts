@@ -34,7 +34,7 @@ afterAll(() => { db.$client.close(); vi.unstubAllEnvs() })
 function populate() {
   const recipe = saveRecipe({
     title: 'Γιαγιά’s soup', description: 'Family recipe', heirloomNotes: 'Keep this memory',
-    imageUrl: 'data:image/png;base64,YQ==', rating: 4.5, isFavorite: true,
+    imageUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX2kAAAAASUVORK5CYII=', rating: 4.5, isFavorite: true,
     ingredients: [{ name: 'Beans', amount: 250, unit: 'g', notes: 'Soak overnight', gramsEquivalent: 250 }],
     steps: [{ stepNumber: 2, instruction: 'Serve', sensoryVisual: 'Glossy' }, { stepNumber: 1, instruction: 'Simmer', timerRequired: true, durationMinutes: 30, heatLevel: 'low' }],
     equipment: [{ name: 'Pot', isEssential: true, substituteTool: 'Dutch oven' }]
@@ -45,6 +45,17 @@ function populate() {
 }
 
 describe('JSON cookbook backup', () => {
+  it('rejects invisible or control-containing names during restore too', async () => {
+    populate()
+    for (const value of ['Bad\0Name', '\u200b\u200b', '---']) {
+      const recipeBackup = exportBackup()
+      recipeBackup.recipes[0]!.title = value
+      expect((await request('POST', recipeBackup)).status).toBe(400)
+      const pantryBackup = exportBackup()
+      pantryBackup.pantry[0]!.name = value
+      expect((await request('POST', pantryBackup)).status).toBe(400)
+    }
+  })
   it.each(['x'.repeat(201), ' ' + 'x'.repeat(200)])('rejects oversized raw titles without modifying existing data', async title => {
     populate()
     const original = exportBackup(), backup = structuredClone(original)
@@ -70,7 +81,7 @@ describe('JSON cookbook backup', () => {
     const original = exportBackup()
     const response = await request('POST', { oversized: 'x'.repeat(30_000_001) })
     expect(response.status).toBe(413)
-    expect((await response.json()).statusMessage).toBe('Backup payload exceeds 30 MB limit')
+    expect((await response.json()).statusMessage).toBe('Request body exceeds 30 MB limit')
     expect(exportBackup().recipes).toEqual(original.recipes)
   })
   it('round-trips spices stock and its expiry without dropping the new location', () => {

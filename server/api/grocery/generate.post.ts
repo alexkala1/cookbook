@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { db } from '../../db'
 import { groceryItems, groceryLists } from '../../db/schema'
 import { getRecipe } from '../../utils/recipes'
-import { validate } from '../../utils/validation'
+import { clean, validate } from '../../utils/validation'
 import { buildGroceryList, menuCourses, type MenuCourse } from '../../../shared/culinary/grocery'
 
 const recipeId = z.string().trim().min(1).max(100)
@@ -16,8 +16,8 @@ const requestSchema = z.object({
   menu: z.object({ appetizerId: recipeId.optional(), mainCourseId: recipeId.optional(), dessertId: recipeId.optional(), beverageId: recipeId.optional() }).strict().optional(),
   servings: servings.optional(),
   // Drinks to buy for the table (for example from the Dinner pairings); they route to the Κάβα like any other ingredient.
-  drinks: z.array(z.object({ name: z.string().trim().min(1).max(80) }).strict()).min(1).max(12).optional(),
-  title: z.string().trim().min(1).max(200).optional()
+  drinks: z.array(z.object({ name: clean(z.string().trim().min(1).max(80)) }).strict()).min(1).max(12).optional(),
+  title: clean(z.string().trim().min(1).max(200)).optional()
 }).strict()
   .refine(value => [value.courses, value.recipeIds, value.menu].filter(Boolean).length === 1, 'Provide exactly one of courses, recipeIds, or menu')
   .refine(value => !value.menu || Object.values(value.menu).some(Boolean), 'Choose at least one menu course')

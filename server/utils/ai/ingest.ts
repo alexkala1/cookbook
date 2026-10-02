@@ -6,6 +6,7 @@ import { safeFetch } from './safe-fetch'
 import { extractHtml, extractJsonLd, extractPageRecipe, fallbackRecipe, structuredDraft } from './normalize'
 import { enrichScience } from './science'
 import { recipeCreateSchema, validate, type RecipeInput } from '../validation'
+import { photoMimeType } from '../image'
 
 export const ingestSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('url'), url: z.string().url().max(2000) }).strict(),
@@ -64,8 +65,23 @@ export function extractVideoChapters(description: string): VideoChapter[] {
       && !/^(?:whisk|mix|chop|dice|mince|stir|pour|add|season|melt|knead|roll|fold|simmer|blend|serve|assemble|assembly|plating)(?:\b|$)|^(?:bake|roast|cook|fry|grill)\s+(?:at|for|until|the)\b/i.test(title)
     return [{ title, startSeconds, endSeconds: Infinity, isRecipe, sourceText: description.slice(match.index! + match[0].length, matches[index + 1]?.index ?? description.length).trim() }]
   }).sort((a, b) => a.startSeconds - b.startSeconds)
-  const unique = chapters.filter((chapter, index) => index === 0 || chapter.startSeconds !== chapters[index - 1]!.startSeconds)
+  const unique: VideoChapter[] = []
+  for (const chapter of chapters) {
+    const previous = unique.at(-1)
+    if (previous?.startSeconds !== chapter.startSeconds) unique.push(chapter)
+    else if (!previous.isRecipe && chapter.isRecipe) unique[unique.length - 1] = chapter
+  }
   return unique.map((chapter, index) => ({ ...chapter, endSeconds: unique[index + 1]?.startSeconds ?? Infinity }))
+}
+
+const decodeCaption = (text: string) => text.replace(/&(?:#(\d+)|#x([\da-f]+)|quot|apos|amp|lt|gt);/gi, (entity, decimal: string | undefined, hex: string | undefined) => {
+  const code = decimal ? Number(decimal) : hex ? parseInt(hex, 16) : undefined
+  if (code !== undefined) return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
+  return ({ '&quot;': '"', '&apos;': "'", '&amp;': '&', '&lt;': '<', '&gt;': '>' } as Record<string, string>)[entity.toLowerCase()] ?? entity
+})
+function captionText(captions: string): string {
+  const $ = load(captions, { xml: true })
+  return $('text, p').map((_i, el) => decodeCaption($(el).text())).get().join(' ')
 }
 
 export function parseTranscriptCues(captions: string): TranscriptCue[] {
@@ -73,7 +89,7 @@ export function parseTranscriptCues(captions: string): TranscriptCue[] {
   return $('text, p').toArray().flatMap(el => {
     const node = $(el), raw = node.attr('start') ?? node.attr('t')
     const startSeconds = raw === undefined || !raw.trim() ? NaN : Number(raw) / (node.attr('start') !== undefined ? 1 : 1000)
-    const text = node.text().trim()
+    const text = decodeCaption(node.text()).trim()
     return Number.isFinite(startSeconds) && startSeconds >= 0 && text ? [{ startSeconds, text }] : []
   }).sort((a, b) => a.startSeconds - b.startSeconds)
 }
@@ -122,9 +138,15 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
     if (request.image) {
       const prefix = request.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
       const data = prefix ? request.image.slice(prefix[0].length) : request.image
-      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw createError({ statusCode: 400, statusMessage: 'Use a base64 recipe card image or image data URL' })
-      image = { data, mimeType: prefix?.[1] || request.mimeType || 'image/jpeg' }
-      provenance = 'Photographed recipe card / Vision AI'
+      const mimeType = photoMimeType(data)
+      if (!mimeType) throw createError({ statusCode: 400, statusMessage: 'Use a JPEG, PNG or WebP photo' })
+      if (client.mode === 'fallback') {
+        if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Reading a photographed card needs an AI key (or Ollama vision model). Paste the card text instead.' })
+        onWarning('The image was ignored because no AI vision model is configured. This draft uses only the supplied text.')
+      } else {
+        image = { data, mimeType }
+        provenance = 'Photographed recipe card / Vision AI'
+      }
     }
   }
   else if (request.kind === 'url' && !/^(?:https?:)?\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\//i.test(request.url)) {
@@ -156,8 +178,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
       try {
         const captions = await safeFetch(track.baseUrl, signal)
         cues = parseTranscriptCues(captions)
-        const $ = load(captions, { xml: true })
-        const transcript = $('text, p').map((_i, el) => $(el).text()).get().join(' ')
+        const transcript = captionText(captions)
         if (transcript.trim()) { source = transcript; provenance = 'Video captions'; captionsUnavailable = false }
       } catch { if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' }) }
     }
@@ -180,8 +201,7 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
           if (androidTrack?.baseUrl) {
             const captions = await safeFetch(androidTrack.baseUrl, signal)
             cues = parseTranscriptCues(captions)
-            const $ = load(captions, { xml: true })
-            const transcript = $('text, p').map((_i, el) => $(el).text()).get().join(' ')
+            const transcript = captionText(captions)
             if (transcript.trim()) { source = transcript; provenance = 'Video captions'; captionsUnavailable = false }
           }
         } catch { if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Cancelled' }) }

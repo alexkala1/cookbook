@@ -151,6 +151,9 @@ describe('POST /api/grocery/generate', () => {
   const meze = saveRecipe({ title: 'Tzatziki', description: '', servings: 4, ingredients: [{ name: 'Greek yogurt', amount: 400, unit: 'g' }, { name: 'cucumber', amount: 1, unit: 'piece' }, { name: 'garlic', amount: 2, unit: 'piece' }] })
   const main = saveRecipe({ title: 'Αρνί στη γάστρα', description: '', servings: 4, ingredients: [{ name: 'lamb shoulder', amount: 1400, unit: 'g' }, { name: 'garlic', amount: 4, unit: 'piece' }, { name: 'potatoes', amount: 1, unit: 'kg' }] })
   const sweet = saveRecipe({ title: 'Galaktoboureko', description: '', servings: 8, ingredients: [{ name: 'φύλλο κρούστας', amount: 300, unit: 'g' }, { name: 'milk', amount: 1, unit: 'l' }, { name: 'egg yolks', amount: 4, unit: 'piece' }] })
+  it('rejects control characters in added drink names', async () => {
+    expect((await post({ recipeIds: [meze.id], drinks: [{ name: 'wine\0' }] })).status).toBe(400)
+  })
 
   it('persists thousands of distinct ingredients without exceeding SQLite parameter limits', async () => {
     const recipes = Array.from({ length: 8 }, (_, group) => saveRecipe({ title: `Large course ${group}`, description: '', ingredients: Array.from({ length: 500 }, (_, i) => ({ name: `Ingredient ${group * 500 + i}`, amount: 1, unit: 'g' })) }))

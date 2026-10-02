@@ -21,22 +21,25 @@ export function extractJson(raw: string): string {
   return first >= 0 && last >= first ? raw.slice(first, last + 1) : raw.trim()
 }
 
-export function humanizeProviderError(provider: string, status: number, rawMessage: string, model: string): string {
+export function humanizeProviderError(provider: string, status: number, rawMessage: unknown, model: string, retryAfter?: number): string {
   const name = provider.charAt(0).toUpperCase() + provider.slice(1)
-  const cleanMsg = (rawMessage || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 300)
+  const cleanMsg = String(rawMessage ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 300)
   const lowerMsg = cleanMsg.toLowerCase()
   if (status === 413 || lowerMsg.includes('request too large') || lowerMsg.includes('reduce your message size')) {
     return `${name} request is too large for the model’s token allowance. Try importing a smaller section or shortening the notes, then retry.`
   }
-  if (status === 401 || status === 403 || lowerMsg.includes('invalid api key') || lowerMsg.includes('unauthorized') || lowerMsg.includes('forbidden')) {
+  if (status === 401 || (status === 403 && /api key|invalid|unauthorized/.test(lowerMsg)) || lowerMsg.includes('invalid api key') || lowerMsg.includes('unauthorized')) {
     return `Your ${name} API key was rejected (HTTP ${status}). Please verify your key in Settings.`
   }
+  if (status === 403) return `${name} access denied by provider (HTTP 403). ${cleanMsg}`.trim()
+  if ([502, 503, 504, 529].includes(status)) return `${name} is temporarily overloaded (HTTP ${status}). Retry in a minute.`
   if (status === 404 || lowerMsg.includes('does not exist') || lowerMsg.includes('not have access') || lowerMsg.includes('model_not_found')) {
     const tip = provider === 'groq' ? ' Active options on Groq include openai/gpt-oss-120b and qwen/qwen3.8-27b.' : ''
     return `The model "${model || 'selected'}" is not available on your ${name} plan.${tip} Please choose an active model in Settings.`
   }
   if (status === 429 || lowerMsg.includes('rate limit') || lowerMsg.includes('quota') || lowerMsg.includes('too many requests')) {
-    return `${name} rate limit reached (HTTP 429). Please wait 30–60 seconds before trying again, or check your quota in your provider console.`
+    const wait = retryAfter !== undefined ? `${retryAfter} seconds` : '30–60 seconds'
+    return `${name} rate limit reached (HTTP 429). Please wait ${wait} before trying again, or check your quota in your provider console.`
   }
   if (status === 400 && (lowerMsg.includes('generate json') || lowerMsg.includes('json_validate_failed') || lowerMsg.includes('failed to generate json'))) {
     const tip = provider === 'groq' ? ' Try using openai/gpt-oss-120b or qwen/qwen3.8-27b in Settings.' : ''
@@ -149,7 +152,8 @@ export function aiClient(event: H3Event) {
           let code = ''
           try {
             const errData = await response.json()
-            msg = errData?.error?.message || errData?.message || msg
+            const rawMsg = errData?.error?.message ?? errData?.message ?? (typeof errData?.error === 'string' ? errData.error : undefined)
+            if (typeof rawMsg === 'string' && rawMsg) msg = rawMsg
             code = typeof errData?.error?.code === 'string' ? errData.error.code : ''
             if (errData?.error?.failed_generation) {
               console.error(`[${provider}] failed_generation:`, errData.error.failed_generation)
@@ -160,9 +164,15 @@ export function aiClient(event: H3Event) {
             delete body.response_format
             continue
           }
+          if (/content_filter|content_policy|safety/i.test(code)) throw createError({ statusCode: 422, statusMessage: 'The provider blocked this content.' })
+          const retryHeader = response.headers.get('retry-after')
+          const seconds = retryHeader !== null && /^\d+(?:\.\d+)?$/.test(retryHeader.trim()) ? Number(retryHeader) : NaN
+          const retryAfter = Number.isFinite(seconds) ? Math.ceil(seconds)
+            : retryHeader && /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(retryHeader) && Number.isFinite(Date.parse(retryHeader)) ? Math.max(0, Math.ceil((Date.parse(retryHeader) - Date.now()) / 1000)) : undefined
           throw createError({
-            statusCode: response.status >= 400 && response.status < 500 ? response.status : 502,
-            statusMessage: humanizeProviderError(provider, response.status, msg, model)
+            statusCode: [401, 403].includes(response.status) ? 424 : response.status >= 400 && response.status < 500 ? response.status : 502,
+            statusMessage: humanizeProviderError(provider, response.status, msg, model, retryAfter),
+            data: { provider: true }
           })
         }
         const reader = response.body!.getReader()
@@ -180,6 +190,9 @@ export function aiClient(event: H3Event) {
         }
 
         const data = JSON.parse(text)
+        if (data.choices?.[0]?.finish_reason === 'content_filter' || data.promptFeedback?.blockReason || ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'].includes(data.candidates?.[0]?.finishReason)) {
+          throw createError({ statusCode: 422, statusMessage: 'The provider blocked this content.' })
+        }
         const isTruncated =
           data.choices?.[0]?.finish_reason === 'length' ||
           data.stop_reason === 'max_tokens' ||
@@ -212,7 +225,7 @@ export function aiClient(event: H3Event) {
         }
         let parseResult = schema.safeParse(parsed)
         if (!parseResult.success && Object.is(schema, recipeCreateSchema)) {
-          const retry = schema.safeParse(sanitizeAiDraft(parsed))
+          const retry = schema.safeParse(sanitizeAiDraft(parsed, onWarning))
           if (retry.success) parseResult = retry
         }
         if (!parseResult.success) {

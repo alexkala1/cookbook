@@ -5,13 +5,13 @@ import { db } from '../db'
 import { cookLogs, ingredients, pantryItems, recipeEquipment, recipes, steps } from '../db/schema'
 import { storageLocations } from '../../shared/culinary/pantry'
 import { cookLogInputSchema } from './cook-logs'
-import { recipeCreateSchema, validate } from './validation'
+import { clean, recipeCreateSchema, validate, visibleText } from './validation'
 
 const id = z.string().min(1).max(200)
 const childIdentity = { id, recipeId: id }
 const recipeSchema = recipeCreateSchema.required().extend({
   id,
-  title: z.string().max(200).trim().min(1),
+  title: visibleText(z.string().max(200).trim().min(1)),
   parentRecipeId: id.nullable().optional(),
   variationName: z.string().max(200).nullable().optional(),
   // saveRecipe can derive this sum from two individually valid 100000-minute fields.
@@ -23,9 +23,9 @@ const recipeSchema = recipeCreateSchema.required().extend({
   equipment: z.array(recipeCreateSchema.shape.equipment.unwrap().element.required().extend(childIdentity)).max(100)
 })
 const pantrySchema = z.object({
-  id, name: z.string().min(1).max(200), normalizedName: z.string().min(1).max(200),
+  id, name: visibleText(z.string().min(1).max(200)), normalizedName: clean(z.string().min(1).max(200)),
   quantity: z.number().finite().nonnegative().max(1_000_000),
-  unit: z.string().min(1).max(40),
+  unit: clean(z.string().min(1).max(40)),
   storageLocation: z.enum(storageLocations),
   expiresAt: z.number().int().nonnegative().nullable(),
   createdAt: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative()

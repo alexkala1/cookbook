@@ -99,7 +99,7 @@ it('rejects unsupported languages, missing recipes and foreign origins', async (
 it('propagates humanized provider authentication errors without secrets', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { message: 'secret-test' } }), { status: 401 })))
   const response = await request()
-  expect(response.status).toBe(401)
+  expect(response.status).toBe(424)
   const body = await response.text()
   expect(body).toContain('API key was rejected')
   expect(body).not.toContain('secret-test')

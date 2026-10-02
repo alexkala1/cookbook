@@ -45,6 +45,23 @@ beforeEach(() => {
 afterAll(() => { db.$client.close(); vi.unstubAllEnvs() })
 
 describe('recipe HTTP endpoints', () => {
+  it('matches a capital final-sigma prefix against a mid-word sigma', async () => {
+    const saved = saveRecipe({ title: 'Μασαλα', description: '' })
+    for (const term of ['ΜΑΣ', 'μας', 'μασ']) {
+      const response = await request('/api/recipes?search=' + encodeURIComponent(term))
+      expect(response.status).toBe(200)
+      expect((await response.json()).map((row: { id: string }) => row.id)).toEqual([saved.id])
+    }
+  })
+  it('clamps automatically derived total time to the API limit', async () => {
+    const response = await request('/api/recipes', 'POST', { title: 'Slow soup', description: '', prepTimeMinutes: 100000, cookTimeMinutes: 100000 })
+    expect(response.status).toBe(201)
+    expect((await response.json()).totalTimeMinutes).toBe(100000)
+  })
+  it.each(['Bad\0Title', '\u200b\u200b', '---'])('rejects invalid recipe titles over HTTP: %s', async title => {
+    expect((await request('/api/recipes', 'POST', { title, description: '' })).status).toBe(400)
+    expect(db.select().from(schema.recipes).all()).toHaveLength(0)
+  })
   it('filters recipes by curated collection (quick, feast, easy) and rejects invalid collections', async () => {
     const quick = await (await request('/api/recipes', 'POST', { ...sample(), title: 'Quick soup', totalTimeMinutes: 20, servings: 2, difficulty: 'easy' })).json()
     const feast = await (await request('/api/recipes', 'POST', { ...sample(), title: 'Family feast', totalTimeMinutes: 90, servings: 8, difficulty: 'advanced' })).json()

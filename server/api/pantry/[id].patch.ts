@@ -5,7 +5,7 @@ import { db } from '../../db'
 import { pantryItems } from '../../db/schema'
 import { validate } from '../../utils/validation'
 
-const quantityDelta = z.object({ delta: z.number().finite().min(-1000000).max(1000000) }).strict()
+const quantityDelta = z.object({ delta: z.number().finite().min(-1000000).max(1000000).refine(delta => Math.abs(delta) >= 0.001, 'Delta must be at least 0.001') }).strict()
 
 export default defineEventHandler(async event => {
   const { delta } = validate(quantityDelta, await readBody(event))

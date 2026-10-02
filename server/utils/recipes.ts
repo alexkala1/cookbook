@@ -64,7 +64,7 @@ export function saveRecipe(input: Partial<RecipeInput>, id?: string, connection:
     const recipeId = id ?? randomUUID()
     const { ingredients: ingredientRows, steps: stepRows, equipment: equipmentRows, ...fields } = input
     if (fields.totalTimeMinutes === undefined && (!id || fields.prepTimeMinutes !== undefined || fields.cookTimeMinutes !== undefined)) {
-      fields.totalTimeMinutes = (fields.prepTimeMinutes ?? current?.prepTimeMinutes ?? 15) + (fields.cookTimeMinutes ?? current?.cookTimeMinutes ?? 30)
+      fields.totalTimeMinutes = Math.min(100000, (fields.prepTimeMinutes ?? current?.prepTimeMinutes ?? 15) + (fields.cookTimeMinutes ?? current?.cookTimeMinutes ?? 30))
     }
     if (id) tx.update(recipes).set({ ...fields, updatedAt: new Date().toISOString() }).where(eq(recipes.id, id)).run()
     else tx.insert(recipes).values({ ...fields, id: recipeId, title: input.title!, description: input.description! }).run()

@@ -112,13 +112,17 @@ it('defaults raw base64 to JPEG and returns vision provenance', async () => {
   const sent = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)
   expect(sent.messages[1].content[0].image_url.url).toBe('data:image/jpeg;base64,/9j/2Q==')
 })
-it('keeps image-only offline drafts deterministic without calling a provider', async () => {
+it('requires a vision model for image-only imports and reports text-only fallback honestly', async () => {
   const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock)
   const first = await request('ocr', { image: cardImage, mimeType: 'image/png' })
-  expect(first.status).toBe(200)
-  const draft = await first.json()
-  expect(draft.sourceType).toBe('handwritten_ocr')
-  expect(await (await request('ocr', { image: cardImage, mimeType: 'image/png' })).json()).toEqual(draft)
+  expect(first.status).toBe(422)
+  expect((await first.json()).statusMessage).toContain('needs an AI key')
+  const inspect = toWebHandler(createApp().use(defineEventHandler(event => ingest(event, { kind: 'ocr', image: cardImage, text: scannedCard }))))
+  const draft = await (await inspect(new Request('http://localhost'))).json()
+  expect(draft.recipe.sourceType).toBe('handwritten_ocr')
+  expect(draft.provenance).toContain('Scanned recipe card / OCR')
+  expect(draft.provenance).not.toContain('Vision AI')
+  expect(draft.warnings.join()).toContain('image was ignored')
   expect(fetchMock).not.toHaveBeenCalled()
 })
 it('validates optional OCR fields and the 10MB encoded image limit', async () => {
@@ -132,6 +136,17 @@ it('validates optional OCR fields and the 10MB encoded image limit', async () =>
     expect((await request('ocr', { image }, { 'x-byok-key': 'test', 'x-byok-model': 'test' })).status).toBe(400)
   }
   expect(fetchMock).not.toHaveBeenCalled()
+})
+it('rejects non-photo payloads before making a provider request and corrects MIME from bytes', async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(providerReply('openai'))))
+  vi.stubGlobal('fetch', fetchMock)
+  for (const image of ['aGVsbG8=', 'AAAA', 'R0lGODlh', 'data:image/svg+xml;base64,' + Buffer.from('<svg/>').toString('base64'), cardImage.slice(0, -1)]) {
+    expect((await request('ocr', { image }, { 'x-byok-key': 'test', 'x-byok-model': 'test' })).status).toBe(400)
+  }
+  expect(fetchMock).not.toHaveBeenCalled()
+  const response = await request('ocr', { image: cardImage, mimeType: 'image/jpeg' }, { 'x-byok-key': 'test', 'x-byok-model': 'test' })
+  expect(response.status).toBe(200)
+  expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string).messages[1].content[0].image_url.url).toBe('data:image/png;base64,' + cardImage)
 })
 it('turns scanned card text into a structured handwritten_ocr draft titled from its first line', async () => {
   const response = await request('ocr', { text: scannedCard })

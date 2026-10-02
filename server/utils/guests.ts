@@ -5,12 +5,12 @@ import { z } from 'zod'
 import { db } from '../db'
 import { guests, recipes, ingredients } from '../db/schema'
 import { auditDietary, type Guest } from '../../shared/culinary/dietary'
-import { validate } from './validation'
+import { clean, validate } from './validation'
 
-const textList = z.array(z.string().trim().min(1).max(80)).max(30).transform(items => [...new Set(items.map(item => item.toLowerCase()))]).default([])
+const textList = z.array(clean(z.string().trim().min(1).max(80))).max(30).transform(items => [...new Set(items.map(item => item.toLowerCase()))]).default([])
 export const guestProfileSchema = z.object({
-  name: z.string().trim().min(1).max(200), allergies: textList, dietaryRestrictions: textList, dislikes: textList,
-  notes: z.string().trim().max(5000).nullable().optional()
+  name: clean(z.string().trim().min(1).max(200)), allergies: textList, dietaryRestrictions: textList, dislikes: textList,
+  notes: clean(z.string().trim().max(5000)).nullable().optional()
 }).strict()
 const guestSaveSchema = guestProfileSchema.extend({ id: z.string().min(1).max(100).optional() })
 function profile(row: typeof guests.$inferSelect): Guest {

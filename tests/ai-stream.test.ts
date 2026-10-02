@@ -128,6 +128,54 @@ function request(provider = 'groq', signal?: AbortSignal, source = 'Soup notes')
   const handle = toWebHandler(createApp().use(defineEventHandler(event => aiClient(event).generate(recipeCreateSchema, 'Make soup', source, () => recipe, signal))))
   return handle(new Request('http://localhost/', { headers: { 'x-byok-key': 'test-key', 'x-byok-model': 'test-model', 'x-byok-provider': provider } }))
 }
+it.each([
+  [400, { error: { message: { nested: 1 } } }, 400, 'request failed (HTTP 400)'],
+  [400, { error: 'Plain provider problem' }, 400, 'Plain provider problem'],
+  [403, { error: { message: 'unsupported_country_region_territory' } }, 424, 'access denied by provider'],
+  [403, { error: { message: 'invalid API key' } }, 424, 'API key was rejected'],
+  [401, { error: { message: 'Unauthorized' } }, 424, 'API key was rejected'],
+  [503, {}, 502, 'temporarily overloaded'], [529, {}, 502, 'temporarily overloaded'],
+  [400, { error: { code: 'content_filter', message: 'blocked' } }, 422, 'provider blocked this content']
+])('classifies malformed, denied, overloaded or blocked upstream HTTP %s responses', async (status, payload, expectedStatus, message) => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(payload), { status })))
+  const response = await request('openai')
+  expect(response.status).toBe(expectedStatus)
+  const error = await response.json()
+  expect(error.statusMessage).toContain(message)
+  if ([401, 403].includes(status)) expect(error.data.provider).toBe(true)
+})
+it.each([
+  { choices: [{ finish_reason: 'content_filter' }] },
+  { promptFeedback: { blockReason: 'SAFETY' } },
+  { candidates: [{ finishReason: 'SAFETY' }] }
+])('rejects blocked model completions before trying to parse them', async payload => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(payload))))
+  const response = await request('openai')
+  expect(response.status).toBe(422)
+  expect((await response.json()).statusMessage).toBe('The provider blocked this content.')
+})
+it.each(['90', 'not-a-date', '-1'])('handles Retry-After header %s', async retryAfter => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429, headers: { 'Retry-After': retryAfter } })))
+  const response = await request()
+  expect(response.status).toBe(429)
+  expect((await response.json()).statusMessage).toContain(retryAfter === '90' ? 'wait 90 seconds' : 'wait 30–60 seconds')
+})
+it('honors an HTTP-date Retry-After value and guards direct non-string error messages', async () => {
+  const now = Date.now()
+  vi.spyOn(Date, 'now').mockReturnValue(now)
+  const date = new Date(Math.ceil(now / 1000) * 1000 + 120_000).toUTCString()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429, headers: { 'Retry-After': date } })))
+  const response = await request()
+  expect((await response.json()).statusMessage).toContain(`wait ${Math.ceil((Date.parse(date) - now) / 1000)} seconds`)
+  expect(() => humanizeProviderError('openai', 400, { nested: 1 }, 'test')).not.toThrow()
+})
+it('surfaces unreadable ingredient amounts through the ingest warning callback', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => success(JSON.stringify({ title: 'Soup', ingredients: [{ name: 'salt', amount: 'to taste' }] }))))
+  const response = await ingestRequest({ kind: 'prompt', prompt: 'Make soup' })
+  const draft = await response.json()
+  expect(draft.warnings.join()).toContain('could not be read')
+  expect(draft.recipe.ingredients[0]).toMatchObject({ amount: 0, notes: '[Inferred by AI: amount unreadable]' })
+})
 
 const liveHeaders = { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test' }
 function ingestRequest(input: unknown, provider = 'openai', signal?: AbortSignal) {
@@ -203,7 +251,7 @@ it('rethrows a provider failure before any chapter completes', async () => {
   chapterFixture(3)
   const fetchSpy = vi.fn(async () => failure(401, 'Unauthorized'))
   vi.stubGlobal('fetch', fetchSpy)
-  expect((await ingestRequest({ kind: 'video', videoUrl: 'MNcu0JX_EMI' })).status).toBe(401)
+  expect((await ingestRequest({ kind: 'video', videoUrl: 'MNcu0JX_EMI' })).status).toBe(424)
   expect(fetchSpy).toHaveBeenCalledTimes(1)
 })
 
@@ -291,7 +339,7 @@ it('retries only once and preserves the actionable error', async () => {
 it.each([['openai', 400, 'Failed to generate JSON'], ['groq', 429, 'Failed to generate JSON'], ['groq', 400, 'model not available'], ['groq', 401, 'json_validate_failed']])('does not retry unrelated %s HTTP %s errors', async (provider, status, message) => {
   const fetchSpy = vi.fn().mockResolvedValue(failure(status, message))
   vi.stubGlobal('fetch', fetchSpy)
-  expect((await request(provider)).status).toBe(status)
+  expect((await request(provider)).status).toBe(status === 401 ? 424 : status)
   expect(fetchSpy).toHaveBeenCalledTimes(1)
 })
 
@@ -359,7 +407,7 @@ it.each([500, 502, 503])('preserves actionable provider HTTP %s errors through S
   vi.stubGlobal('fetch', vi.fn(async () => failure(status, 'Service temporarily unavailable')))
   const handle = toWebHandler(createApp().use(stream))
   const response = await handle(new Request('http://localhost', { method: 'POST', headers: { ...headers, 'x-byok-key': 'test', 'x-byok-model': 'test', 'x-byok-provider': 'groq' }, body: JSON.stringify({ kind: 'prompt', prompt: 'Make lemon chicken' }) }))
-  await expect(readRecipeStream(response, vi.fn())).rejects.toThrow(`Groq error (${status}): Service temporarily unavailable`)
+  await expect(readRecipeStream(response, vi.fn())).rejects.toThrow(status === 500 ? `Groq error (${status}): Service temporarily unavailable` : `Groq is temporarily overloaded (HTTP ${status}). Retry in a minute.`)
 })
 it.each([
   JSON.stringify(recipe),
@@ -373,7 +421,7 @@ it.each([
   expect(recipeCreateSchema.safeParse(draft).success).toBe(true)
   expect(draft.title).toBe('Soup')
   expect(JSON.stringify(draft)).not.toContain('unfinished')
-  if (draft.ingredients) expect(draft.ingredients).toEqual([{ name: 'salt', amount: 0, unit: 'item', sortOrder: 1 }])
+  if (draft.ingredients) expect(draft.ingredients).toEqual([{ name: 'salt', amount: 0, unit: 'item', sortOrder: 1, notes: '[Inferred by AI: amount unreadable]' }])
   if (draft.steps) expect(draft.steps).toEqual([{ stepNumber: 1, instruction: 'Simmer.', heatLevel: 'medium' }])
 })
 it.each(['unrepairable garbage', '{"title":"Soup', '{"title":42'])('rejects unrepairable or invalid token-truncated output', async content => {

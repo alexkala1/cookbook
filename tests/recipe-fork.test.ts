@@ -26,7 +26,7 @@ beforeEach(() => db.delete(recipes).run())
 afterAll(() => { db.$client.close(); vi.unstubAllEnvs() })
 const sample = () => saveRecipe({
   title: 'Yiayia’s soup', description: 'Family lunch', cuisine: 'Greek', heirloomNotes: 'Sunday tradition',
-  originalSaltType: 'greek_fine_sea_salt', imageUrl: 'data:image/png;base64,YQ==',
+  originalSaltType: 'greek_fine_sea_salt', imageUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX2kAAAAASUVORK5CYII=',
   servings: 6, rating: 4.5, isFavorite: true, storageReheating: 'Refrigerate promptly',
   ingredients: [{ name: 'Beans', amount: 250, unit: 'g', gramsEquivalent: 250, category: 'pantry', notes: 'Soaked', sortOrder: 4 }],
   steps: [{ stepNumber: 1, instruction: 'Simmer', durationMinutes: 30, timerRequired: true, heatLevel: 'low', scienceWhy: 'Soften beans', sensoryVisual: 'Creamy', sensoryAudio: 'Bubbling', sensoryAroma: 'Herbs', sensoryTexture: 'Tender', failurePrevention: 'Keep moist', internalTempTargetC: 74, sortOrder: 2 }],
