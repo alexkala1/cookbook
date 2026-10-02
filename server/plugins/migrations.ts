@@ -14,6 +14,8 @@ export default defineNitroPlugin(() => {
     }
     if (existsSync(migrationsFolder)) {
       migrate(db, { migrationsFolder })
+    } else {
+      console.error('[heirloom] migrations folder not found; database was not migrated')
     }
   } catch (error) {
     console.error('[heirloom] database migration error on boot:', error)

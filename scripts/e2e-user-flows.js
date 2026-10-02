@@ -42,6 +42,9 @@ function chromiumPath() {
     const binary = join(cache, build, 'chrome-linux64/chrome')
     if (existsSync(binary)) return binary
   }
+  for (const binary of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
+    if (existsSync(binary)) return binary
+  }
   throw new Error('No Chromium found. Run `pnpm exec playwright install chromium` or set CHROMIUM_PATH.')
 }
 
@@ -348,8 +351,11 @@ async function journey(browser, viewport) {
       assert(await page.getByRole('img', { name: 'Photo of your recipe card' }).count() === 0, 'Remove photo should clear the preview')
       await page.getByLabel('Recipe card photo').setInputFiles({ name: 'card.png', mimeType: 'image/png', buffer: cardPng })
       await page.getByRole('img', { name: 'Photo of your recipe card' }).waitFor()
+      assert(await page.locator('textarea[aria-describedby="ocr-help"]').inputValue() === '', 'Photo fallback should work without supplied text')
       await tap(page.getByRole('button', { name: 'Create recipe draft' }))
       await page.getByRole('button', { name: 'Save to Cookbook' }).waitFor({ timeout: 20000 })
+      await page.getByText('Review your draft · Photographed recipe card · manual draft · fallback', { exact: true }).waitFor()
+      assert(await page.getByText(/No AI vision key is configured/).count() === 1, 'Photo fallback should explain that the card was not automatically read')
       assert(await page.locator('img[alt="Photographed recipe card"]').count() === 1, 'Comparison panel should show the photographed card')
       await tap(page.getByRole('button', { name: 'Save to Cookbook' }))
       await page.waitForURL(/\/recipes\/[0-9a-f-]{36}$/)
@@ -727,7 +733,10 @@ async function journey(browser, viewport) {
       const after = await stops()
       assert(after[0] === before[1] && after[1] === before[0], 'Move down should swap the first two shops')
       const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('heirloom-market-destination-order')))
-      assert(Array.isArray(stored) && stored.length === 4, 'Custom shop order should persist in localStorage')
+      const availableSections = await market.getByRole('combobox', { name: /^Destination for / }).first().evaluate(select => [...select.options].map(option => option.value))
+      assert(Array.isArray(stored) && stored.length === availableSections.length && new Set(stored).size === availableSections.length && availableSections.every(section => stored.includes(section)), 'Custom shop order should persist every available destination in localStorage')
+      const visibleSections = await market.locator('h3[id^="market-"]').evaluateAll(headings => headings.map(heading => heading.id.slice('market-'.length)))
+      assert(stored.filter(section => visibleSections.includes(section)).join() === visibleSections.join(), 'Persisted shop order should match the visible route')
       await tap(market.getByRole('button', { name: `Move ${before[0]} up` }))
       assert((await stops()).join() === before.join(), 'Move up should restore the original order')
       const destination = market.getByRole('combobox', { name: /^Destination for / }).first()

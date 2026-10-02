@@ -141,8 +141,12 @@ export async function ingest(event: H3Event, input: unknown, signal?: AbortSigna
       const mimeType = photoMimeType(data)
       if (!mimeType) throw createError({ statusCode: 400, statusMessage: 'Use a JPEG, PNG or WebP photo' })
       if (client.mode === 'fallback') {
-        if (!source.trim()) throw createError({ statusCode: 422, statusMessage: 'Reading a photographed card needs an AI key (or Ollama vision model). Paste the card text instead.' })
-        onWarning('The image was ignored because no AI vision model is configured. This draft uses only the supplied text.')
+        if (!source.trim()) {
+          onWarning('No AI vision key is configured, so the card was not read automatically. A starting draft has been prepared with your photo attached so you can complete the recipe by hand.')
+          provenance = 'Photographed recipe card · manual draft'
+        } else {
+          onWarning('The image was ignored because no AI vision model is configured. This draft uses only the supplied text.')
+        }
       } else {
         image = { data, mimeType }
         provenance = 'Photographed recipe card / Vision AI'

@@ -39,6 +39,9 @@ function chromiumPath() {
     const binary = join(cache, build, 'chrome-linux64/chrome')
     if (existsSync(binary)) return binary
   }
+  for (const binary of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
+    if (existsSync(binary)) return binary
+  }
   throw new Error('No Chromium found. Run `pnpm exec playwright install chromium` or set CHROMIUM_PATH.')
 }
 

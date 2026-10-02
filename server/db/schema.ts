@@ -25,7 +25,11 @@ export const recipes = sqliteTable('recipes', {
   updatedAt: text('updated_at').default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`).$onUpdate(() => new Date().toISOString()),
   parentRecipeId: text('parent_recipe_id'),
   variationName: text('variation_name')
-})
+}, table => [
+  index('recipes_parent_recipe_id_idx').on(table.parentRecipeId),
+  // Match newest-first ordering while keeping IDs ascending for timestamp ties.
+  index('recipes_created_at_idx').on(sql`created_at DESC`, table.id)
+])
 
 export const ingredients = sqliteTable('ingredients', {
   id: text('id').primaryKey(),
@@ -89,7 +93,7 @@ export const groceryItems = sqliteTable('grocery_items', {
   courseBreakdown: text('course_breakdown'),
   isChecked: integer('is_checked', { mode: 'boolean' }).notNull().default(false),
   recipeOriginId: text('recipe_origin_id')
-})
+}, table => [index('grocery_items_list_id_idx').on(table.listId)])
 
 export const userKitchenProfile = sqliteTable('user_kitchen_profile', {
   id: text('id').primaryKey().default('default'),
@@ -111,7 +115,7 @@ export const cookingSessions = sqliteTable('cooking_sessions', {
   userRating: integer('user_rating'),
   sessionNotes: text('session_notes'),
   photoUrl: text('photo_url')
-})
+}, table => [index('cooking_sessions_recipe_id_idx').on(table.recipeId)])
 
 export const cookLogs = sqliteTable('cook_logs', {
   id: text('id').primaryKey(),
