@@ -152,6 +152,17 @@ describe('POST /api/grocery/generate', () => {
   const main = saveRecipe({ title: 'Αρνί στη γάστρα', description: '', servings: 4, ingredients: [{ name: 'lamb shoulder', amount: 1400, unit: 'g' }, { name: 'garlic', amount: 4, unit: 'piece' }, { name: 'potatoes', amount: 1, unit: 'kg' }] })
   const sweet = saveRecipe({ title: 'Galaktoboureko', description: '', servings: 8, ingredients: [{ name: 'φύλλο κρούστας', amount: 300, unit: 'g' }, { name: 'milk', amount: 1, unit: 'l' }, { name: 'egg yolks', amount: 4, unit: 'piece' }] })
 
+  it('persists thousands of distinct ingredients without exceeding SQLite parameter limits', async () => {
+    const recipes = Array.from({ length: 8 }, (_, group) => saveRecipe({ title: `Large course ${group}`, description: '', ingredients: Array.from({ length: 500 }, (_, i) => ({ name: `Ingredient ${group * 500 + i}`, amount: 1, unit: 'g' })) }))
+    const response = await post({ recipeIds: recipes.map(recipe => recipe.id) })
+    expect(response.status).toBe(201)
+    const body = await response.json()
+    const stored = db.select().from(schema.groceryItems).where(eq(schema.groceryItems.listId, body.listId)).all()
+    expect(stored).toHaveLength(4000)
+    expect(new Set(stored.map(row => row.name)).size).toBe(4000)
+    expect(body.destinations.flatMap((section: { items: unknown[] }) => section.items)).toHaveLength(4000)
+  })
+
   it('aggregates a three-course menu into Greek market sections and persists the list', async () => {
     const response = await post({ courses: [{ recipeId: meze.id, course: 'appetizer' }, { recipeId: main.id, course: 'main', servings: 6 }, { recipeId: sweet.id, course: 'dessert' }], title: 'Sunday lunch' })
     expect(response.status).toBe(201)

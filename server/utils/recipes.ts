@@ -71,11 +71,11 @@ export function saveRecipe(input: Partial<RecipeInput>, id?: string, connection:
 
     if (ingredientRows !== undefined) {
       tx.delete(ingredients).where(eq(ingredients.recipeId, recipeId)).run()
-      if (ingredientRows.length) tx.insert(ingredients).values(ingredientRows.map((row, index) => ({ ...row, id: randomUUID(), recipeId, sortOrder: row.sortOrder ?? index }))).run()
+      if (ingredientRows.length) tx.insert(ingredients).values(ingredientRows.map((row, index) => ({ ...row, id: randomUUID(), recipeId, sortOrder: index + 1 }))).run()
     }
     if (stepRows !== undefined) {
       tx.delete(steps).where(eq(steps.recipeId, recipeId)).run()
-      if (stepRows.length) tx.insert(steps).values(stepRows.map((row, index) => ({ ...row, id: randomUUID(), recipeId, sortOrder: row.sortOrder ?? index }))).run()
+      if (stepRows.length) tx.insert(steps).values(stepRows.map((row, index) => ({ ...row, id: randomUUID(), recipeId, sortOrder: index + 1 }))).run()
     }
     if (equipmentRows !== undefined) {
       tx.delete(recipeEquipment).where(eq(recipeEquipment.recipeId, recipeId)).run()

@@ -46,7 +46,9 @@ export default defineEventHandler(async event => {
         courseBreakdown: JSON.stringify(byCourse), recipeOriginId: recipes.size === 1 ? [...recipes][0]! : null
       }
     }))
-    if (rows.length) tx.insert(groceryItems).values(rows).run()
+    for (let offset = 0; offset < rows.length; offset += 500) {
+      tx.insert(groceryItems).values(rows.slice(offset, offset + 500)).run()
+    }
   })
   setResponseStatus(event, 201)
   return { listId, title, destinations, prepAlerts: plan.prepAlerts }

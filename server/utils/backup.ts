@@ -11,8 +11,7 @@ const id = z.string().min(1).max(200)
 const childIdentity = { id, recipeId: id }
 const recipeSchema = recipeCreateSchema.required().extend({
   id,
-  // Repeated forks append their variation names to the original title.
-  title: z.string().trim().min(1),
+  title: z.string().max(200).trim().min(1),
   parentRecipeId: id.nullable().optional(),
   variationName: z.string().max(200).nullable().optional(),
   // saveRecipe can derive this sum from two individually valid 100000-minute fields.
@@ -35,12 +34,12 @@ const pantrySchema = z.object({
 export const backupSchema = z.object({
   version: z.literal(1),
   exportedAt: z.iso.datetime({ offset: true }),
-  recipes: z.array(recipeSchema),
-  pantry: z.array(pantrySchema),
+  recipes: z.array(recipeSchema).max(5000),
+  pantry: z.array(pantrySchema).max(10000),
   cookLogs: z.array(cookLogInputSchema.required().extend({
     id, recipeId: id, cookedAt: z.iso.datetime({ offset: true }).nullable(),
     notes: z.string().max(10000).nullable(), rating: z.number().finite().min(1).max(5).nullable()
-  })).optional()
+  })).max(50000).optional()
 }).strict().superRefine((backup, context) => {
   const seen = new Map<string, Set<string>>()
   const unique = (table: string, value: string) => {

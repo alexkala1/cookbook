@@ -33,6 +33,7 @@ export function savePantry(body: unknown) {
       if (row.quantity > 0 && row.expiresAt !== null) expiresAt = expiresAt === null ? row.expiresAt : Math.min(expiresAt, row.expiresAt)
     }
     if (!Number.isFinite(quantity) || quantity > 1000000) throw createError({ statusCode: 400, statusMessage: 'Merged quantity is too large' })
+    if (existing.length) quantity = Math.round(quantity * 1000) / 1000
     const first = existing[0]
     const value = { ...item, normalizedName, quantity, expiresAt, updatedAt: now }
     if (!first) return tx.insert(pantryItems).values({ ...value, id: randomUUID(), createdAt: now }).returning().get()

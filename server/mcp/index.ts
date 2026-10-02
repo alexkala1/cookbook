@@ -155,20 +155,20 @@ server.tool(
   'Saves a new recipe or updates an existing recipe in Heirloom SQLite database. Enforces schema validation, safe cooking temperatures, and culinary science enrichments.',
   {
     recipe: z.object({
-      title: z.string().min(1).max(200),
-      description: z.string().default(''),
-      recipeType: z.enum(['food', 'drink', 'cocktail', 'baking', 'dessert']).default('food'),
+      title: z.string().min(1).max(200).optional(),
+      description: z.string().optional(),
+      recipeType: z.enum(['food', 'drink', 'cocktail', 'baking', 'dessert']).optional(),
       originalSaltType: z.enum(['table_salt', 'morton_kosher', 'diamond_crystal_kosher', 'greek_fine_sea_salt']).nullable().optional(),
       sourceUrl: z.string().nullable().optional(),
-      sourceType: z.enum(['url', 'video', 'prompt', 'handwritten_ocr', 'manual']).default('manual'),
-      servings: z.number().int().min(1).default(4),
-      prepTimeMinutes: z.number().int().min(0).default(15),
-      cookTimeMinutes: z.number().int().min(0).default(30),
-      totalTimeMinutes: z.number().int().min(0).default(45),
-      difficulty: z.enum(['easy', 'intermediate', 'advanced', 'master']).default('intermediate'),
+      sourceType: z.enum(['url', 'video', 'prompt', 'handwritten_ocr', 'manual']).optional(),
+      servings: z.number().int().min(1).optional(),
+      prepTimeMinutes: z.number().int().min(0).optional(),
+      cookTimeMinutes: z.number().int().min(0).optional(),
+      totalTimeMinutes: z.number().int().min(0).optional(),
+      difficulty: z.enum(['easy', 'intermediate', 'advanced', 'master']).optional(),
       cuisine: z.string().nullable().optional(),
       imageUrl: z.string().nullable().optional(),
-      heirloomNotes: z.string().default(''),
+      heirloomNotes: z.string().optional(),
       ingredients: z.array(z.object({
         name: z.string().min(1),
         amount: z.number().min(0),
@@ -176,7 +176,7 @@ server.tool(
         gramsEquivalent: z.number().nullable().optional(),
         category: z.string().default('pantry'),
         notes: z.string().nullable().optional()
-      })).min(1),
+      })).min(1).optional(),
       steps: z.array(z.object({
         stepNumber: z.number().int().min(1),
         instruction: z.string().min(1),
@@ -190,7 +190,7 @@ server.tool(
         sensoryAroma: z.string().nullable().optional(),
         sensoryTexture: z.string().nullable().optional(),
         internalTempTargetC: z.number().nullable().optional()
-      })).min(1),
+      })).min(1).optional(),
       equipment: z.array(z.union([
         z.string().transform(name => ({ name })),
         z.object({
@@ -198,15 +198,30 @@ server.tool(
           isEssential: z.boolean().optional(),
           substituteTool: z.string().nullable().optional()
         })
-      ])).default([])
+      ])).optional()
     }),
     id: z.string().uuid().optional().describe('Optional recipe ID if updating an existing recipe')
   },
   async ({ recipe, id }) => {
     try {
-      const enriched = enrichScience(recipe as any)
+      const existing = id ? getRecipe(id) : undefined
+      const current = existing ? {
+        ...Object.fromEntries(Object.keys(recipeCreateSchema.shape).map(key => [key, existing[key as keyof typeof existing]])),
+        ingredients: existing.ingredients.map(({ id: _id, recipeId: _recipeId, ...row }) => row),
+        steps: existing.steps.map(({ id: _id, recipeId: _recipeId, ...row }) => row),
+        equipment: existing.equipment.map(({ id: _id, recipeId: _recipeId, ...row }) => row)
+      } : { description: '', recipeType: 'food', sourceType: 'manual', servings: 4, prepTimeMinutes: 15, cookTimeMinutes: 30, totalTimeMinutes: 45, difficulty: 'intermediate', heirloomNotes: '', equipment: [] }
+      // Creation still requires a title, ingredients and steps; updates can omit them.
+      if (!existing) validate(z.object({ title: z.string().min(1), ingredients: z.array(z.unknown()).min(1), steps: z.array(z.unknown()).min(1) }), recipe)
+      const provided = Object.fromEntries(Object.entries(recipe).filter(([, value]) => value !== undefined))
+      const enriched = enrichScience({ ...current, ...provided } as any)
       const validated = validate(recipeCreateSchema, enriched)
-      const result = saveRecipe(validated, id)
+      const result = saveRecipe(existing ? {
+        ...validated,
+        ingredients: recipe.ingredients === undefined ? undefined : validated.ingredients,
+        steps: recipe.steps === undefined ? undefined : validated.steps,
+        equipment: recipe.equipment === undefined ? undefined : validated.equipment
+      } : validated, id)
       return {
         content: [{
           type: 'text',

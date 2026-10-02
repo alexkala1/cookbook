@@ -45,6 +45,34 @@ function populate() {
 }
 
 describe('JSON cookbook backup', () => {
+  it.each(['x'.repeat(201), ' ' + 'x'.repeat(200)])('rejects oversized raw titles without modifying existing data', async title => {
+    populate()
+    const original = exportBackup(), backup = structuredClone(original)
+    backup.recipes[0]!.title = title
+    expect((await request('POST', backup)).status).toBe(400)
+    expect(exportBackup().recipes).toEqual(original.recipes)
+  })
+  it.each([['recipes', 5000], ['pantry', 10000], ['cookLogs', 50000]] as const)('bounds %s arrays at %s rows', (table, limit) => {
+    populate()
+    const backup = exportBackup()
+    const recipeId = backup.recipes[0]!.id
+    const rows = Array.from({ length: limit + 1 }, (_, i) => table === 'recipes'
+      ? { ...backup.recipes[0]!, id: `recipe-${i}`, ingredients: [], steps: [], equipment: [] }
+      : table === 'pantry' ? { ...backup.pantry[0]!, id: `pantry-${i}` }
+        : { id: `log-${i}`, recipeId, cookedAt: null, servings: 4, notes: null, rating: null })
+    const result = backupSchema.safeParse({ ...backup, [table]: rows })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.issues).toContainEqual(expect.objectContaining({ code: 'too_big', path: [table], maximum: limit }))
+    expect(backupSchema.safeParse({ ...backup, [table]: rows.slice(0, limit) }).success).toBe(true)
+  })
+  it('rejects backup payloads over 30 MB before schema validation or writes', async () => {
+    populate()
+    const original = exportBackup()
+    const response = await request('POST', { oversized: 'x'.repeat(30_000_001) })
+    expect(response.status).toBe(413)
+    expect((await response.json()).statusMessage).toBe('Backup payload exceeds 30 MB limit')
+    expect(exportBackup().recipes).toEqual(original.recipes)
+  })
   it('round-trips spices stock and its expiry without dropping the new location', () => {
     savePantry({ name: 'Oregano', quantity: 50, unit: 'g', storageLocation: 'spices' })
     const backup = exportBackup()

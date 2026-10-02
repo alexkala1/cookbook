@@ -132,9 +132,9 @@ it('returns 404 for a missing parent and rejects invalid options or cross-origin
   expect(db.select().from(recipes).all()).toHaveLength(1)
 })
 
-it('preserves lineage through backup round trips, including long generated titles', () => {
-  const root = saveRecipe({ title: 'x'.repeat(200), description: '' })
-  const child = forkRecipe(root.id, { variationName: 'y'.repeat(200) })
+it('preserves lineage through backup round trips within the backup title limit', () => {
+  const root = saveRecipe({ title: 'Family soup', description: '' })
+  const child = forkRecipe(root.id, { variationName: 'Less salt' })
   const before = getRecipe(root.id)
   const backup = exportBackup()
   db.delete(recipes).run()

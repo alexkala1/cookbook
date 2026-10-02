@@ -21,6 +21,15 @@ function request(path = '', method = 'GET', body?: unknown, origin = 'http://loc
   return handle(new Request('http://localhost/api/pantry' + path, { method, headers: { Host: 'localhost', Origin: origin, 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }))
 }
 beforeEach(() => { db.delete(pantryItems).run(); db.delete(recipes).run() })
+it('rounds merged pantry quantities to three decimals after addition and unit conversion', async () => {
+  await request('', 'POST', { name: 'Flour', quantity: 0.1, unit: 'kg' })
+  const merged = await (await request('', 'POST', { name: 'Flour', quantity: 0.2, unit: 'kg' })).json()
+  expect(merged[0].quantity).toBe(0.3)
+  const converted = await (await request('', 'POST', { name: 'Flour', quantity: 0.1236, unit: 'kg' })).json()
+  expect(converted[0].quantity).toBe(0.424)
+  const grams = await (await request('', 'POST', { name: 'Flour', quantity: 0.0014, unit: 'g' })).json()
+  expect(grams[0].quantity).toBe(424.001)
+})
 it.each([['g', 50], ['ml', 50], ['item', 1], ['kg', 1], ['tbsp', 1], [' ML ', 50], [' G ', 50]])('steps %s by %s', (unit, expected) => {
   expect(pantryStepForUnit(unit)).toBe(expected)
 })
