@@ -7,7 +7,17 @@ import { createError } from 'h3'
 export function publicAddress(address: string) {
   try { return ipaddr.process(address).range() === 'unicast' } catch { return false }
 }
-export async function resolvePublicUrl(input: string) {
+const dnsDeadline = (signal?: AbortSignal) => {
+  const deadline = signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000)
+  return new Promise<never>((_, reject) => {
+    const abort = () => reject(deadline.reason || createError({ statusCode: 422, statusMessage: 'DNS resolution timed out' }))
+    if (deadline.aborted) return abort()
+    deadline.addEventListener('abort', abort, { once: true })
+  })
+}
+
+export async function resolvePublicUrl(input: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   let url: URL
   try { url = new URL(input) } catch { throw createError({ statusCode: 400, statusMessage: 'Invalid source URL' }) }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || (url.port && !['80', '443'].includes(url.port))) {
@@ -16,8 +26,11 @@ export async function resolvePublicUrl(input: string) {
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
   if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) throw createError({ statusCode: 400, statusMessage: 'Local source host blocked' })
   let addresses: { address: string, family: number }[]
-  try { addresses = ipaddr.isValid(hostname) ? [{ address: hostname, family: ipaddr.parse(hostname).kind() === 'ipv4' ? 4 : 6 }] : await lookup(hostname, { all: true }) }
-  catch { throw createError({ statusCode: 422, statusMessage: 'Source hostname could not be resolved' }) }
+  try { addresses = ipaddr.isValid(hostname) ? [{ address: hostname, family: ipaddr.parse(hostname).kind() === 'ipv4' ? 4 : 6 }] : await Promise.race([lookup(hostname, { all: true }), dnsDeadline(signal)]) }
+  catch (error) {
+    if (signal?.aborted) throw signal.reason
+    throw createError({ statusCode: 422, statusMessage: error instanceof Error && error.name === 'TimeoutError' ? 'DNS resolution timed out' : 'Source hostname could not be resolved' })
+  }
   if (!addresses.length || addresses.some(item => !publicAddress(item.address))) throw createError({ statusCode: 400, statusMessage: 'Private or reserved source address blocked' })
   return { url, address: addresses[0]! }
 }
@@ -60,7 +73,7 @@ const fixturesEnabled = () => process.env.NODE_ENV === 'test' || process.env.E2E
 export async function safeFetch(input: string, signal?: AbortSignal, redirects = 0): Promise<string> {
   if (redirects > 3) throw createError({ statusCode: 422, statusMessage: 'Too many source redirects' })
   if (fixturesEnabled() && Object.hasOwn(testFixtures, input)) return testFixtures[input]!
-  const { url, address } = await resolvePublicUrl(input)
+  const { url, address } = await resolvePublicUrl(input, signal)
   return new Promise((resolve, reject) => {
     const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
       signal, family: address.family, headers: { 'User-Agent': 'Heirloom/1.0', Accept: 'text/html, application/json, text/xml, text/plain', 'Accept-Encoding': 'identity' },

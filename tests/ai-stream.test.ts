@@ -306,8 +306,36 @@ it('does not retry after caller cancellation', async () => {
   const controller = new AbortController()
   const fetchSpy = vi.fn(async () => { controller.abort(); return failure() })
   vi.stubGlobal('fetch', fetchSpy)
-  expect((await request('groq', controller.signal)).status).toBe(504)
+  const response = await request('groq', controller.signal)
+  expect(response.status).toBe(499)
+  expect((await response.json()).statusMessage).toBe('Request cancelled')
   expect(fetchSpy).toHaveBeenCalledTimes(1)
+})
+
+it('distinguishes provider deadline expiration from caller cancellation', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('Deadline expired', 'TimeoutError') }))
+  const response = await request()
+  expect(response.status).toBe(504)
+  expect((await response.json()).statusMessage).toContain('timed out after 60 seconds')
+})
+it('cleans control characters and clamps raw provider messages to 300 characters', async () => {
+  const raw = '  Failed\r\n\u0000\u007f' + 'x'.repeat(1000)
+  const expected = 'Groq error (500): Failed ' + 'x'.repeat(293)
+  expect(humanizeProviderError('groq', 500, raw, 'test')).toBe(expected)
+  vi.stubGlobal('fetch', vi.fn(async () => failure(500, raw)))
+  const response = await request()
+  expect(response.status).toBe(502)
+  expect((await response.json()).statusMessage).toBe(expected)
+})
+it('rejects translation payloads over 200 KB before contacting the provider', async () => {
+  const largeRecipe = recipeCreateSchema.parse({ ...recipe, steps: Array.from({ length: 21 }, (_, i) => ({ stepNumber: i + 1, instruction: 'x'.repeat(10000) })) })
+  expect(JSON.stringify(largeRecipe).length).toBeGreaterThan(200_000)
+  const fetchSpy = vi.fn()
+  vi.stubGlobal('fetch', fetchSpy)
+  const response = await toWebHandler(createApp().use(translate))(new Request('http://localhost', { method: 'POST', headers: liveHeaders, body: JSON.stringify({ recipe: largeRecipe }) }))
+  expect(response.status).toBe(400)
+  expect((await response.json()).statusMessage).toBe('Recipe is too large to translate. Maximum allowed size is 200 KB.')
+  expect(fetchSpy).not.toHaveBeenCalled()
 })
 
 it('lists the requested developer models in both actionable Groq tips', () => {

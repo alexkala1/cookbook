@@ -46,7 +46,7 @@ describe('CSRF mutation guard', () => {
     expect(app.mutations()).toBe(1)
   })
 
-  it.each(['http://Cookbook.Example.com:3000', 'https://cookbook.example.com/'])('accepts a public origin %s without weakening same-origin checks', async configured => {
+  it.each(['http://Cookbook.Example.com:3000', 'https://cookbook.example.com/', 'Cookbook.Example.com:8080'])('accepts a public origin or authority %s without weakening same-origin checks', async configured => {
     vi.stubEnv('HEIRLOOM_PUBLIC_HOST', configured)
     const app = harness()
     expect((await app.request('POST', { Host: 'cookbook.example.com:3000', Origin: 'http://cookbook.example.com:3000' })).status).toBe(200)
@@ -54,7 +54,7 @@ describe('CSRF mutation guard', () => {
     expect((await app.request('GET', { Host: 'cookbook.example.com.attacker.example' })).status).toBe(403)
   })
 
-  it.each(['http://cookbook.example.com/path', 'http://user@cookbook.example.com', 'http://cookbook.example.com?x=1', 'http://cookbook.example.com:0', 'http://cookbook.example.com:65536', 'ftp://cookbook.example.com', 'http://*.example.com'])('rejects invalid public origin %s', async configured => {
+  it.each(['http://cookbook.example.com/path', 'http://user@cookbook.example.com', 'http://cookbook.example.com?x=1', 'http://cookbook.example.com:0', 'http://cookbook.example.com:65536', 'ftp://cookbook.example.com', 'http://*.example.com', 'cookbook.example.com:0', 'cookbook.example.com:65536', 'cookbook.example.com:abc', 'cookbook.example.com:8080/path'])('rejects invalid public origin %s', async configured => {
     vi.stubEnv('HEIRLOOM_PUBLIC_HOST', configured)
     expect((await harness().request('GET', { Host: 'cookbook.example.com' })).status).toBe(403)
   })

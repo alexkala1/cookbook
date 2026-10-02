@@ -16,7 +16,9 @@ export default defineEventHandler(event => {
     // Paths, credentials, queries, wildcards and invalid ports never add a host.
     const origin = configured.match(/^https?:\/\/(\[[a-f0-9:]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?\/?$/)
     if (configured.includes('://') && (!origin || (origin[2] !== undefined && (Number(origin[2]) < 1 || Number(origin[2]) > 65535)))) continue
-    const name = origin?.[1] ?? configured
+    const bareHost = configured.match(/^(\[[a-f0-9:]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/)
+    if (bareHost?.[2] !== undefined && (Number(bareHost[2]) < 1 || Number(bareHost[2]) > 65535)) continue
+    const name = origin?.[1] ?? bareHost?.[1]
     if (name) allowedHosts.add(name)
   }
   const hostname = authority?.[1]!.toLowerCase() ?? ''

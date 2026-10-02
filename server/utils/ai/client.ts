@@ -23,7 +23,8 @@ export function extractJson(raw: string): string {
 
 export function humanizeProviderError(provider: string, status: number, rawMessage: string, model: string): string {
   const name = provider.charAt(0).toUpperCase() + provider.slice(1)
-  const lowerMsg = (rawMessage || '').toLowerCase()
+  const cleanMsg = (rawMessage || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 300)
+  const lowerMsg = cleanMsg.toLowerCase()
   if (status === 413 || lowerMsg.includes('request too large') || lowerMsg.includes('reduce your message size')) {
     return `${name} request is too large for the model’s token allowance. Try importing a smaller section or shortening the notes, then retry.`
   }
@@ -41,8 +42,8 @@ export function humanizeProviderError(provider: string, status: number, rawMessa
     const tip = provider === 'groq' ? ' Try using openai/gpt-oss-120b or qwen/qwen3.8-27b in Settings.' : ''
     return `${name} was unable to format this recipe into valid JSON.${tip} You can also try shortening the notes.`
   }
-  if (rawMessage && rawMessage.trim() && !lowerMsg.includes('provider request failed')) {
-    return `${name} error (${status}): ${rawMessage}`
+  if (cleanMsg && !lowerMsg.includes('provider request failed')) {
+    return `${name} error (${status}): ${cleanMsg}`
   }
   return `${name} request failed (HTTP ${status}). Please check your model and credentials in Settings.`
 }
@@ -222,12 +223,13 @@ export function aiClient(event: H3Event) {
         if (isTruncated) onWarning("The draft was cut off by the model's response limit. Review and complete the remaining steps.")
         return parseResult.data
       } catch (err: any) {
+        if (signal?.aborted) throw createError({ statusCode: 499, statusMessage: 'Request cancelled' })
         if (err && typeof err.statusCode === 'number' && typeof err.statusMessage === 'string') {
           throw err
         }
         const errMsg = (err?.message || '').toLowerCase()
         const errCode = String(err?.cause?.code || err?.code || '').toLowerCase()
-        if (err?.name === 'TimeoutError' || err?.name === 'AbortError' || errMsg.includes('timeout') || errMsg.includes('timed out')) {
+        if (err?.name === 'TimeoutError' || errMsg.includes('timed out')) {
           throw createError({
             statusCode: 504,
             statusMessage: `The request to ${name} timed out after 60 seconds. The provider may be busy; please try again.`
