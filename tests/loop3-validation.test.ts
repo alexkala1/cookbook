@@ -16,9 +16,12 @@ it.each(['Nul\0Byte', 'text\u000b', '\u000cstart', 'text\u007f'])('rejects contr
   expect(guestProfileSchema.safeParse({ name: 'Guest', allergies: [value] }).success).toBe(false)
   expect(recipeCreateSchema.safeParse({ title: 'Soup', description: '', sourceUrl: `https://example.com/${value}` }).success).toBe(false)
 })
-it.each(['\u200b\u200b', '---', '👻'])('rejects titles and pantry names with no letters or digits: %s', value => {
+it.each(['\u200b\u200b', '---'])('rejects titles and pantry names without visible letters, digits or pictographs: %s', value => {
   expect(recipeCreateSchema.safeParse({ title: value, description: '' }).success).toBe(false)
   expect(pantryInput.safeParse({ name: value }).success).toBe(false)
+})
+it.each(['🍕', '🍰🍰', '👻'])('accepts pictographic recipe titles: %s', value => {
+  expect(recipeCreateSchema.safeParse({ title: value, description: '' }).success).toBe(true)
 })
 it('allows Greek names, digits and multiline notes', () => {
   expect(recipeCreateSchema.safeParse({ title: 'Σούπα 2', description: 'Line one\nLine two\tmore' }).success).toBe(true)

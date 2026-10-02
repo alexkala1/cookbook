@@ -11,7 +11,7 @@ const id = z.string().min(1).max(200)
 const childIdentity = { id, recipeId: id }
 const recipeSchema = recipeCreateSchema.required().extend({
   id,
-  title: visibleText(z.string().max(200).trim().min(1)),
+  title: clean(z.string().max(200).trim().min(1)),
   parentRecipeId: id.nullable().optional(),
   variationName: z.string().max(200).nullable().optional(),
   // saveRecipe can derive this sum from two individually valid 100000-minute fields.

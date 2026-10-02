@@ -11,6 +11,36 @@ it.each([
   expect(draft.ingredients![0]!.amount).toBe(expected)
   expect(warn).not.toHaveBeenCalled()
 })
+it.each([
+  ['servings', '4-6', 4], ['servings', 'serves 4', 4], ['servings', '~4', 4],
+  ['servings', 'serve 4', 4], ['servings', 'makes 4', 4], ['servings', 'make 4', 4], ['servings', 'for 4', 4],
+  ['prepTimeMinutes', 'about 15', 15], ['prepTimeMinutes', '10-15 minutes', 10],
+  ['cookTimeMinutes', 'approx. 15', 15], ['cookTimeMinutes', 'approx 15', 15],
+  ['totalTimeMinutes', 'around 10–15 minutes', 10], ['totalTimeMinutes', '10 to 15 minutes', 10]
+] as const)('parses %s value %s as %s', (field, value, expected) => {
+  const warn = vi.fn()
+  const draft = recipeCreateSchema.parse(sanitizeAiDraft({ title: 'Soup', [field]: value }, warn))
+  expect(draft[field]).toBe(expected)
+  expect(warn).not.toHaveBeenCalled()
+})
+it.each(['2-3', '2–3', '2 to 3', 'about 2-3', 'approx. 2', '~2'])('takes the lower ingredient quantity from %s', amount => {
+  const warn = vi.fn()
+  const draft = recipeCreateSchema.parse(sanitizeAiDraft({ title: 'Soup', ingredients: [{ name: 'salt', amount }] }, warn))
+  expect(draft.ingredients![0]!.amount).toBe(2)
+  expect(warn).not.toHaveBeenCalled()
+})
+it.each(['servings', 'prepTimeMinutes', 'cookTimeMinutes', 'totalTimeMinutes'] as const)('warns when %s cannot be parsed', field => {
+  const warn = vi.fn()
+  const draft = recipeCreateSchema.parse(sanitizeAiDraft({ title: 'Soup', [field]: 'unknown' }, warn))
+  expect(draft[field]).toBe(field === 'servings' ? 1 : 0)
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining(field))
+})
+it('warns when a step duration cannot be parsed', () => {
+  const warn = vi.fn()
+  const draft = recipeCreateSchema.parse(sanitizeAiDraft({ title: 'Soup', steps: [{ instruction: 'Simmer', durationMinutes: 'unknown' }] }, warn))
+  expect(draft.steps![0]!.durationMinutes).toBe(0)
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('durationMinutes'))
+})
 it.each(['-3', 'to taste', '1/0', '', 'garbage', undefined])('flags unreadable amount %s instead of guessing a quantity', amount => {
   const warn = vi.fn()
   const draft = recipeCreateSchema.parse(sanitizeAiDraft({ title: 'Soup', ingredients: [{ name: 'salt', amount, notes: 'Family note' }] }, warn))

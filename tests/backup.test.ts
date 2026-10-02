@@ -45,12 +45,20 @@ function populate() {
 }
 
 describe('JSON cookbook backup', () => {
-  it('rejects invisible or control-containing names during restore too', async () => {
+  it.each(['🍕', '🍰🍰', '№', '---'])('round-trips legacy recipe title %s through export and import', async title => {
+    const recipe = saveRecipe({ title, description: '' })
+    const backup = await (await request()).json()
+    db.delete(tables.recipes).run()
+    expect((await request('POST', backup)).status).toBe(200)
+    expect(getRecipe(recipe.id).title).toBe(title)
+    expect(exportBackup().recipes).toEqual(backup.recipes)
+  })
+  it('rejects control-containing titles and invisible or control-containing pantry names during restore', async () => {
     populate()
+    const recipeBackup = exportBackup()
+    recipeBackup.recipes[0]!.title = 'Bad\0Name'
+    expect((await request('POST', recipeBackup)).status).toBe(400)
     for (const value of ['Bad\0Name', '\u200b\u200b', '---']) {
-      const recipeBackup = exportBackup()
-      recipeBackup.recipes[0]!.title = value
-      expect((await request('POST', recipeBackup)).status).toBe(400)
       const pantryBackup = exportBackup()
       pantryBackup.pantry[0]!.name = value
       expect((await request('POST', pantryBackup)).status).toBe(400)

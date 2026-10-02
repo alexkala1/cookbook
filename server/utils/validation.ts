@@ -3,7 +3,7 @@ import { createError } from 'h3'
 import { photoMimeType } from './image'
 
 export const clean = (schema: z.ZodString) => z.string().refine(value => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value), 'Control characters are not allowed').pipe(schema)
-export const visibleText = (schema: z.ZodString) => clean(schema).refine(value => /[\p{L}\p{N}]/u.test(value), 'Must contain a letter or digit')
+export const visibleText = (schema: z.ZodString) => clean(schema).refine(value => /[\p{L}\p{N}\p{Extended_Pictographic}]/u.test(value), 'Must contain a letter, digit or pictograph')
 const shortText = clean(z.string().trim().min(1).max(200))
 const optionalText = clean(z.string().trim().max(10000)).nullable().optional()
 const number = z.number().finite().nonnegative().max(1000000)

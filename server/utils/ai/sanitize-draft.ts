@@ -82,14 +82,19 @@ const fractions: Record<string, number> = { '½': 1 / 2, '¼': 1 / 4, '¾': 3 / 
 const numeric = (value: unknown): number => {
   if (typeof value === 'number') return value
   if (typeof value !== 'string') return NaN
-  const s = value.trim().replace(/,(?=\d)/g, '.')
-  const unicode = s.match(/^(\d+)?\s*([½¼¾⅓⅔⅛⅜⅝⅞⅙⅚])(?=$|\s|\p{L})/u)
+  const s = value.trim().replace(/^(?:about|approx\.?|around|~|serves?|makes?|for)\s*/i, '').replace(/,(?=\d)/g, '.')
+  // A range uses its first quantity, including fractions and attached separators.
+  const unicode = s.match(/^(\d+)?\s*([½¼¾⅓⅔⅛⅜⅝⅞⅙⅚])(?=$|\s|\p{L}|[-–]\s*\d)/u)
   if (unicode) return Number(unicode[1] || 0) + fractions[unicode[2]!]!
-  const fraction = s.match(/^(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)(?=$|\s|\p{L})/u)
+  const fraction = s.match(/^(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)(?=$|\s|\p{L}|[-–]\s*\d)/u)
   if (fraction) return Number(fraction[3]) > 0 ? Number(fraction[1] || 0) + Number(fraction[2]) / Number(fraction[3]) : NaN
-  return Number.parseFloat(s.match(/^[+-]?(?:\d+\.?\d*|\.\d+)(?=$|\s|\p{L})/u)?.[0] ?? '')
+  return Number.parseFloat(s.match(/^[+-]?(?:\d+\.?\d*|\.\d+)(?=$|\s|\p{L}|[-–]\s*\d)/u)?.[0] ?? '')
 }
-const integer = (value: unknown, max: number, min = 0) => Math.max(min, Math.min(max, Math.floor(numeric(value) || 0)))
+const integer = (value: unknown, max: number, min: number, onUnreadable: () => void) => {
+  const parsed = numeric(value)
+  if (!Number.isFinite(parsed)) onUnreadable()
+  return Math.max(min, Math.min(max, Math.floor(Number.isFinite(parsed) ? parsed : 0)))
+}
 function pick(value: unknown, keys: readonly string[]): Record<string, unknown> {
   return object(value) ? Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) : {}
 }
@@ -114,7 +119,7 @@ export function sanitizeAiDraft(raw: unknown, warn: (message: string) => void = 
   if (draft.description === undefined || draft.description === null) draft.description = ''
   if (typeof draft.description === 'string') draft.description = text(draft.description)
   for (const key of ['servings', 'prepTimeMinutes', 'cookTimeMinutes', 'totalTimeMinutes']) {
-    if (key in draft) draft[key] = integer(draft[key], key === 'servings' ? 1000 : 100000, key === 'servings' ? 1 : 0)
+    if (key in draft) draft[key] = integer(draft[key], key === 'servings' ? 1000 : 100000, key === 'servings' ? 1 : 0, () => warn(`The ${key} value could not be read. Review its value.`))
   }
   if ('sourceUrl' in draft) {
     const url = text(draft.sourceUrl)
@@ -152,7 +157,7 @@ export function sanitizeAiDraft(raw: unknown, warn: (message: string) => void = 
     const aliases: Record<string, string> = { med: 'medium', moderate: 'medium', 'med-high': 'medium-high', 'medium high': 'medium-high', 'med-low': 'medium-low', 'medium low': 'medium-low' }
     const normalized = aliases[heat] ?? heat
     row.heatLevel = ['none', 'low', 'medium-low', 'medium', 'medium-high', 'high'].includes(normalized) ? normalized : undefined
-    if ('durationMinutes' in row && row.durationMinutes !== null) row.durationMinutes = integer(row.durationMinutes, 100000)
+    if ('durationMinutes' in row && row.durationMinutes !== null) row.durationMinutes = integer(row.durationMinutes, 100000, 0, () => warn(`The durationMinutes for step ${index + 1} could not be read. Review its value.`))
     if ('timerRequired' in row && typeof row.timerRequired !== 'boolean') delete row.timerRequired
     if ('internalTempTargetC' in row && row.internalTempTargetC !== null) {
       const temperature = numeric(row.internalTempTargetC)
