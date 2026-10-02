@@ -58,7 +58,7 @@ describe('photo decoding', () => {
     expect(createImageBitmap).not.toHaveBeenCalled()
   })
   it('requests a resized decode and releases both canvas and bitmap', async () => {
-    const file = new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })
+    const file = new File([new Uint8Array(1.5 * 1024 * 1024 + 1)], 'photo.jpg', { type: 'image/jpeg' })
     expect(await downsizePhoto(file)).toContain('data:image/jpeg')
     expect(createImageBitmap).toHaveBeenCalledWith(file, { resizeWidth: 2000, resizeQuality: 'medium' })
     expect(canvas.width).toBe(0); expect(canvas.height).toBe(0)
@@ -66,9 +66,22 @@ describe('photo decoding', () => {
   })
   it('falls back when resize options are unsupported', async () => {
     vi.mocked(createImageBitmap).mockRejectedValueOnce(new TypeError('unsupported option'))
-    const file = new File(['photo'], 'photo.png', { type: 'image/png' })
+    const file = new File([new Uint8Array(1.5 * 1024 * 1024 + 1)], 'photo.png', { type: 'image/png' })
     await downsizePhoto(file)
     expect(createImageBitmap).toHaveBeenLastCalledWith(file)
+  })
+  it.each([5, 1.5 * 1024 * 1024])('keeps an 800×600 photo of %s bytes at its original dimensions', async size => {
+    bitmap.width = 800; bitmap.height = 600
+    const file = new File([new Uint8Array(size)], 'small.jpg', { type: 'image/jpeg' })
+    canvas.toDataURL.mockImplementation(() => {
+      expect(canvas.width).toBe(800); expect(canvas.height).toBe(600)
+      return 'data:image/jpeg;base64,photo'
+    })
+    await downsizePhoto(file)
+    expect(createImageBitmap).toHaveBeenCalledWith(file)
+    expect(canvas.getContext.mock.results[0]!.value.drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 800, 600)
+    expect(canvas.width).toBe(0); expect(canvas.height).toBe(0)
+    expect(bitmap.close).toHaveBeenCalledOnce()
   })
   it('releases allocations when canvas serialization fails', async () => {
     canvas.toDataURL.mockImplementation(() => { throw new Error('canvas failure') })

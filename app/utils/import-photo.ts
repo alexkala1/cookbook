@@ -3,7 +3,11 @@ export async function downsizePhoto(file: File) {
   if (file.size > 30 * 1024 * 1024) throw new Error('Photo is too large. Choose a photo smaller than 30 MB.')
   if (!file.type.startsWith('image/')) throw new Error('not an image')
   let bitmap: ImageBitmap
-  try { bitmap = await createImageBitmap(file, { resizeWidth: 2000, resizeQuality: 'medium' }) }
+  try {
+    bitmap = file.size > 1.5 * 1024 * 1024
+      ? await createImageBitmap(file, { resizeWidth: 2000, resizeQuality: 'medium' })
+      : await createImageBitmap(file)
+  }
   catch (cause) {
     if (!(cause instanceof TypeError)) throw cause
     bitmap = await createImageBitmap(file)
